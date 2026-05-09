@@ -1,6 +1,6 @@
-import os
 import logging
 import time
+from pathlib import Path
 from mutagen.flac import FLAC
 from mutagen.id3 import ID3
 from qobuz_dl.db import handle_download_id
@@ -16,13 +16,15 @@ def sync_database(directory, db_path, client):
     logger.info(f"\n{YELLOW}[*] Starting Local Database Synchronization...{OFF}")
     logger.info(f"{YELLOW}[*] Scanning directory: {directory}{OFF}")
 
-    # --- PATCH OS.WALK: Immune a parentesi quadre e case-insensitive ---
-    all_files = []
-    for root, _, files in os.walk(directory):
-        for file in files:
-            if file.lower().endswith(('.flac', '.mp3')):
-                all_files.append(os.path.join(root, file))
-    # -------------------------------------------------------------------
+    target_dir = Path(directory)
+    
+    # Busca arquivos suportados ignorando case-sensitivity de extensões via pathlib
+    all_files_paths = []
+    for ext in ['.flac', '.mp3']:
+        all_files_paths.extend(list(target_dir.rglob(f'*{ext}')))
+        all_files_paths.extend(list(target_dir.rglob(f'*{ext.upper()}')))
+        
+    all_files = [str(p) for p in set(all_files_paths)]
 
     if not all_files:
         logger.info(f"{YELLOW}[!] No audio files found in {directory}.{OFF}")
@@ -56,7 +58,6 @@ def sync_database(directory, db_path, client):
                     tsrc = audio.get("TSRC")
                     if tsrc: isrc = tsrc.text[0]
                 
-                # --- REVERSE LOOKUP VIA API FOR OLD FILES ---
                 if not track_id and isrc:
                     logger.info(f"{CYAN}[*] Missing local ID. Fetching via API (ISRC: {isrc})...{OFF}")
                     res = client.search_tracks(isrc, limit=1)
@@ -65,10 +66,8 @@ def sync_database(directory, db_path, client):
                         track_id = str(q_track["id"])
                         album_id = str(q_track.get("album", {}).get("id", ""))
                     
-                    # Human behavior delay to prevent Qobuz API throttling and hanging
                     time.sleep(0.2)
                 
-                # Inject Track ID into DB
                 if track_id:
                     handle_download_id(
                         db_path=db_path, item_id=track_id, add_id=True, media_type="track",
@@ -76,8 +75,8 @@ def sync_database(directory, db_path, client):
                     )
                     added_tracks += 1
                 
-                # Inject Album ID into DB
                 if album_id and album_id not in added_albums:
+                    import os
                     handle_download_id(
                         db_path=db_path, item_id=album_id, add_id=True, media_type="album",
                         quality=quality, file_format=file_format, saved_path=os.path.dirname(file_path)
