@@ -3,7 +3,6 @@ Bidirectional sync between a local folder and a Qobuz playlist.
 """
 
 import os
-import shutil
 import logging
 from pathlib import Path
 from mutagen.flac import FLAC
@@ -18,7 +17,6 @@ def _scan_local_tracks(directory):
     untagged_files = []
 
     for root, _, files in os.walk(directory):
-        if ".trash" in root: continue # Ignora a lixeira
         for fname in files:
             if not fname.lower().endswith(('.flac', '.mp3')):
                 continue
@@ -121,7 +119,7 @@ def sync_playlist(qobuz_dl, url, folder, auto_confirm=False):
         return
 
     if to_delete_ids:
-        logger.info(f"\n{RED}Files to MOVE TO TRASH:{OFF}")
+        logger.info(f"\n{RED}Files to PERMANENTLY DELETE:{OFF}")
         for tid in sorted(to_delete_ids):
             logger.info(f"  {RED}✕ {os.path.basename(local_tracks[tid])}{OFF}")
 
@@ -147,28 +145,23 @@ def sync_playlist(qobuz_dl, url, folder, auto_confirm=False):
 
     logger.info(f"\n{CYAN}[4/4] Executing sync...{OFF}")
 
-    trash_dir = os.path.join(target_folder, ".trash")
     deleted_count = 0
     
-    if to_delete_ids:
-        os.makedirs(trash_dir, exist_ok=True)
-        logger.info(f"{YELLOW}[*] Moving orphaned files to .trash directory...{OFF}")
-
+    # Exclusão direta (libera espaço imediatamente)
     for tid in to_delete_ids:
         fpath = local_tracks[tid]
         try:
-            trash_path = os.path.join(trash_dir, os.path.basename(fpath))
-            shutil.move(fpath, trash_path)
+            os.remove(fpath)
             deleted_count += 1
-            logger.info(f"  {RED}[-] Moved to trash: {os.path.basename(fpath)}{OFF}")
+            logger.info(f"  {RED}[-] Deleted: {os.path.basename(fpath)}{OFF}")
 
+            # Apaga também o ficheiro .lrc, se existir
             lrc_path = os.path.splitext(fpath)[0] + ".lrc"
             if os.path.isfile(lrc_path):
-                lrc_trash_path = os.path.join(trash_dir, os.path.basename(lrc_path))
-                shutil.move(lrc_path, lrc_trash_path)
-                logger.info(f"  {RED}[-] Moved to trash: {os.path.basename(lrc_path)}{OFF}")
+                os.remove(lrc_path)
+                logger.info(f"  {RED}[-] Deleted: {os.path.basename(lrc_path)}{OFF}")
         except OSError as e:
-            logger.error(f"  {RED}[!] Failed to move {fpath}: {e}{OFF}")
+            logger.error(f"  {RED}[!] Failed to delete {fpath}: {e}{OFF}")
 
     original_folder_format = qobuz_dl.folder_format
     original_multi_disc = qobuz_dl.settings.multiple_disc_one_dir
@@ -200,5 +193,5 @@ def sync_playlist(qobuz_dl, url, folder, auto_confirm=False):
 
     logger.info(f"\n{GREEN}━━━ SYNC COMPLETE ━━━{OFF}")
     logger.info(f"  {GREEN}↓ Downloaded   : {downloaded_count} tracks{OFF}")
-    logger.info(f"  {RED}✕ Trashed      : {deleted_count} files{OFF}")
+    logger.info(f"  {RED}✕ Deleted      : {deleted_count} files{OFF}")
     logger.info(f"  {GREEN}✓ Total active : {len(remote_ids)} tracks{OFF}\n")
