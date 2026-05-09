@@ -221,35 +221,35 @@ def _get_tags_to_add(qobuz_album: dict, qobuz_item : dict, settings: QobuzDLSett
 
     # Artist Information
     if not settings.no_album_artist_tag:
-        	tags["ALBUMARTIST"] = get_album_artist(qobuz_album)
+        tags["ALBUMARTIST"] = get_album_artist(qobuz_album)
 
-	if not settings.no_track_artist_tag:
+    if not settings.no_track_artist_tag:
 
-    		main_artists = [
-    			artist.get("name", "").strip()
-    			for artist in qobuz_item.get("main_artists", [])
-    			if artist.get("name")
-		]
+        main_artists = [
+            artist.get("name", "").strip()
+            for artist in qobuz_item.get("main_artists", [])
+            if artist.get("name")
+        ]
 
-		if main_artists:
-    			artists = [", ".join(main_artists)]
-		else:
-    			main_artist = (
-        			qobuz_item.get("performer", {}).get("name", "")
-        			or qobuz_album.get("artist", {}).get("name", "")
-    			)
+        if main_artists:
+            artists = [", ".join(main_artists)]
+        else:
+            main_artist = (
+                qobuz_item.get("performer", {}).get("name", "")
+                or qobuz_album.get("artist", {}).get("name", "")
+            )
 
-    			artists = [main_artist] if main_artist else []
+            artists = [main_artist] if main_artist else []
 
-    		if len(artists) == 1:
-        		tags["ARTIST"] = artists[0]
-    		elif len(artists) > 1:
-        		tags["ARTIST"] = artists
-    		else:
-        		tags["ARTIST"] = ""
+        if len(artists) == 1:
+            tags["ARTIST"] = artists[0]
+        elif len(artists) > 1:
+            tags["ARTIST"] = artists
+        else:
+            tags["ARTIST"] = ""
 
-	if not settings.no_composer_tag:
-    		tags["COMPOSER"] = qobuz_item.get("composer", {}).get("name", "")
+    if not settings.no_composer_tag:
+        tags["COMPOSER"] = qobuz_item.get("composer", {}).get("name", "")
 
     # Release Information
     release_date = qobuz_album.get("release_date_original", "")
