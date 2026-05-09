@@ -1,6 +1,7 @@
 import re
 import os
 import logging
+import mimetypes
 
 from mutagen.flac import FLAC, Picture
 import mutagen.id3 as id3
@@ -109,8 +110,12 @@ def _embed_flac_img(root_dir, audio: FLAC):
 
         image = Picture()
         image.type = 3
-        image.mime = "image/jpeg"
+        
+        mime_type, _ = mimetypes.guess_type(cover_image)
+        image.mime = mime_type or "image/jpeg"
+        
         image.desc = "cover"
+        
         with open(cover_image, "rb") as img:
             image.data = img.read()
         audio.add_picture(image)
@@ -133,8 +138,18 @@ def _embed_id3_img(root_dir, audio: id3.ID3):
         return
 
     with open(cover_image, "rb") as cover:
-        audio.add(id3.APIC(3, "image/jpeg", 3, "", cover.read()))
-
+    
+        mime_type, _ = mimetypes.guess_type(cover_image)
+        
+        audio.add(
+            id3.APIC(
+                encoding=3
+                mime=mime_type or "image/jpeg",
+                type=3
+                desc="Cover",
+                data=cover.read()
+            )
+        )
 
 def tag_flac(
     filename, root_dir, final_name, d: dict, album, istrack=True, em_image=False, settings: QobuzDLSettings = None
