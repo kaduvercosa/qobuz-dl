@@ -46,7 +46,6 @@ class Client:
 
         self.session = requests.Session()
         
-        # --- CONDITIONAL ENGLISH LANGUAGE OVERRIDE ---
         if self.force_english:
             self.session.headers.update({
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -59,7 +58,6 @@ class Client:
             "Sec-Fetch-Site": "same-site",
             "X-App-Id": self.id,
         })
-        # ---------------------------------------------
         
         self.session.headers.update({
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -67,122 +65,23 @@ class Client:
         })
         self.base = "https://www.qobuz.com/api.json/0.2/"
         self.sec = None
-# Variables for encryption session management
         self.session_id = None
         self.session_infos = None
         self.session_key = None
         
         self.uat = None
-        self.force_english = force_english 
         
         self.auth(email, pwd, user_auth_token)
         self.cfg_setup()
 
-    def api_call(self, epoint, **kwargs):
-        if epoint == "user/login":
-            if "user_auth_token" in kwargs and kwargs["user_auth_token"]:
-                params = {
-                    "user_auth_token": kwargs["user_auth_token"],
-                    "app_id": self.id,
-                }
-                logger.info(f"{YELLOW}Trying to login with user_auth_token{OFF}")
-            else:
-                params = {
-                    "email": kwargs["email"],
-                    "password": kwargs["pwd"],
-                    "app_id": self.id,
-                }
-                logger.info(f"{YELLOW}Trying to login with email/password{OFF}")
-            
-            # add debug info
-            logger.info(f"{YELLOW}Login params: {params}{OFF}")
-        elif epoint == "track/get":
-            params = {"track_id": kwargs["id"]}
-        elif epoint == "album/get":
-            params = {"album_id": kwargs["id"]}
-        elif epoint == "playlist/get":
-            params = {
-                "extra": "tracks",
-                "playlist_id": kwargs["id"],
-                "limit": 500,
-                "offset": kwargs["offset"],
-            }
-        elif epoint == "artist/get":
-            params = {
-                "app_id": self.id,
-                "artist_id": kwargs["id"],
-                "limit": 500,
-                "offset": kwargs["offset"],
-                "extra": "albums",
-            }
-        elif epoint == "label/get":
-            params = {
-                "label_id": kwargs["id"],
-                "limit": 500,
-                "offset": kwargs["offset"],
-                "extra": "albums",
-            }
-        elif epoint == "favorite/getUserFavorites":
-            unix = int(time.time())
-            r_sig = "favoritegetUserFavorites" + str(unix) + kwargs.get("sec", self.sec)
-            r_sig_hashed = hashlib.md5(r_sig.encode("utf-8")).hexdigest()
-            params = {
-                "app_id": self.id,
-                "user_auth_token": getattr(self, 'uat', None),
-                "type": kwargs.get("fav_type", "albums"), 
-                "limit": kwargs.get("limit", 100),
-                "offset": kwargs.get("offset", 0),
-                "request_ts": unix,
-                "request_sig": r_sig_hashed,
-            }
-        elif epoint == "track/getFileUrl":
-            unix = time.time()
-            track_id = kwargs["id"]
-            fmt_id = kwargs["fmt_id"]
-            if int(fmt_id) not in (5, 6, 7, 27):
-                raise InvalidQuality("Invalid quality id: choose between 5, 6, 7 or 27")
-            r_sig = "trackgetFileUrlformat_id{}intentstreamtrack_id{}{}{}".format(
-                fmt_id, track_id, unix, kwargs.get("sec", self.sec)
-            )
-            r_sig_hashed = hashlib.md5(r_sig.encode("utf-8")).hexdigest()
-            params = {
-                "request_ts": unix,
-                "request_sig": r_sig_hashed,
-                "track_id": track_id,
-                "format_id": fmt_id,
-                "intent": "stream",
-            }
-        else:
-            params = kwargs
-            
-        r = self.session.get(self.base + epoint, params=params)
-        
-        if epoint == "user/login":
-            if r.status_code == 401:
-                raise AuthenticationError("Invalid credentials.\n" + RESET)
-            elif r.status_code == 400:
-                raise InvalidAppIdError("Invalid app id.\n" + RESET)
-            else:
-                logger.info(f"{GREEN}Logged: OK{OFF}")
-        elif (
-            epoint in ["track/getFileUrl", "favorite/getUserFavorites"]
-            and r.status_code == 400
-        ):
-            raise InvalidAppSecretError(f"Invalid app secret: {r.json()}.\n" + RESET)
-        r.raise_for_status()
-        
-        # Unicode Normalization for JSON strings
-        json_data = r.json()
-        return self._normalize_json_strings(json_data)
+    def _generate_signature(self, base_string):
+        """Helper to hash the old-school request_sig payloads."""
+        return hashlib.md5(base_string.encode("utf-8")).hexdigest()
 
     def _normalize_json_strings(self, obj):
-        """Recursively normalize Unicode strings in JSON objects (NFC form)"""
         if isinstance(obj, str):
-            # --- WINDOWS PATH FIX: Convert '...' to Unicode Ellipsis (U+2026) ---
-            # Avoid modifying URL links (which contain '://')
             if "..." in obj and "://" not in obj:
                 obj = obj.replace("...", "…")
-            # --------------------------------------------------------------------
             return unicodedata.normalize('NFC', obj)
         elif isinstance(obj, dict):
             return {k: self._normalize_json_strings(v) for k, v in obj.items()}
@@ -192,7 +91,6 @@ class Client:
             return obj
 
     def auth(self, email, pwd, user_auth_token=None):
-        # If the token is present, skip the password!
         if user_auth_token:
             self.uat = user_auth_token
         elif len(pwd) > 60:
@@ -209,29 +107,22 @@ class Client:
             user_info = self.api_call("user/get")
             cred = user_info.get("credential") or user_info.get("user", {}).get("credential", {})
             self.label = cred.get("parameters", {}).get("short_label", "Studio")
-            
-            # --- FIX: Save user ID strictly required for favorites ---
             self.user_id = user_info.get("id") or user_info.get("user", {}).get("id")
-            # -------------------------------------------------------------------------
-            
             logger.info(f"{GREEN}Logged: OK (Membership: {self.label}){OFF}")
         except Exception:
             logger.info(f"{YELLOW}[!] Profile validation bypassed.{OFF}")
             self.label = "Studio"
             self.user_id = None
 
-    # NEW CRYPTOGRAPHIC FUNCTIONS (Patch 0004)
     def _modern_sig(self, epoint, params, sec):
         object_, method = epoint.split("/")
         r_sig = [object_, method]
         for key in sorted(params):
             value = params[key]
-            if key not in ("request_ts", "request_sig") and isinstance(
-                value, (str, int, float)
-            ):
+            if key not in ("request_ts", "request_sig") and isinstance(value, (str, int, float)):
                 r_sig.extend((key, str(value)))
         r_sig.extend((str(params["request_ts"]), sec))
-        return hashlib.md5("".join(r_sig).encode("utf-8")).hexdigest()
+        return self._generate_signature("".join(r_sig))
 
     @staticmethod
     def _b64url_decode(value):
@@ -256,61 +147,39 @@ class Client:
         unpadder = padding.PKCS7(128).unpadder()
         return unpadder.update(padded) + unpadder.finalize()
 
-    # NEW API_CALL ENGINE
     def api_call(self, epoint, **kwargs):
         if epoint == "user/login":
             if "user_auth_token" in kwargs and kwargs["user_auth_token"]:
-                params = {
-                    "user_auth_token": kwargs["user_auth_token"],
-                    "app_id": self.id,
-                }
+                params = {"user_auth_token": kwargs["user_auth_token"], "app_id": self.id}
             else:
-                params = {
-                    "email": kwargs["email"],
-                    "password": kwargs["pwd"],
-                    "app_id": self.id,
-                }
+                params = {"email": kwargs["email"], "password": kwargs["pwd"], "app_id": self.id}
         elif epoint == "track/getFileUrl":
             track_id = kwargs["id"]
             fmt_id = kwargs["fmt_id"]
             if int(fmt_id) not in (5, 6, 7, 27):
                 raise InvalidQuality("Invalid quality id: choose between 5, 6, 7 or 27")
-            params = {
-                "track_id": track_id,
-                "format_id": fmt_id,
-                "intent": "stream",
-            }
-            # Use the old string method for MP3 compatibility
+            params = {"track_id": track_id, "format_id": fmt_id, "intent": "stream"}
             unix = int(time.time())
             sec_to_use = kwargs.get('sec', self.sec)
             r_sig = f"trackgetFileUrlformat_id{fmt_id}intentstreamtrack_id{track_id}{unix}{sec_to_use}"
             params["request_ts"] = unix
-            params["request_sig"] = hashlib.md5(r_sig.encode()).hexdigest()
+            params["request_sig"] = self._generate_signature(r_sig)
 
         elif epoint == "session/start":
             params = {"profile": "qbz-1"}
             params["request_ts"] = int(time.time())
-            params["request_sig"] = self._modern_sig(
-                epoint, params, kwargs.get("sec", self.sec)
-            )
+            params["request_sig"] = self._modern_sig(epoint, params, kwargs.get("sec", self.sec))
         elif epoint == "file/url":
             track_id = kwargs["id"]
             fmt_id = kwargs["fmt_id"]
             if int(fmt_id) not in (6, 7, 27):
                 raise InvalidQuality("Invalid quality id: choose between 6, 7 or 27")
-            params = {
-                "track_id": track_id,
-                "format_id": fmt_id,
-                "intent": "import",
-            }
+            params = {"track_id": track_id, "format_id": fmt_id, "intent": "import"}
             params["request_ts"] = int(time.time())
-            params["request_sig"] = self._modern_sig(
-                epoint, params, kwargs.get("sec", self.sec)
-            )
+            params["request_sig"] = self._modern_sig(epoint, params, kwargs.get("sec", self.sec))
         elif epoint == "favorite/getUserFavorites":
             unix = int(time.time())
-            r_sig = "favoritegetUserFavorites" + str(unix) + kwargs.get("sec", self.sec)
-            r_sig_hashed = hashlib.md5(r_sig.encode("utf-8")).hexdigest()
+            r_sig = f"favoritegetUserFavorites{unix}{kwargs.get('sec', self.sec)}"
             params = {
                 "app_id": self.id,
                 "user_auth_token": getattr(self, 'uat', None),
@@ -319,17 +188,13 @@ class Client:
                 "limit": kwargs.get("limit", 100),
                 "offset": kwargs.get("offset", 0),
                 "request_ts": unix,
-                "request_sig": r_sig_hashed,
+                "request_sig": self._generate_signature(r_sig),
             }
         else:
-            # Restore behavior for standard calls like album/get
             params = {'app_id': self.id}
-            
-            # --- CONDITIONAL ENGLISH PARAMS OVERRIDE ---
             if getattr(self, 'force_english', True):
                 params['lang'] = 'en'
                 params['locale'] = 'en_US'
-            # -------------------------------------------
             
             val_id = kwargs.get('id')
             for k, v in kwargs.items():
@@ -342,68 +207,46 @@ class Client:
             elif epoint == "artist/get": params["artist_id"] = val_id; params["extra"] = "albums"
             elif epoint == "label/get": params["label_id"] = val_id; params["extra"] = "albums"
 
-        # PATCH: Added favorite/create to POST methods
         if epoint in ["user/login", "favorite/create"]:
             r = self.session.post(self.base + epoint, data=params)
         elif epoint == "session/start":
-            r = self.session.post(
-                self.base + epoint,
-                data=params,
-                headers={"Content-Type": "application/x-www-form-urlencoded"},
-            )
+            r = self.session.post(self.base + epoint, data=params, headers={"Content-Type": "application/x-www-form-urlencoded"})
         else:
             r = self.session.get(self.base + epoint, params=params)
 
         if epoint == "user/login" and r.status_code == 400:
-            if "invalid" in r.text.lower():
-                raise AuthenticationError("Invalid email or password.")
-            else:
-                logger.info(f"{GREEN}Logged: OK{OFF}")
-        elif (
-            epoint in ["track/getFileUrl", "favorite/getUserFavorites", "file/url"]
-            and r.status_code == 400
-        ):
+            if "invalid" in r.text.lower(): raise AuthenticationError("Invalid email or password.")
+            else: logger.info(f"{GREEN}Logged: OK{OFF}")
+        elif epoint in ["track/getFileUrl", "favorite/getUserFavorites", "file/url"] and r.status_code == 400:
             raise InvalidAppSecretError(f"Invalid app secret: {r.json()}.\n" + RESET)
         
         if epoint == "user/get" and r.status_code == 400: return {}
         r.raise_for_status()
         
-        # Apply string normalizer to the network call output
         return self._normalize_json_strings(r.json())
 
     def multi_meta(self, epoint, key, id, type):
         offset = 0
         limit = 50
-        
         while True:
             j = self.api_call(epoint, id=id, offset=offset, limit=limit, type=type)
             res = j[type] if type and type in j else j
-            
             items_key = "tracks" if "playlist" in epoint else "albums"
             items = res.get(items_key, {}).get("items", [])
-            
-            if not items:
-                break
-                
+            if not items: break
             yield res
-            
             offset += len(items)
             total_available = res.get(items_key, {}).get("total", res.get(key, 0))
-            if offset >= total_available:
-                break
+            if offset >= total_available: break
 
-    # --- METADATA FUNCTIONS (Do not delete!) ---
-    def get_track_meta(self, id): 
-        return self.api_call("track/get", id=id)
+    def get_track_meta(self, id): return self.api_call("track/get", id=id)
 
-    # --- NEW LAST.FM FUNCTIONS ---
     def get_track_ids_from_list(self, tracks_list: list) -> list:
         from qobuz_dl.color import OFF, GREEN, RED, YELLOW, CYAN
         import difflib
         
         print(f"{CYAN}[*] Matching Last.fm tracks with Qobuz database (Fuzzy matching & Interactive mode enabled)...{OFF}")
         valid_track_ids = []
-        
         AUTO_ACCEPT_THRESHOLD = 0.75 
         PROMPT_THRESHOLD = 0.60      
         
@@ -414,7 +257,6 @@ class Client:
             
             try:
                 search_results = self.search_tracks(query, limit=5)
-                
                 best_match_id = None
                 best_match_name = ""
                 highest_ratio = 0.0
@@ -423,14 +265,7 @@ class Client:
                     for q_track in search_results["tracks"]["items"]:
                         q_artist_raw = q_track.get("performer", {}).get("name", "Unknown")
                         q_title_raw = q_track.get("title", "Unknown")
-                        
-                        q_artist = q_artist_raw.lower()
-                        q_title = q_title_raw.lower()
-                        
-                        target_str = f"{target_artist} {target_title}"
-                        q_str = f"{q_artist} {q_title}"
-                        
-                        ratio = difflib.SequenceMatcher(None, target_str, q_str).ratio()
+                        ratio = difflib.SequenceMatcher(None, f"{target_artist} {target_title}", f"{q_artist_raw.lower()} {q_title_raw.lower()}").ratio()
                         
                         if ratio > highest_ratio:
                             highest_ratio = ratio
@@ -439,33 +274,26 @@ class Client:
                     
                     if highest_ratio >= AUTO_ACCEPT_THRESHOLD and best_match_id:
                         valid_track_ids.append(best_match_id)
-                        
                     elif highest_ratio >= PROMPT_THRESHOLD and best_match_id:
                         print(f"\n{YELLOW}[?] Borderline match detected ({highest_ratio*100:.0f}% similarity){OFF}")
                         print(f"    Target (Last.fm): {item['artist']} - {item['title']}")
                         print(f"    Found  (Qobuz)  : {best_match_name}")
-                        
                         choice = input(f"{CYAN}    Do you want to download this track anyway? [y/n]: {OFF}").strip().lower()
-                        
                         if choice == 'y':
                             valid_track_ids.append(best_match_id)
                             print(f"{GREEN}    [+] Track accepted manually.{OFF}")
                         else:
                             print(f"{RED}    [-] Track skipped manually.{OFF}")
-                            
                     else:
                         print(f"{YELLOW}[!] Skipping: '{query}' (Best match was only {highest_ratio*100:.0f}% similar){OFF}")
-                        
                 else:
                     print(f"{YELLOW}[!] Skipping (No results on Qobuz for): '{query}'{OFF}")
-                    
             except Exception as e:
                 print(f"{RED}[!] Error searching for '{query}': {e}{OFF}")
                 
         print(f"\n{GREEN}[+] Successfully matched {len(valid_track_ids)} out of {len(tracks_list)} tracks!{OFF}")
         return valid_track_ids
 
-    # --- SEARCH FUNCTIONS (Crash-Proof) ---
     def search_albums(self, query, limit=20):
         try: return self.api_call("catalog/search", query=query, type="albums", limit=limit)
         except Exception: return {}
@@ -482,43 +310,25 @@ class Client:
         try: return self.api_call("catalog/search", query=query, type="artists", limit=limit)
         except Exception: return {}
 
-    # --- NEW FAVORITES FUNCTION ---
     def get_favorites(self, fav_type="albums", limit=100, offset=0):
-        """
-        Fetches user favorites dynamically. 
-        fav_type can be: 'albums', 'tracks', 'artists', 'playlists'
-        """
-        try: 
-            return self.api_call("favorite/getUserFavorites", fav_type=fav_type, limit=limit, offset=offset)
+        try: return self.api_call("favorite/getUserFavorites", fav_type=fav_type, limit=limit, offset=offset)
         except Exception as e: 
             logger.error(f"{RED}[!] API Error fetching favorites: {e}{OFF}")
             return {}
             
     def add_favorite_album(self, album_id):
-        """Adds an album to the user's Qobuz favorites."""
-        return self.api_call(
-            "favorite/create", 
-            album_ids=str(album_id),
-            artist_ids="",
-            track_ids=""
-        )
+        return self.api_call("favorite/create", album_ids=str(album_id), artist_ids="", track_ids="")
         
-    # NEW GET_TRACK_URL (Patch 0004)
     def get_track_url(self, id, fmt_id, force_segments=False):
-        # Quick fallback for MP3
         if int(fmt_id) == 5:
             return self.api_call("track/getFileUrl", id=id, fmt_id=fmt_id)
 
-        # If not forcing segments, try the good old fast Direct URL first
         if not force_segments:
             try:
                 track = self.api_call("track/getFileUrl", id=id, fmt_id=fmt_id)
-                if "url" in track:
-                    return track
-            except Exception:
-                pass # If Qobuz refuses to give the direct URL, fallback to segments automatically
+                if "url" in track: return track
+            except Exception: pass
 
-        # "WEB PLAYER" METHOD (SEGMENTED DOWNLOAD)
         if self.session_id is None:
             session = self.api_call("session/start")
             self.session_id = session["session_id"]
@@ -527,12 +337,9 @@ class Client:
             self.session.headers.update({"X-Session-Id": self.session_id})
 
         track = self.api_call("file/url", id=id, fmt_id=fmt_id)
-        if "bits_depth" in track and "bit_depth" not in track:
-            track["bit_depth"] = track["bits_depth"]
-        if track.get("sampling_rate", 0) > 1000:
-            track["sampling_rate"] = track["sampling_rate"] / 1000
-        if "key" in track:
-            track["raw_key"] = self._unwrap_track_key(track["key"])
+        if "bits_depth" in track and "bit_depth" not in track: track["bit_depth"] = track["bits_depth"]
+        if track.get("sampling_rate", 0) > 1000: track["sampling_rate"] = track["sampling_rate"] / 1000
+        if "key" in track: track["raw_key"] = self._unwrap_track_key(track["key"])
         return track
 
     def get_artist_meta(self, id): return self.multi_meta("artist/get", "albums_count", id, None)
