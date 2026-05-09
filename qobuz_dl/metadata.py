@@ -232,10 +232,12 @@ def _get_tags_to_add(qobuz_album: dict, qobuz_item : dict, settings: QobuzDLSett
         if performers_str:
             for i in performers_str.split(" - "):
                 
-                if "MainArtist" in i:
-                    artists.append(
-                        i.replace(", MainArtist", "").strip()
-                    )
+                if "MainArtist" in i or "FeaturedArtist" in i:
+                    
+                    name = i.split(",")[0].strip()
+                    
+                    if name not in artists:
+                        artists.append(name)
 
         if artists:
             artists = [", ".join(artists)]
