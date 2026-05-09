@@ -1,92 +1,107 @@
 import os
 import logging
+from pathlib import Path
 from mutagen.flac import FLAC
 import mutagen.id3 as id3
 from mutagen.id3 import ID3NoHeaderError
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from qobuz_dl.lyrics_engine import LyricsEngine
 from qobuz_dl.color import CYAN, GREEN, YELLOW, RED, OFF
 
 logger = logging.getLogger(__name__)
 
+def _process_single_file(file_path_str, engine):
+    try:
+        title, artist, album = "", "", ""
+        needs_lyrics = False
+        file_path_lower = file_path_str.lower()
+
+        if file_path_lower.endswith(".flac"):
+            audio = FLAC(file_path_str)
+            if audio.get("LYRICS") or audio.get("UNSYNCEDLYRICS"):
+                return "skipped"
+                
+            title = audio.get("TITLE", [""])[0]
+            album_artist = audio.get("ALBUMARTIST", [""])[0]
+            performer_name = audio.get("ARTIST", ["Unknown Artist"])[0]
+            artist = performer_name if album_artist in ["", "Various Artists"] else album_artist
+            album = audio.get("ALBUM", [""])[0]
+            needs_lyrics = True
+            
+        elif file_path_lower.endswith(".mp3"):
+            try:
+                audio = id3.ID3(file_path_str)
+            except ID3NoHeaderError:
+                return "skipped"
+                
+            if audio.getall("USLT") or audio.getall("SYLT"):
+                return "skipped"
+                
+            title = audio.get("TIT2").text[0] if audio.get("TIT2") else ""
+            artist = audio.get("TPE1").text[0] if audio.get("TPE1") else ""
+            album = audio.get("TALB").text[0] if audio.get("TALB") else ""
+            needs_lyrics = True
+
+        if not title or not artist:
+            return "skipped"
+            
+        if needs_lyrics:
+            print(f"{YELLOW}  > Missing lyrics: {artist} - {title}. Searching...{OFF}")
+            engine.fetch_and_inject(
+                file_path=file_path_str,
+                artist=artist,
+                track=title,
+                album=album
+            )
+            return "injected"
+                
+    except Exception as e:
+        logger.error(f"{RED}[!] Error reading {file_path_str}: {e}{OFF}")
+        return "error"
+    return "skipped"
+
 def inject_lyrics_retroactively(directory_path, genius_token=None):
     print(f"\n{CYAN}[*] Starting retroactive lyrics scan in: {directory_path}{OFF}")
     
-    if not os.path.isdir(directory_path):
+    target_dir = Path(directory_path)
+    if not target_dir.is_dir():
         print(f"{RED}[!] Error: The directory '{directory_path}' does not exist.{OFF}")
         return
 
     engine = LyricsEngine(genius_token)
-    processed = 0
+    
+    # Busca arquivos suportados ignorando case-sensitivity de extensões
+    all_files = []
+    for ext in ['.flac', '.mp3']:
+        all_files.extend(list(target_dir.rglob(f'*{ext}')))
+        all_files.extend(list(target_dir.rglob(f'*{ext.upper()}')))
+        
+    all_files = list(set(all_files)) # Remove duplicates
+    
+    processed = len(all_files)
     injected = 0
     skipped = 0
-    
-    for root, _, files in os.walk(directory_path):
-        for file in files:
-            if file.lower().endswith((".flac", ".mp3")):
-                file_path = os.path.join(root, file)
-                processed += 1
-                
-                try:
-                    title, artist, album = "", "", ""
-                    needs_lyrics = False
+    errors = 0
 
-                    # --- FLAC HANDLING ---
-                    if file.lower().endswith(".flac"):
-                        audio = FLAC(file_path)
-                        # Check if lyrics are already present
-                        if audio.get("LYRICS") or audio.get("UNSYNCEDLYRICS"):
-                            skipped += 1
-                            continue
-                            
-                        title = audio.get("TITLE", [""])[0]
-                        album_artist = audio.get("ALBUMARTIST", [""])[0]
-                        performer_name = audio.get("ARTIST", ["Unknown Artist"])[0]
-                        artist = performer_name if album_artist in ["", "Various Artists"] else album_artist
-                        album = audio.get("ALBUM", [""])[0]
-                        needs_lyrics = True
-                        
-                    # --- MP3 HANDLING ---
-                    elif file.lower().endswith(".mp3"):
-                        try:
-                            audio = id3.ID3(file_path)
-                        except ID3NoHeaderError:
-                            skipped += 1
-                            continue
-                            
-                        # Check if lyrics are already present (USLT = unsynced, SYLT = synced)
-                        if audio.getall("USLT") or audio.getall("SYLT"):
-                            skipped += 1
-                            continue
-                            
-                        title = audio.get("TIT2").text[0] if audio.get("TIT2") else ""
-                        artist = audio.get("TPE1").text[0] if audio.get("TPE1") else ""
-                        album = audio.get("TALB").text[0] if audio.get("TALB") else ""
-                        needs_lyrics = True
+    print(f"{CYAN}[*] Found {processed} compatible audio files. Processing...{OFF}")
 
-                    # Skip if file is corrupted or lacks basic tags
-                    if not title or not artist:
-                        skipped += 1
-                        continue
-                        
-                    # --- LYRICS INJECTION ---
-                    if needs_lyrics:
-                        print(f"{YELLOW}  > Missing lyrics: {artist} - {title}. Searching...{OFF}")
-                        
-                        # Call the LyricsEngine
-                        engine.fetch_and_inject(
-                            file_path=file_path,
-                            artist=artist,
-                            track=title,
-                            album=album
-                        )
-                        injected += 1
-                            
-                except Exception as e:
-                    print(f"{RED}[!] Error reading {file}: {e}{OFF}")
-                    skipped += 1
+    # Processamento paralelo
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = {executor.submit(_process_single_file, str(path), engine): path for path in all_files}
+        for future in as_completed(futures):
+            result = future.result()
+            if result == "injected":
+                injected += 1
+            elif result == "skipped":
+                skipped += 1
+            elif result == "error":
+                errors += 1
                     
     print(f"\n{GREEN}[+] Retroactive Scan and Injection Completed!{OFF}")
     print(f"{CYAN}  - Total files analyzed: {processed}{OFF}")
     print(f"{GREEN}  - Injection attempts: {injected}{OFF}")
-    print(f"{YELLOW}  - Skipped files (already tagged or missing data): {skipped}{OFF}\n")
+    print(f"{YELLOW}  - Skipped files (already tagged or missing data): {skipped}{OFF}")
+    if errors > 0:
+        print(f"{RED}  - Errors encountered: {errors}{OFF}")
+    print("\n")
