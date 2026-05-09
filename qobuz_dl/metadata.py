@@ -221,7 +221,7 @@ def _get_tags_to_add(qobuz_album: dict, qobuz_item : dict, settings: QobuzDLSett
 
     # Artist Information
 	if not settings.no_album_artist_tag:
-    	tags["ALBUMARTIST"] = get_album_artist(qobuz_album)
+        	tags["ALBUMARTIST"] = get_album_artist(qobuz_album)
 
 	if not settings.no_track_artist_tag:
 
@@ -241,7 +241,7 @@ def _get_tags_to_add(qobuz_album: dict, qobuz_item : dict, settings: QobuzDLSett
 
         	artists = [main_artist] if main_artist else []
 
-    	if len(artists) == 1:
+    if len(artists) == 1:
         	tags["ARTIST"] = artists[0]
     	elif len(artists) > 1:
         	tags["ARTIST"] = artists
