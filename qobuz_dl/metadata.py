@@ -225,14 +225,20 @@ def _get_tags_to_add(qobuz_album: dict, qobuz_item : dict, settings: QobuzDLSett
 
     if not settings.no_track_artist_tag:
 
-        main_artists = [
-            artist.get("name", "").strip()
-            for artist in qobuz_item.get("main_artists", [])
-            if artist.get("name")
-        ]
+        artists = []
+        
+        performers_str = qobuz_item.get("performers", "")
+        
+        if performers_str:
+            for i in performers_str.split(" - "):
+                
+                if "MainArtist" in i:
+                    artists.append(
+                        i.replace(", MainArtist", "").strip()
+                    )
 
-        if main_artists:
-            artists = [", ".join(main_artists)]
+        if artists:
+            artists = [", ".join(artists)]
         else:
             main_artist = (
                 qobuz_item.get("performer", {}).get("name", "")
