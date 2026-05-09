@@ -8,6 +8,7 @@ import subprocess
 import re
 import threading
 import signal
+import shutil
 from typing import Tuple
 import concurrent.futures
 from concurrent.futures import ThreadPoolExecutor
@@ -61,7 +62,6 @@ def process_folder_format_with_subdirs(folder_format, attr_dict, path=None, lega
         if part:
             try:
                 formatted_part = part.format(**attr_dict)
-                # AGGIUNTO legacy_charmap QUI:
                 cleaned_part = sanitize_filepath(clean_filename(formatted_part, legacy_charmap=legacy_charmap), replacement_text="_")
                 
                 # --- FIX: SMART TRUNCATION FOR ALBUM FOLDER ---
@@ -74,7 +74,6 @@ def process_folder_format_with_subdirs(folder_format, attr_dict, path=None, lega
                     cleaned_parts.append(cleaned_part)
             except KeyError as e:
                 logger.warning(f"{YELLOW}Format error ({e}), using original text.{OFF}")
-                # AGGIUNTO legacy_charmap ANCHE QUI:
                 cleaned_part = sanitize_filepath(clean_filename(part, legacy_charmap=legacy_charmap), replacement_text="_")
                 
                 if cleaned_part and len(cleaned_part) > 120:
@@ -256,9 +255,6 @@ class Download:
         aborted_by_user = False
         abort_event.clear()
 
-        # --- SIGINT HIJACKER (Hacker Fix) ---
-        # Intercept Ctrl+C to prevent core/cli from brutally killing the process,
-        # ensuring we have time to release file locks and rename the folder to [INCOMPLETE].
         original_sigint = None
         try:
             original_sigint = signal.getsignal(signal.SIGINT)
@@ -278,20 +274,25 @@ class Download:
                 _get_extra(album_meta["image"]["large"], dirn, art_size=self.settings.saved_art_size)
 
             if self.settings.embed_art:
-                _get_extra(album_meta["image"]["large"], dirn, extra=EMB_COVER_NAME, art_size=self.settings.embedded_art_size)
+                # OTIMIZAÇÃO: Cópia local em vez de baixar 2 vezes
+                embed_size = str(self.settings.embedded_art_size)
+                saved_size = str(self.settings.saved_art_size)
+                cover_path = os.path.join(dirn, "cover.jpg")
+                embed_path = os.path.join(dirn, EMB_COVER_NAME)
+                
+                if embed_size == saved_size and not self.settings.no_cover and os.path.exists(cover_path):
+                    shutil.copy(cover_path, embed_path)
+                else:
+                    _get_extra(album_meta["image"]["large"], dirn, extra=EMB_COVER_NAME, art_size=self.settings.embedded_art_size)
 
             if "goodies" in album_meta:
                 _download_goodies(album_meta, dirn)
                 
             if getattr(self, 'booklet_only', False):
                 safe_print(f"{YELLOW}[*] --booklet-only flag active. Skipping audio tracks.{OFF}")
-                
                 if is_standard_album and working_dirn == inprogress_dirn:
-                    try:
-                        os.rename(working_dirn, incomplete_dirn)
-                    except OSError as e:
-                        logger.warning(f"{YELLOW}[!] Impossibile rinominare la cartella in [INCOMPLETE]. ({e}){OFF}")
-                
+                    try: os.rename(working_dirn, incomplete_dirn)
+                    except OSError: pass
                 return
              
             with concurrent.futures.ThreadPoolExecutor(max_workers=active_workers) as executor:
@@ -353,7 +354,6 @@ class Download:
             safe_print(f"\n{RED}[!] CTRL+C Intercepted: Securing files and folders...{OFF}")
             
         finally:
-            # Restore original signal handler so the CLI functions normally afterwards
             try:
                 if original_sigint:
                     signal.signal(signal.SIGINT, original_sigint)
@@ -361,10 +361,8 @@ class Download:
                 pass
                 
         if aborted_by_user:
-            # Crucial: Wait for threads to drop OS file locks before attempting folder rename
             time.sleep(1.5)
             
-        # --- FINAL DIRECTORY STATE EVALUATION ---
         if is_standard_album and working_dirn == inprogress_dirn:
             final_dirn = target_dirn if (failed_tracks == 0 and not aborted_by_user) else incomplete_dirn
             try:
@@ -383,7 +381,6 @@ class Download:
         if aborted_by_user:
             os._exit(1)
             
-        # --- DATABASE UPGRADE: Inject artist and album metadata ---
         db_artist = album_attr.get("album_artist", "Unknown")
         db_album = album_attr.get("album_title", "Unknown")
         
@@ -441,8 +438,16 @@ class Download:
                     except OSError:
                         pass
                 
-                _get_extra(track_meta["album"]["image"]["large"], dirn, extra=EMB_COVER_NAME,
-                           art_size=self.settings.embedded_art_size)
+                # OTIMIZAÇÃO: Cópia local protegendo a lógica de playlists
+                embed_size = str(self.settings.embedded_art_size)
+                saved_size = str(self.settings.saved_art_size)
+                cover_path = os.path.join(dirn, "cover.jpg")
+                
+                if embed_size == saved_size and not getattr(self, 'is_playlist', False) and not self.settings.no_cover and os.path.exists(cover_path):
+                    shutil.copy(cover_path, embed_path)
+                else:
+                    _get_extra(track_meta["album"]["image"]["large"], dirn, extra=EMB_COVER_NAME,
+                               art_size=self.settings.embedded_art_size)
             else:
                 logger.info(f"{OFF}Skipping embedded art")
                 
@@ -462,7 +467,6 @@ class Download:
             
             _clean_embed_art(dirn, self.settings)
             
-            # --- DATABASE UPGRADE: Inject artist and album metadata ---
             db_artist = track_attr.get("artist", "Unknown")
             db_album = track_attr.get("album", "Unknown")
             
@@ -495,17 +499,14 @@ class Download:
             album_or_track_metadata.get("album", {}) if is_track else album_or_track_metadata
         )
 
-        # --- FIX MARROBHD & SYNC-PLAYLIST: CLEAN PLAYLIST NAMING ---
         legacy_flag = getattr(self.settings, 'legacy_charmap', False) if hasattr(self, 'settings') else False
         
         if getattr(self, 'is_playlist', False):
-            # Forza un nome file pulito senza numero traccia per le playlist
             clean_playlist_format = "{artist} - {track_title}"
             formatted_path = sanitize_filename(clean_filename(clean_playlist_format.format(**filename_attr), legacy_charmap=legacy_flag), replacement_text="_")
         elif multiple and self.settings.multiple_disc_one_dir:
             formatted_path = sanitize_filename(clean_filename(self.settings.multiple_disc_track_format.format(**filename_attr), legacy_charmap=legacy_flag), replacement_text="_")
         else:
-            # FIX MULTI-DISC PATHING: Includiamo la cartella CD nel percorso finale se ci sono più dischi
             base_formatted = sanitize_filename(clean_filename(self.track_format.format(**filename_attr), legacy_charmap=legacy_flag), replacement_text="_")
             total_discs = album_or_track_metadata.get('media_count', 1)
             if multiple and total_discs > 1:
@@ -515,7 +516,6 @@ class Download:
                 formatted_path = os.path.join(disc_folder, base_formatted)
             else:
                 formatted_path = base_formatted
-        # -----------------------------------------------------------
             
         max_len = 180
         if len(formatted_path) > max_len:
@@ -763,28 +763,21 @@ class Download:
         }
 
     def _get_format(self, item_dict, is_track_id=False, track_url_dict=None):
-        # Aggiungi questa protezione anti-crash SOLO per le release complete (Album/EP)
         if not is_track_id:
             if "tracks" not in item_dict or not item_dict["tracks"].get("items"):
                 from qobuz_dl.exceptions import NonStreamable
                 raise NonStreamable("This release has no tracks available (possibly region-locked or removed)")
 
-        # FIX: Applica la logica corretta a seconda se è una traccia singola o un album
         track_dict = item_dict if is_track_id else item_dict["tracks"]["items"][0]
-        
-        # INIZIALIZZAZIONE MANCANTE: Di default la qualità è rispettata!
         quality_met = True
         
         try:
-                     
-            # FIX PRINCIPALE: Inizializziamo sempre una variabile interna
             new_track_dict = (
                 self.client.get_track_url(track_dict["id"], fmt_id=self.quality)
                 if not track_url_dict
                 else track_url_dict
             )
             
-            # Se la chiamata API non ha restituito un dizionario valido (es. None), forziamo l'eccezione
             if not new_track_dict:
                  raise KeyError("No URL dict returned by API")
 
@@ -796,8 +789,6 @@ class Download:
             return ("FLAC", quality_met, new_track_dict["bit_depth"], new_track_dict["sampling_rate"])
             
         except (KeyError, requests.exceptions.HTTPError, Exception):
-            # In caso di errore (geoblocco, traccia non disponibile, ecc.), restituiamo i valori None
-            # in modo che il downloader "salti" la traccia senza mandare in crash l'intero loop.
             return ("Unknown", quality_met, None, None)
 
     def _determine_formats(self, album_meta, album_attr, tracks_meta, track_attr, is_track, file_format, settings: QobuzDLSettings):
@@ -811,8 +802,6 @@ class Download:
         media_count = album_meta.get("media_count", 1)
         is_multiple = True if media_count > 1 else False
         extension = ".flac" if file_format.lower() == "flac" else ".mp3"
-        
-        # --- NEW: Retrieve legacy charmap flag ---
         legacy_flag = getattr(settings, 'legacy_charmap', False) if settings else False
 
         for folder_fmt, track_fmt, multi_disc_fmt in format_combinations:
@@ -839,12 +828,7 @@ class Download:
                         
                         track_path = sanitize_filename(clean_filename(track_fmt.format(**filename_attr), legacy_charmap=legacy_flag), replacement_text="_")
 
-                    # --- FIX: REMOVED OBSOLETE LENGTH CHECK ---
-                    # We no longer invalidate the user's custom format if the path is too long.
-                    # String truncation is now safely handled downstream in _download_and_tag.
-
             except (KeyError, ValueError):
-                # Fallback to the next format ONLY if there is a missing tag/variable in the metadata
                 valid_combination = False
                 continue
 
@@ -1067,7 +1051,6 @@ def _get_title(item_dict):
         item_title = f"{item_title} ({version})" if version.lower() not in item_title.lower() else item_title
     return item_title
 
-
 def _get_extra(item, dirn, extra="cover.jpg", art_size=None, og_quality=False):
     if abort_event.is_set(): return
     extra_file = os.path.join(dirn, extra)
@@ -1198,7 +1181,6 @@ def tqdm_download_segments(track_url_dict, fname, track_name, is_parallel=False)
             try: os.remove(tmp_fname)
             except OSError: pass
 
-
 def _get_qobuz_segment_uuid(segment_data):
     pos = 0
     while pos + 24 <= len(segment_data):
@@ -1209,7 +1191,6 @@ def _get_qobuz_segment_uuid(segment_data):
             return bytes(segment_data[pos + 8 : pos + 24])
         pos += size
     return None
-
 
 def _decrypt_qobuz_segment(segment_data, raw_key, segment_uuid):
     if segment_uuid is None: return bytes(segment_data)
@@ -1254,7 +1235,6 @@ def _download_goodies(album_meta, dirn):
             _get_extra(goody.get("url"), dirn, extra=goody_name)
     except Exception as e:
         logger.error(f"{RED}Error downloading goodies: {e}", exc_info=True)
-
 
 def _clean_embed_art(dirn, settings=None):
     embed_file = os.path.join(dirn, EMB_COVER_NAME)
