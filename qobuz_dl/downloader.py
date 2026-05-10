@@ -39,7 +39,7 @@ def safe_print(*args, **kwargs):
         end = kwargs.get('end', '\n')
         tqdm.write(text, end=end)
 
-# --- FUNÇÃO PARA LER DIMENSÕES DA CAPA (ADICIONADA) ---
+# --- FUNÇÃO PARA LER DIMENSÕES DA CAPA ---
 def get_jpeg_dimensions(filepath):
     """Lê os metadados do cabeçalho JPEG para descobrir a resolução de forma nativa"""
     try:
@@ -56,15 +56,10 @@ def get_jpeg_dimensions(filepath):
     except Exception:
         pass
     return None, None
-# ------------------------------------------------------
+# -----------------------------------------
 
 # --- FIX ISSUE #216: Normalize Release Type ---
 def format_release_type(release_type: str) -> str:
-    """
-    Normalizes the release type from Qobuz APIs.
-    Converts 'ep' to 'EP', 'single' to 'Single', 'album' to 'Album', etc.
-    Returns 'Unknown' as a robust fallback if data is missing.
-    """
     if not release_type:
         return "Unknown"
     
@@ -84,7 +79,6 @@ def process_folder_format_with_subdirs(folder_format, attr_dict, path=None, lega
                 formatted_part = part.format(**attr_dict)
                 cleaned_part = sanitize_filepath(clean_filename(formatted_part, legacy_charmap=legacy_charmap), replacement_text="_")
                 
-                # --- FIX: SMART TRUNCATION FOR ALBUM FOLDER ---
                 if cleaned_part and len(cleaned_part) > 120:
                     start_f = cleaned_part[:60].rstrip(' ."-_\'')
                     end_f = cleaned_part[-50:].lstrip(' ."-_\'')
@@ -288,22 +282,24 @@ class Download:
         try:
             self._generate_tracklist(album_meta, dirn, album_title, file_format, bit_depth, sampling_rate)
 
+            # --- SALVA O COVER.JPG NA PASTA DO ÁLBUM ---
             if self.settings.no_cover:
                 logger.info(f"{OFF}Skipping cover")
             else:
+                # Este cover.jpg NUNCA é apagado pelo script. Fica na pasta.
                 _get_extra(album_meta["image"]["large"], dirn, art_size=self.settings.saved_art_size)
 
+            # --- BAIXA TEMPORARIAMENTE O EMBED_COVER.JPG EM MAX QUALITY ---
             if self.settings.embed_art:
-                # OTIMIZAÇÃO: Cópia local em vez de baixar 2 vezes
-                embed_size = str(self.settings.embedded_art_size)
-                saved_size = str(self.settings.saved_art_size)
-                cover_path = os.path.join(dirn, "cover.jpg")
                 embed_path = os.path.join(dirn, EMB_COVER_NAME)
+                if os.path.exists(embed_path):
+                    try:
+                        os.remove(embed_path)
+                    except OSError:
+                        pass
                 
-                if embed_size == saved_size and not self.settings.no_cover and os.path.exists(cover_path):
-                    shutil.copy(cover_path, embed_path)
-                else:
-                    _get_extra(album_meta["image"]["large"], dirn, extra=EMB_COVER_NAME, art_size="org")
+                # Sempre baixa a qualidade máxima original (org) APENAS para uso no embed
+                _get_extra(album_meta["image"]["large"], dirn, extra=EMB_COVER_NAME, art_size="org")
 
             if "goodies" in album_meta:
                 _download_goodies(album_meta, dirn)
@@ -364,6 +360,7 @@ class Download:
                     safe_print(f"\n{RED}[!] CTRL+C Intercepted: Securing files and folders...{OFF}")
                     
             if not aborted_by_user:
+                # Aqui ele limpa APENAS o embed_cover.jpg, e deixa o seu cover.jpg oficial intocado
                 _clean_embed_art(dirn, self.settings)
                 if getattr(self, 'fetch_lyrics', False) and not self.no_credits:
                     self._append_lyrics_to_booklet(dirn, album_title)
@@ -443,13 +440,16 @@ class Download:
             dirn = process_folder_format_with_subdirs(self.folder_format, track_attr, self.path, legacy_charmap=legacy_flag)
             os.makedirs(dirn, exist_ok=True)
 
+            # --- SALVANDO A CAPA NA PASTA DO SINGLE (E PULANDO EM PLAYLISTS) ---
             if getattr(self, 'is_playlist', False):
-                logger.info(f"{OFF}Baixando capas originais para embedar no FLAC da playlist (sem salvar arquivo extra)...")
+                logger.info(f"{OFF}Playlist: Capa nao ficara solta na pasta, apenas embedada no audio.")
             elif self.settings.no_cover:
                 logger.info(f"{OFF}Skipping cover")
             else:
-                _get_extra(track_meta["album"]["image"]["large"], dirn, art_size="org")
+                # Salva o arquivo cover.jpg na pasta do Single que NUNCA é apagado.
+                _get_extra(track_meta["album"]["image"]["large"], dirn, art_size=self.settings.saved_art_size)
 
+            # --- BAIXA TEMPORARIAMENTE O EMBED_COVER.JPG EM MAX QUALITY ---
             if self.settings.embed_art or getattr(self, 'is_playlist', False):
                 embed_path = os.path.join(dirn, EMB_COVER_NAME)
                 if os.path.exists(embed_path):
@@ -458,14 +458,8 @@ class Download:
                     except OSError:
                         pass
                 
-                cover_path = os.path.join(dirn, "cover.jpg")
-                
-                if os.path.exists(cover_path) and not getattr(self, 'is_playlist', False):
-                    shutil.copy(cover_path, embed_path)
-                else:
-                    # FORÇA art_size="org" para garantir o embed em qualidade máxima
-                    _get_extra(track_meta["album"]["image"]["large"], dirn, extra=EMB_COVER_NAME,
-                               art_size="org")
+                # Sempre baixa a qualidade máxima original (org) APENAS para uso no embed
+                _get_extra(track_meta["album"]["image"]["large"], dirn, extra=EMB_COVER_NAME, art_size="org")
             else:
                 logger.info(f"{OFF}Skipping embedded art")
                 
@@ -483,6 +477,7 @@ class Download:
                 is_parallel=False
             )
             
+            # Aqui ele limpa APENAS o embed_cover.jpg, e deixa o seu cover.jpg oficial intocado
             _clean_embed_art(dirn, self.settings)
             
             db_artist = track_attr.get("artist", "Unknown")
@@ -508,6 +503,10 @@ class Download:
         multiple=None,
         is_parallel=False
     ) -> bool:
+        
+        # SALVA A PASTA BASE ANTES DE QUALQUER MODIFICAÇÃO (CRUCIAL PARA ÁLBUNS MULTI-DISCO)
+        base_dir = root_dir 
+        
         extension = ".mp3" if is_mp3 else ".flac"
 
         track_artist = _safe_get(track_metadata, "performer", "name")
@@ -541,7 +540,7 @@ class Download:
             end_part = formatted_path[-60:].lstrip(' ."-_\'')
             formatted_path = f"{start_part}...{end_part}"
             
-        final_file = os.path.join(root_dir, formatted_path) + extension
+        final_file = os.path.join(base_dir, formatted_path) + extension
 
         if os.path.exists(final_file):
             safe_print(f"{CYAN}[*] Skipping: {os.path.basename(final_file)} (Already exists){OFF}")
@@ -563,7 +562,7 @@ class Download:
                 d_num = int(multiple) if not isinstance(multiple, bool) else 1
             except (ValueError, TypeError): 
                 d_num = 1
-            root_dir = os.path.join(root_dir, f"{self.settings.multiple_disc_prefix} {d_num:02}")
+            root_dir = os.path.join(base_dir, f"{self.settings.multiple_disc_prefix} {d_num:02}")
         
         if not os.path.exists(root_dir):
             os.makedirs(root_dir, exist_ok=True)
@@ -640,28 +639,28 @@ class Download:
         except Exception as e:
             safe_print(f"{RED}[!] Error tagging: {e}{OFF}")
 
-        # --- LÊ A IMAGEM TEMPORÁRIA E ADICIONA INFO TÉCNICA NA TAG COMMENT (ADICIONADO) ---
-        if getattr(self, 'is_playlist', False):
-            embed_file_path = os.path.join(root_dir, EMB_COVER_NAME)
-            if os.path.exists(embed_file_path):
-                try:
-                    w, h = get_jpeg_dimensions(embed_file_path)
-                    size_kb = os.path.getsize(embed_file_path) / 1024
-                    dim_str = f"{w}x{h}px, " if w and h else ""
-                    tech_info = f"Cover Art: Original MAX Quality ({dim_str}{size_kb:.1f} KB)"
+        # --- LÊ A IMAGEM TEMPORÁRIA E ADICIONA INFO TÉCNICA NA TAG COMMENT (UNIVERSAL) ---
+        # Agora usando a base_dir garantimos que ele acha a imagem mesmo em Álbuns com Múltiplos Discos
+        embed_file_path = os.path.join(base_dir, EMB_COVER_NAME)
+        if os.path.exists(embed_file_path):
+            try:
+                w, h = get_jpeg_dimensions(embed_file_path)
+                size_kb = os.path.getsize(embed_file_path) / 1024
+                dim_str = f"{w}x{h}px, " if w and h else ""
+                tech_info = f"Cover Art: Original MAX Quality ({dim_str}{size_kb:.1f} KB)"
 
-                    if is_mp3:
-                        from mutagen.id3 import ID3, COMM
-                        audio = ID3(final_file)
-                        audio.add(COMM(encoding=3, lang='eng', desc='', text=[tech_info]))
-                        audio.save()
-                    else:
-                        from mutagen.flac import FLAC
-                        audio = FLAC(final_file)
-                        audio["comment"] = tech_info
-                        audio.save()
-                except Exception as e:
-                    pass
+                if is_mp3:
+                    from mutagen.id3 import ID3, COMM
+                    audio = ID3(final_file)
+                    audio.add(COMM(encoding=3, lang='eng', desc='', text=[tech_info]))
+                    audio.save()
+                else:
+                    from mutagen.flac import FLAC
+                    audio = FLAC(final_file)
+                    audio["comment"] = tech_info
+                    audio.save()
+            except Exception as e:
+                pass
         # ----------------------------------------------------------------------------------
 
         if getattr(self, 'fetch_lyrics', False) and hasattr(self, 'lyrics_engine') and not abort_event.is_set():
