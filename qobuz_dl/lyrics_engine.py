@@ -25,7 +25,7 @@ class LyricsEngine:
 
     def _translate_synced_lyrics(self, synced_lyrics):
         """Lê o LRC original e cria uma versão bilíngue na mesma linha para o Neutron"""
-        print(f"    🌍 Traduzindo letras para Português...")
+        print(f"    🌍 Verificando idioma e traduzindo letras...")
         bilingual_lrc = []
         
         for line in synced_lyrics.splitlines():
@@ -38,8 +38,16 @@ class LyricsEngine:
                 if text:
                     try:
                         translated_text = self.translator.translate(text)
-                        # Opção B: Inglês e Português na mesma linha
-                        bilingual_lrc.append(f"{timestamp}{text}  |  {translated_text}")
+                        
+                        # --- VERIFICAÇÃO DE IDIOMA ---
+                        # Se a tradução for idêntica ao original (ignorando maiúsculas/minúsculas),
+                        # a música já é em português ou é um vocal sem tradução (ex: "Ah", "Yeah").
+                        if text.lower() == translated_text.lower():
+                            bilingual_lrc.append(line)
+                        else:
+                            # Opção B: Inglês e Português na mesma linha
+                            bilingual_lrc.append(f"{timestamp}{text}  |  {translated_text}")
+                            
                     except Exception:
                         # Se a tradução falhar por falha de rede, mantém a original
                         bilingual_lrc.append(line)
