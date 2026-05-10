@@ -1,8 +1,10 @@
 import os
+import re
 import requests
 import mutagen
 from mutagen.id3 import ID3, USLT, ID3NoHeaderError
 from mutagen.flac import FLAC
+from deep_translator import GoogleTranslator
 
 # Import lyricsgenius only if the user has configured the token
 try:
@@ -14,9 +16,39 @@ class LyricsEngine:
     def __init__(self, genius_token=None):
         self.genius_token = genius_token
         self.genius = None
+        # Inicializa o tradutor automático para o Português
+        self.translator = GoogleTranslator(source='auto', target='pt')
+        
         if self.genius_token and lyricsgenius:
             # Initialize Genius in silent mode (verbose=False)
             self.genius = lyricsgenius.Genius(self.genius_token, verbose=False, remove_section_headers=True)
+
+    def _translate_synced_lyrics(self, synced_lyrics):
+        """Lê o LRC original e cria uma versão bilíngue na mesma linha para o Neutron"""
+        print(f"    🌍 Traduzindo letras para Português...")
+        bilingual_lrc = []
+        
+        for line in synced_lyrics.splitlines():
+            # Tenta encontrar o padrão do timestamp: [00:12.34] Letra
+            match = re.match(r'(\[\d{2}:\d{2}\.\d{2,3}\])(.*)', line)
+            if match:
+                timestamp = match.group(1)
+                text = match.group(2).strip()
+                
+                if text:
+                    try:
+                        translated_text = self.translator.translate(text)
+                        # Opção B: Inglês e Português na mesma linha
+                        bilingual_lrc.append(f"{timestamp}{text}  |  {translated_text}")
+                    except Exception:
+                        # Se a tradução falhar por falha de rede, mantém a original
+                        bilingual_lrc.append(line)
+                else:
+                    bilingual_lrc.append(line)
+            else:
+                bilingual_lrc.append(line)
+                
+        return "\n".join(bilingual_lrc)
 
     def fetch_and_inject(self, file_path, artist, track, album, save_lrc=True):
         """Waterfall engine: first try LRCLIB (for LRC format), then Genius."""
@@ -44,14 +76,16 @@ class LyricsEngine:
                 plain_lyrics = data.get("plainLyrics")
                 
                 if synced_lyrics:
-                    # CORRECT INJECTION: We pass the text with timestamps!
-                    self._inject_metadata(file_path, synced_lyrics)
+                    # Traduz o arquivo LRC antes da injeção
+                    bilingual_synced = self._translate_synced_lyrics(synced_lyrics)
+                    
+                    self._inject_metadata(file_path, bilingual_synced)
                     
                     if save_lrc:
-                        self._save_lrc_file(file_path, synced_lyrics)
-                        print(f"    ✅ Synchronized lyrics injected and saved as .lrc!")
+                        self._save_lrc_file(file_path, bilingual_synced)
+                        print(f"    ✅ Synchronized and translated lyrics saved as .lrc!")
                     else:
-                        print(f"    ✅ Synchronized lyrics injected into metadata!")
+                        print(f"    ✅ Synchronized and translated lyrics injected into metadata!")
                     return
                 elif plain_lyrics:
                     # If no synchronized version exists, fallback to the static one
