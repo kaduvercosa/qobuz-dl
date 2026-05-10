@@ -1,4 +1,4 @@
-from .lyrics_engine import LyricsEngine
+from qobuz_dl.lyrics_engine import LyricsEngine
 import logging
 import os
 import sys
@@ -286,7 +286,6 @@ class Download:
             if self.settings.no_cover:
                 logger.info(f"{OFF}Skipping cover")
             else:
-                # Este cover.jpg NUNCA é apagado pelo script. Fica na pasta.
                 _get_extra(album_meta["image"]["large"], dirn, art_size=self.settings.saved_art_size)
 
             # --- BAIXA TEMPORARIAMENTE O EMBED_COVER.JPG EM MAX QUALITY ---
@@ -297,8 +296,6 @@ class Download:
                         os.remove(embed_path)
                     except OSError:
                         pass
-                
-                # Sempre baixa a qualidade máxima original (org) APENAS para uso no embed
                 _get_extra(album_meta["image"]["large"], dirn, extra=EMB_COVER_NAME, art_size="org")
 
             if "goodies" in album_meta:
@@ -360,7 +357,6 @@ class Download:
                     safe_print(f"\n{RED}[!] CTRL+C Intercepted: Securing files and folders...{OFF}")
                     
             if not aborted_by_user:
-                # Aqui ele limpa APENAS o embed_cover.jpg, e deixa o seu cover.jpg oficial intocado
                 _clean_embed_art(dirn, self.settings)
                 if getattr(self, 'fetch_lyrics', False) and not self.no_credits:
                     self._append_lyrics_to_booklet(dirn, album_title)
@@ -440,16 +436,13 @@ class Download:
             dirn = process_folder_format_with_subdirs(self.folder_format, track_attr, self.path, legacy_charmap=legacy_flag)
             os.makedirs(dirn, exist_ok=True)
 
-            # --- SALVANDO A CAPA NA PASTA DO SINGLE (E PULANDO EM PLAYLISTS) ---
             if getattr(self, 'is_playlist', False):
                 logger.info(f"{OFF}Playlist: Capa nao ficara solta na pasta, apenas embedada no audio.")
             elif self.settings.no_cover:
                 logger.info(f"{OFF}Skipping cover")
             else:
-                # Salva o arquivo cover.jpg na pasta do Single que NUNCA é apagado.
                 _get_extra(track_meta["album"]["image"]["large"], dirn, art_size=self.settings.saved_art_size)
 
-            # --- BAIXA TEMPORARIAMENTE O EMBED_COVER.JPG EM MAX QUALITY ---
             if self.settings.embed_art or getattr(self, 'is_playlist', False):
                 embed_path = os.path.join(dirn, EMB_COVER_NAME)
                 if os.path.exists(embed_path):
@@ -457,8 +450,6 @@ class Download:
                         os.remove(embed_path)
                     except OSError:
                         pass
-                
-                # Sempre baixa a qualidade máxima original (org) APENAS para uso no embed
                 _get_extra(track_meta["album"]["image"]["large"], dirn, extra=EMB_COVER_NAME, art_size="org")
             else:
                 logger.info(f"{OFF}Skipping embedded art")
@@ -477,7 +468,6 @@ class Download:
                 is_parallel=False
             )
             
-            # Aqui ele limpa APENAS o embed_cover.jpg, e deixa o seu cover.jpg oficial intocado
             _clean_embed_art(dirn, self.settings)
             
             db_artist = track_attr.get("artist", "Unknown")
@@ -567,7 +557,11 @@ class Download:
         if not os.path.exists(root_dir):
             os.makedirs(root_dir, exist_ok=True)
 
-        filename = os.path.join(root_dir, f".{tmp_count:02}.tmp")
+        # --- FIX CONDICAO DE CORRIDA: Usa o ID unico do Qobuz em vez de '.01.tmp' ---
+        track_id = track_metadata.get("id", f"trk_{tmp_count}")
+        filename = os.path.join(root_dir, f".{track_id}.tmp")
+        # ----------------------------------------------------------------------------
+
         track_title = track_metadata.get("title")
         track_no = str(track_metadata.get('track_number', 0)).zfill(2)
         desc = f"{track_no}. {track_title}"
@@ -631,16 +625,26 @@ class Download:
         extension = ".mp3" if is_mp3 else ".flac"
 
         tag_function = metadata.tag_mp3 if is_mp3 else metadata.tag_flac
+        
+        # --- DEGRADACAO GRACIOSA: Bloco isolado de tagging com fallback no finally ---
         try:
             tag_function(
                 filename, root_dir, final_file, track_metadata,
                 album_or_track_metadata, is_track, self.embed_art, settings=self.settings,
             )
         except Exception as e:
-            safe_print(f"{RED}[!] Error tagging: {e}{OFF}")
+            safe_print(f"{YELLOW}[!] Falha ao aplicar tags ou capa em {track_title}: {e}.{OFF}")
+            safe_print(f"{YELLOW}[*] Salvando arquivo de audio puro...{OFF}")
+        finally:
+            # Garante que, independente do que falhou nas imagens/tags, o audio sera salvo!
+            if os.path.exists(filename) and not os.path.exists(final_file):
+                try:
+                    shutil.move(filename, final_file)
+                except Exception as ex:
+                    safe_print(f"{RED}[!] Erro critico ao salvar arquivo final: {ex}{OFF}")
+        # -----------------------------------------------------------------------------
 
-        # --- LÊ A IMAGEM TEMPORÁRIA E ADICIONA INFO TÉCNICA NA TAG COMMENT (UNIVERSAL) ---
-        # Agora usando a base_dir garantimos que ele acha a imagem mesmo em Álbuns com Múltiplos Discos
+        # --- LÊ A IMAGEM TEMPORÁRIA E ADICIONA INFO TÉCNICA NA TAG COMMENT ---
         embed_file_path = os.path.join(base_dir, EMB_COVER_NAME)
         if os.path.exists(embed_file_path):
             try:
@@ -661,23 +665,28 @@ class Download:
                     audio.save()
             except Exception as e:
                 pass
-        # ----------------------------------------------------------------------------------
+        # ----------------------------------------------------------------------
 
+        # --- DEGRADACAO GRACIOSA: Bloco isolado para injeção de Lyrics ---
         if getattr(self, 'fetch_lyrics', False) and hasattr(self, 'lyrics_engine') and not abort_event.is_set():
-            album_artist = _safe_get(track_metadata, "album", "artist", "name")
-            performer_name = _safe_get(track_metadata, "performer", "name") or _safe_get(track_metadata, "artist", "name", default="Unknown")
-            search_artist = performer_name if album_artist in [None, "Various Artists"] else album_artist
+            try:
+                album_artist = _safe_get(track_metadata, "album", "artist", "name")
+                performer_name = _safe_get(track_metadata, "performer", "name") or _safe_get(track_metadata, "artist", "name", default="Unknown")
+                search_artist = performer_name if album_artist in [None, "Various Artists"] else album_artist
 
-            search_album = _safe_get(track_metadata, "album", "title", default="")
-            
-            with print_lock:                           
-                self.lyrics_engine.fetch_and_inject(
-                    file_path=final_file, 
-                    artist=search_artist, 
-                    track=track_title, 
-                    album=search_album,
-                    save_lrc=not self.no_lrc_files
-                )
+                search_album = _safe_get(track_metadata, "album", "title", default="")
+                
+                with print_lock:                           
+                    self.lyrics_engine.fetch_and_inject(
+                        file_path=final_file, 
+                        artist=search_artist, 
+                        track=track_title, 
+                        album=search_album,
+                        save_lrc=not self.no_lrc_files
+                    )
+            except Exception as e:
+                safe_print(f"{YELLOW}[!] Erro no motor de letras para {track_title}: {e}{OFF}")
+        # -----------------------------------------------------------------
 
         delay_time = getattr(self.settings, 'delay', 0)
         if delay_time == 0 and '--delay' in sys.argv:
