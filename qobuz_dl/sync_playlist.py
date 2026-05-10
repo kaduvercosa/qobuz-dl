@@ -58,6 +58,23 @@ def _sanitize_dirname(name):
     for char in invalid_chars:
         name = name.replace(char, '_')
     return name.strip()
+    
+def _clean_empty_dirs(base_directory,exclude_dirs=None):
+    exclude = set(exclude_dirs or [])
+    exclude.add("_Playlists")
+    
+    for root, dirs, files in os.walk(base_directory, topdown=False):
+        for d in dirs:
+            dir_path = os.path.join(root, d)
+            try:
+                if d in exclude:
+                    continue
+                if not os.listdir(dir_path):
+                    os.rmdir(dir_path)
+                    rel = os.path.relpath(dir_path, base_directory)
+                    logger.info(f"  {RED}[-] Removed empty dir: {rel}{OFF}")
+            except OSError:
+                pass
 
 def sync_playlist(qobuz_dl, url, folder, auto_confirm=False):
     from qobuz_dl.utils import get_url_info, make_m3u
