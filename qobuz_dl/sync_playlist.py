@@ -179,6 +179,8 @@ def sync_playlist(qobuz_dl, url, folder, auto_confirm=False):
                 logger.info(f"  {RED}[-] Deleted: {os.path.basename(lrc_path)}{OFF}")
         except OSError as e:
             logger.error(f"  {RED}[!] Failed to delete {fpath}: {e}{OFF}")
+    
+    _clean_empty_dirs(target_folder, exclude_dirs={"_Playlists"})
 
     original_folder_format = qobuz_dl.folder_format
     original_multi_disc = qobuz_dl.settings.multiple_disc_one_dir
