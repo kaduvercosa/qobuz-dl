@@ -64,16 +64,16 @@ def fetch_rss_releases(rss_url):
 
 def run_radar():
     """Main execution function for the radar command."""
-    appdata_path = os.getenv('APPDATA')
-    config_path = os.path.join(appdata_path, 'qobuz-dl', 'config.ini')
+    
+    # Verifica se é Windows(nt) ou UNix/Linux/Mac(Posix)
+    if os.name == "nt":
+        base_path = os.getenv('APPDATA')
+    else:
+        base_path = os.path.join(os.environ["HOME"], ".config")
+        
+    config_path = os.path.join(base_path, 'qobuz-dl', 'config.ini')
     
     config = configparser.ConfigParser()
-    config.read(config_path)
-    if not config.sections():
-        print(f"{RED}[!] config.ini file not found at {config_path}{OFF}")
-        return
-        
-    section = config.sections()[0]
     
     # 1. RSS Link Management
     rss_url = get_or_save_rss_link(config_path, config, section)
