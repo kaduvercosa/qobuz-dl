@@ -9,6 +9,7 @@ import re
 import threading
 import signal
 import shutil
+import struct
 from typing import Tuple
 import concurrent.futures
 from concurrent.futures import ThreadPoolExecutor
@@ -37,6 +38,25 @@ def safe_print(*args, **kwargs):
         text = " ".join(map(str, args))
         end = kwargs.get('end', '\n')
         tqdm.write(text, end=end)
+
+# --- FUNÇÃO PARA LER DIMENSÕES DA CAPA (ADICIONADA) ---
+def get_jpeg_dimensions(filepath):
+    """Lê os metadados do cabeçalho JPEG para descobrir a resolução de forma nativa"""
+    try:
+        with open(filepath, 'rb') as f:
+            data = f.read(1024 * 50)
+            if data.startswith(b'\xff\xd8'):
+                pos = 2
+                while pos < len(data) - 4:
+                    marker, length = struct.unpack('>HH', data[pos:pos+4])
+                    if 0xFFC0 <= marker <= 0xFFC3:
+                        h, w = struct.unpack('>HH', data[pos+5:pos+9])
+                        return w, h
+                    pos += length + 2
+    except Exception:
+        pass
+    return None, None
+# ------------------------------------------------------
 
 # --- FIX ISSUE #216: Normalize Release Type ---
 def format_release_type(release_type: str) -> str:
@@ -424,7 +444,7 @@ class Download:
             os.makedirs(dirn, exist_ok=True)
 
             if getattr(self, 'is_playlist', False):
-                logger.info(f"{OFF}Baixando capas individuais em qualidade máxima para a playlist...")
+                logger.info(f"{OFF}Baixando capas originais para embedar no FLAC da playlist (sem salvar arquivo extra)...")
             elif self.settings.no_cover:
                 logger.info(f"{OFF}Skipping cover")
             else:
@@ -620,16 +640,29 @@ class Download:
         except Exception as e:
             safe_print(f"{RED}[!] Error tagging: {e}{OFF}")
 
-        # --- SALVA A CAPA INDIVIDUAL DA PLAYLIST COM O MESMO NOME DA MÚSICA ---
+        # --- LÊ A IMAGEM TEMPORÁRIA E ADICIONA INFO TÉCNICA NA TAG COMMENT (ADICIONADO) ---
         if getattr(self, 'is_playlist', False):
             embed_file_path = os.path.join(root_dir, EMB_COVER_NAME)
-            cover_save_path = os.path.join(root_dir, formatted_path) + ".jpg"
             if os.path.exists(embed_file_path):
                 try:
-                    shutil.copy(embed_file_path, cover_save_path)
+                    w, h = get_jpeg_dimensions(embed_file_path)
+                    size_kb = os.path.getsize(embed_file_path) / 1024
+                    dim_str = f"{w}x{h}px, " if w and h else ""
+                    tech_info = f"Cover Art: Original MAX Quality ({dim_str}{size_kb:.1f} KB)"
+
+                    if is_mp3:
+                        from mutagen.id3 import ID3, COMM
+                        audio = ID3(final_file)
+                        audio.add(COMM(encoding=3, lang='eng', desc='', text=[tech_info]))
+                        audio.save()
+                    else:
+                        from mutagen.flac import FLAC
+                        audio = FLAC(final_file)
+                        audio["comment"] = tech_info
+                        audio.save()
                 except Exception as e:
                     pass
-        # ----------------------------------------------------------------------
+        # ----------------------------------------------------------------------------------
 
         if getattr(self, 'fetch_lyrics', False) and hasattr(self, 'lyrics_engine') and not abort_event.is_set():
             album_artist = _safe_get(track_metadata, "album", "artist", "name")
