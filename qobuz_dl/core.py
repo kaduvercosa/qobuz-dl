@@ -2,6 +2,7 @@ import logging
 import os
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 import requests
 from pathvalidate import sanitize_filename
@@ -202,31 +203,24 @@ class QobuzDL:
                     batch = chunk.get(type_dict["iterable_key"], {}).get("items", [])
                     items.extend(batch)
 
-            # --- NEW: INTERACTIVE RELEASE TYPE FILTER (LAZY STATIC MENU) ---
+            # --- INTERACTIVE RELEASE TYPE FILTER (LAZY STATIC MENU) ---
             if getattr(self, '_is_interactive_session', False) and url_type == "artist":
                 import pick
-                
-                # 1. Static options for exact Lazy Evaluation
                 options = ["Album", "EP", "Single", "Live", "Compilation"]
-                
                 title_text = (
                     f"Found {len(items)} total releases for {content_name}.\n"
                     "Filter by release type [Use arrows to move, Space to select, Enter to confirm]:\n"
                     "(The exact count per category will be resolved silently during download)"
                 )
-                
-                # Trigger the multiselect UI
                 selected_types_raw = pick.pick(
                     options, 
                     title_text, 
                     multiselect=True, 
                     min_selection_count=1
                 )
-                
                 if selected_types_raw:
                     self.allowed_release_types = [opt[0].lower() for opt in selected_types_raw]
                 else:
-                    # User cancelled
                     self.allowed_release_types = []
                     items = []
             else:
@@ -241,99 +235,123 @@ class QobuzDL:
             else:
                 logger.info(f"{YELLOW}{len(items)} downloads in queue{OFF}")
             
-            # --- START PLAYLIST LOGIC (Flat Folder) ---
             is_playlist = (url_type == "playlist")
+            
+            # =================================================================
+            # LOGIC FOR PLAYLISTS (PARALLEL)
+            # =================================================================
             if is_playlist:
                 original_folder_format = self.folder_format
                 original_multi_disc_setting = self.settings.multiple_disc_one_dir
                 
                 self.folder_format = "."
                 self.settings.multiple_disc_one_dir = True
-            # ------------------------------------------------
-
-            # Use enumerate to get the track number in the playlist (1, 2, 3...)
-            for idx, item in enumerate(items, start=1):
                 
-                # --- NEW: ULTIMATE SMART RECONCILER (LAZY + HEURISTIC) ---
-                if getattr(self, 'allowed_release_types', None) and url_type == "artist":
-                    try:
-                        r_type = "unknown"
+                active_workers = int(getattr(self.settings, 'max_workers', 3))
+                logger.info(f"{CYAN}[*] Iniciando download paralelo da playlist ({active_workers} workers)...{OFF}")
+                
+                try:
+                    with ThreadPoolExecutor(max_workers=active_workers) as executor:
+                        futures = []
+                        for idx, item in enumerate(items, start=1):
+                            # Blacklist check for playlist tracks
+                            if getattr(self, 'blacklist_patterns', None):
+                                base_title = item.get("title") or item.get("name") or ""
+                                version_tag = item.get("version") or ""
+                                display_name = f"{base_title} ({version_tag})" if version_tag else base_title
+                                
+                                if any(pattern in display_name.lower() for pattern in self.blacklist_patterns):
+                                    logger.info(f"{YELLOW}[!] Skipped (Blacklisted): {display_name}{OFF}")
+                                    continue
+
+                            futures.append(
+                                executor.submit(
+                                    self.download_from_id,
+                                    item["id"],
+                                    False,
+                                    new_path,
+                                    is_playlist=True,
+                                    playlist_index=idx
+                                )
+                            )
                         
-                        # 1. Attempt to fetch official Qobuz tag
-                        full_meta = None
-                        if hasattr(self.client, "get_album_meta"):
-                            full_meta = self.client.get_album_meta(item["id"])
-                        elif hasattr(self.client, "get_album"):
-                            full_meta = self.client.get_album(item["id"])
+                        # Wait for all tracks in playlist to finish
+                        for future in futures:
+                            try:
+                                future.result()
+                            except Exception as e:
+                                logger.error(f"{RED}[!] Falha ao processar faixa da playlist: {e}{OFF}")
+                finally:
+                    # Restore settings
+                    self.folder_format = original_folder_format
+                    self.settings.multiple_disc_one_dir = original_multi_disc_setting
+
+                if not self.no_m3u_for_playlists:
+                    make_m3u(new_path)
+                    
+            # =================================================================
+            # LOGIC FOR ARTISTS/LABELS/ALBUMS (SEQUENTIAL - delegates parallel to downloader)
+            # =================================================================
+            else:
+                for idx, item in enumerate(items, start=1):
+                    # --- ULTIMATE SMART RECONCILER (LAZY + HEURISTIC) ---
+                    if getattr(self, 'allowed_release_types', None) and url_type == "artist":
+                        try:
+                            r_type = "unknown"
+                            full_meta = None
+                            if hasattr(self.client, "get_album_meta"):
+                                full_meta = self.client.get_album_meta(item["id"])
+                            elif hasattr(self.client, "get_album"):
+                                full_meta = self.client.get_album(item["id"])
+                                
+                            if full_meta:
+                                r_type = (full_meta.get("release_type") or full_meta.get("product_type") or "unknown").lower()
+                                
+                            base_title = str(item.get("title", "")).lower()
+                            version_tag = str(item.get("version", "")).lower()
+                            t_count = item.get("tracks_count", 0)
                             
-                        if full_meta:
-                            r_type = (full_meta.get("release_type") or full_meta.get("product_type") or "unknown").lower()
-                            
-                        # 2. Smart Reconciliation (Fixing Qobuz's bad data while protecting Pink Floyd)
-                        base_title = str(item.get("title", "")).lower()
-                        version_tag = str(item.get("version", "")).lower()
-                        t_count = item.get("tracks_count", 0)
-                        
-                        # Absolute keyword overrides (Human titles beat Qobuz database tags)
-                        if "live" in version_tag or "(live" in base_title or "- live" in base_title:
-                            r_type = "live"
-                        elif any(kw in base_title or kw in version_tag for kw in ["best of", "greatest hits", "anthology", "collection", "compilation"]):
-                            r_type = "compilation"
-                        elif " ep" in base_title or version_tag == "ep":
-                            r_type = "ep"
-                            
-                        # Track-count conflict resolution
-                        elif r_type == "single" and t_count >= 4:
-                            r_type = "ep"  # Fixes Belly's 4-track EPs tagged as Singles by Qobuz
-                        elif r_type == "ep" and 1 <= t_count <= 3:
-                            r_type = "single"
-                        elif r_type == "album" and 1 <= t_count <= 3:
-                            r_type = "single"
-                        # If Qobuz says "album" and tracks >= 4 (like Pink Floyd), we leave it alone!
-                        
-                        # Fallback for completely missing data
-                        elif r_type == "unknown":
-                            if 1 <= t_count <= 3:
-                                r_type = "single"
-                            elif 4 <= t_count <= 6:
+                            if "live" in version_tag or "(live" in base_title or "- live" in base_title:
+                                r_type = "live"
+                            elif any(kw in base_title or kw in version_tag for kw in ["best of", "greatest hits", "anthology", "collection", "compilation"]):
+                                r_type = "compilation"
+                            elif " ep" in base_title or version_tag == "ep":
                                 r_type = "ep"
-                            else:
-                                r_type = "album"
+                            elif r_type == "single" and t_count >= 4:
+                                r_type = "ep"
+                            elif r_type == "ep" and 1 <= t_count <= 3:
+                                r_type = "single"
+                            elif r_type == "album" and 1 <= t_count <= 3:
+                                r_type = "single"
+                            elif r_type == "unknown":
+                                if 1 <= t_count <= 3:
+                                    r_type = "single"
+                                elif 4 <= t_count <= 6:
+                                    r_type = "ep"
+                                else:
+                                    r_type = "album"
 
-                        # 3. Perform the silent skip check
-                        if r_type not in self.allowed_release_types:
+                            if r_type not in self.allowed_release_types:
+                                continue
+                        except Exception:
+                            pass
+                    # ---------------------------------------------------------    
+                    
+                    if getattr(self, 'blacklist_patterns', None):
+                        base_title = item.get("title") or item.get("name") or ""
+                        version_tag = item.get("version") or ""
+                        display_name = f"{base_title} ({version_tag})" if version_tag else base_title
+                        if any(pattern in display_name.lower() for pattern in self.blacklist_patterns):
+                            logger.info(f"{YELLOW}[!] Skipped (Blacklisted): {display_name}{OFF}")
                             continue
-                            
-                    except Exception:
-                        pass
-                # ---------------------------------------------------------    
-                
-                if getattr(self, 'blacklist_patterns', None):
-                    base_title = item.get("title") or item.get("name") or ""
-                    version_tag = item.get("version") or ""
-                    
-                    display_name = f"{base_title} ({version_tag})" if version_tag else base_title
-                    
-                    if any(pattern in display_name.lower() for pattern in self.blacklist_patterns):
-                        logger.info(f"{YELLOW}[!] Skipped (Blacklisted): {display_name}{OFF}")
-                        continue
 
-                self.download_from_id(
-                    item["id"],
-                    True if type_dict["iterable_key"] == "albums" else False,
-                    new_path,
-                    is_playlist=is_playlist,
-                    playlist_index=idx
-                )
-
-            # --- RESTORE SETTINGS ---
-            if is_playlist:
-                self.folder_format = original_folder_format
-                self.settings.multiple_disc_one_dir = original_multi_disc_setting
-            # -------------------------------
-
-            if url_type == "playlist" and not self.no_m3u_for_playlists:
-                make_m3u(new_path)
+                    self.download_from_id(
+                        item["id"],
+                        True if type_dict["iterable_key"] == "albums" else False,
+                        new_path,
+                        is_playlist=False,
+                        playlist_index=idx
+                    )
         else:
             self.download_from_id(item_id, type_dict["album"])
 
@@ -348,7 +366,6 @@ class QobuzDL:
             
             with open(txt_file, "w", encoding="utf-8") as f:
                 for line in lines:
-                    # Safely compare by stripping whitespaces to avoid mismatch bugs
                     if line.strip() == url_to_mark.strip():
                         f.write(f"{line.rstrip()} [DONE]\n")
                     else:
@@ -361,7 +378,6 @@ class QobuzDL:
             logger.info(f"{OFF}Nothing to download")
             return
         for url in urls:
-            # --- FIX QOBUZ NEW DOMAIN LINKS ---
             original_url = url
             url = url.replace("open.qobuz.com", "play.qobuz.com")
             
@@ -378,14 +394,11 @@ class QobuzDL:
         try:
             valid_urls = []
             with open(txt_file, "r", encoding="utf-8") as txt:
-                # Optimized memory usage: read line by line instead of readlines()
                 for line in txt:
                     line = line.strip()
-                    # Skip empty lines, comments, or already processed links
                     if not line or line.startswith("#") or "[DONE]" in line:
                         continue
                     
-                    # Validate if it's a Qobuz or Last.fm URL
                     if "last.fm" in line:
                         valid_urls.append(line)
                     else:
@@ -428,7 +441,6 @@ class QobuzDL:
         return results
 
     def search_by_type(self, query, item_type, limit=10, lucky=False, fav_subtype=None):
-        # Prevent crash if query is None (which happens when searching favorites)
         if item_type != "favorites" and (not query or len(query) < 3):
             logger.info(f"{RED}Your search query is too short or invalid")
             return
@@ -460,8 +472,8 @@ class QobuzDL:
             },
             "favorites": {
                 "func": self.client.get_favorites,
-                "album": True, # Depends on the subtype, defaults to True for pagination
-                "key": "favorites", # Placeholder, handled below
+                "album": True,
+                "key": "favorites",
                 "requires_extra": True,
             }
         }
@@ -469,22 +481,17 @@ class QobuzDL:
         try:
             mode_dict = possibles[item_type]
             
-            # --- NEW FAVORITES EXTRACTION LOGIC ---
             if item_type == "favorites":
-                # API call for favorites
                 results = mode_dict["func"](fav_type=fav_subtype, limit=limit)
                 iterable = results.get(fav_subtype, {}).get("items", [])
                 
-                # Adjust requires_extra based on the subtype for the minimalist table
                 if fav_subtype in ["artists", "playlists"]:
                     mode_dict["requires_extra"] = False
                 else:
                     mode_dict["requires_extra"] = True
             else:
-                # Standard API call
                 results = mode_dict["func"](query, limit)
                 iterable = results[mode_dict["key"]]["items"]
-            # --------------------------------------------
             
             item_list = []
             
@@ -524,19 +531,15 @@ class QobuzDL:
                     else:
                         quality = "[ CD ] 16b/44.1kHz"
                         
-                    # --- FIX 1 APPLIED BELOW: Removed '│' separators, using 3 spaces ---
                     text = f"{_align_text(artist, 20)}   {_align_text(title, 35)}   {_align_text(rel_type, 8)}   {year}   {quality}"
                 else:
                     name = i.get("name", "Unknown")
                     count = i.get("albums_count") if "albums_count" in i else i.get("tracks_count", 0)
                     desc = "albums" if "albums_count" in i else "tracks"
                     
-                    # --- FIX 1 APPLIED BELOW: Removed '│' separators, using 3 spaces ---
                     text = f"{_align_text(name, 50)}   {count} {desc}"
 
-                # --- FAVORITES FIX URL ---
                 if item_type == "favorites" and fav_subtype:
-                    # Remove the trailing 's' (albums -> album, tracks -> track)
                     url_category = fav_subtype[:-1]
                 else:
                     url_category = item_type
@@ -550,16 +553,12 @@ class QobuzDL:
             return
 
     def interactive(self, download=True):
-        # --- NEW: Flag to let the engine know we are in a TTY session ---
         self._is_interactive_session = True
-        # ----------------------------------------------------------------
         try:
             import pick
-            # --- WINDOWS TERMINAL FIX & MULTISELECT LOOK ---
             if hasattr(pick, 'SYMBOL_CIRCLE_EMPTY'):
                 pick.SYMBOL_CIRCLE_EMPTY = '[ ]'
                 pick.SYMBOL_CIRCLE_FILLED = '[X]'
-            # -----------------------------------------------
         except (ImportError, ModuleNotFoundError):
             if os.name == "nt":
                 sys.exit(
@@ -577,11 +576,8 @@ class QobuzDL:
 
         try:
             item_types = ["Albums", "Tracks", "Artists", "Playlists", "Favorites"]
-            
-            # Get the exact choice
             scelta_raw = pick.pick(item_types, "I'll search for:\n[press Intro]")[0]
             
-            # Fix trailing 's' slicing (needed for album/track, but breaks Favorites)
             if scelta_raw == "Favorites":
                 selected_type = "favorites"
             else:
@@ -592,7 +588,6 @@ class QobuzDL:
             
             while True:
                 if selected_type == "favorites":
-                    # --- FAVORITES FLOW: Choose the category instead of typing ---
                     fav_types = ["Albums", "Tracks", "Artists", "Playlists"]
                     selected_fav = pick.pick(fav_types, "Which favorites do you want to browse?\n[press Intro]")[0].lower()
                     
@@ -600,7 +595,6 @@ class QobuzDL:
                     options = self.search_by_type(None, selected_type, limit=self.interactive_limit, fav_subtype=selected_fav)
                     query_title = f"My Favorite {selected_fav.title()}"
                 else:
-                    # --- STANDARD FLOW: Type the keyword ---
                     query = input(f"{CYAN}Enter your search: [Ctrl + c to quit]\n-{DF} ")
                     logger.info(f"{YELLOW}Searching...{RESET}")
                     options = self.search_by_type(query, selected_type, self.interactive_limit)
@@ -609,10 +603,9 @@ class QobuzDL:
                 if not options:
                     logger.info(f"{OFF}Nothing found{RESET}")
                     if selected_type == "favorites":
-                        break # Prevent infinite loop if there are no favorites
+                        break
                     continue
                 
-                # --- CALIBRATED MINIMAL HEADER (Support for Favorites included) ---
                 if selected_type in ["album", "track"] or (selected_type == "favorites" and selected_fav in ["albums", "tracks"]):
                     artist_h = "ARTIST".ljust(20)
                     title_h = "TITLE".ljust(35)
@@ -629,7 +622,6 @@ class QobuzDL:
                         f"       {name_h}   RELEASES\n"
                         f"       {'-' * 63}"
                     )
-                # ------------------------------------------------------------------
 
                 title = (
                     f'*** RESULTS FOR "{query_title}" ***\n\n'
@@ -656,7 +648,7 @@ class QobuzDL:
                 else:
                     logger.info(f"{YELLOW}Ok, try again...{RESET}")
                     if selected_type == "favorites":
-                        break # Exit if nothing is selected in favorites
+                        break
                     continue
                     
             if final_url_list:
@@ -679,14 +671,12 @@ class QobuzDL:
         
         logger.info(f"{CYAN}[*] Last.fm URL detected! Initiating Last.fm integration...{OFF}")
         
-        # Step 1: Extract textual list from Last.fm using our isolated parser
         tracks_list = fetch_lastfm_playlist(playlist_url)
         
         if not tracks_list:
             logger.info(f"{YELLOW}[!] Last.fm processing aborted (no tracks).{OFF}")
             return
 
-        # Extract an ID from the Last.fm URL to name the folder
         pl_id = playlist_url.rstrip('/').split('/')[-1]
         pl_title = sanitize_filename(f"LastFM_Playlist_{pl_id}")
         pl_directory = os.path.join(self.directory, pl_title)
@@ -695,39 +685,47 @@ class QobuzDL:
             f"{YELLOW}Downloading playlist: {pl_title} ({len(tracks_list)} tracks){RESET}"
         )
 
-        # Step 2: Convert to Qobuz IDs using our new method in qopy.py
         track_ids = self.client.get_track_ids_from_list(tracks_list)
         
         if not track_ids:
             logger.info(f"{RED}[!] No matching tracks found on Qobuz. Aborting.{OFF}")
             return
 
-        # Step 3: Send valid IDs to the downloader engine
-        
-        # Save original settings to restore them later
+        # =================================================================
+        # PARALLEL DOWNLOAD LOGIC FOR LAST.FM PLAYLISTS
+        # =================================================================
         original_folder_format = self.folder_format
         original_multi_disc_setting = self.settings.multiple_disc_one_dir
         
-        # Force flat folder structure for the playlist
         self.folder_format = "."
         self.settings.multiple_disc_one_dir = True
         
-        # Use enumerate to get the playlist track number (1, 2, 3...)
-        for idx, t_id in enumerate(track_ids, start=1):
-            try:
-                self.download_from_id(
-                    t_id, 
-                    False, 
-                    pl_directory, 
-                    is_playlist=True, 
-                    playlist_index=idx
-                )
-            except Exception as e:
-                logger.error(f"{RED}[!] Failed to queue track ID {t_id}: {e}{OFF}")
+        active_workers = int(getattr(self.settings, 'max_workers', 3))
+        logger.info(f"{CYAN}[*] Iniciando download paralelo da playlist ({active_workers} workers)...{OFF}")
 
-        # Restore original settings for subsequent downloads
-        self.folder_format = original_folder_format
-        self.settings.multiple_disc_one_dir = original_multi_disc_setting
+        try:
+            with ThreadPoolExecutor(max_workers=active_workers) as executor:
+                futures = []
+                for idx, t_id in enumerate(track_ids, start=1):
+                    futures.append(
+                        executor.submit(
+                            self.download_from_id,
+                            t_id, 
+                            False, 
+                            pl_directory, 
+                            is_playlist=True, 
+                            playlist_index=idx
+                        )
+                    )
+                
+                for future in futures:
+                    try:
+                        future.result()
+                    except Exception as e:
+                        logger.error(f"{RED}[!] Falha ao processar faixa da playlist: {e}{OFF}")
+        finally:
+            self.folder_format = original_folder_format
+            self.settings.multiple_disc_one_dir = original_multi_disc_setting
 
         if not self.no_m3u_for_playlists:
             make_m3u(pl_directory)
