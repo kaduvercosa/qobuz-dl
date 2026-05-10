@@ -424,13 +424,13 @@ class Download:
             os.makedirs(dirn, exist_ok=True)
 
             if getattr(self, 'is_playlist', False):
-                logger.info(f"{OFF}Skipping standard cover save to keep playlist folder clean")
+                logger.info(f"{OFF}Baixando capas individuais em qualidade máxima para a playlist...")
             elif self.settings.no_cover:
                 logger.info(f"{OFF}Skipping cover")
             else:
                 _get_extra(track_meta["album"]["image"]["large"], dirn, art_size="org")
 
-            if self.settings.embed_art:
+            if self.settings.embed_art or getattr(self, 'is_playlist', False):
                 embed_path = os.path.join(dirn, EMB_COVER_NAME)
                 if os.path.exists(embed_path):
                     try:
@@ -438,16 +438,14 @@ class Download:
                     except OSError:
                         pass
                 
-                # OTIMIZAÇÃO: Cópia local protegendo a lógica de playlists
-                embed_size = str(self.settings.embedded_art_size)
-                saved_size = str(self.settings.saved_art_size)
                 cover_path = os.path.join(dirn, "cover.jpg")
                 
-                if os.path.exists(cover_path):
+                if os.path.exists(cover_path) and not getattr(self, 'is_playlist', False):
                     shutil.copy(cover_path, embed_path)
                 else:
+                    # FORÇA art_size="org" para garantir o embed em qualidade máxima
                     _get_extra(track_meta["album"]["image"]["large"], dirn, extra=EMB_COVER_NAME,
-                               art_size=self.settings.embedded_art_size)
+                               art_size="org")
             else:
                 logger.info(f"{OFF}Skipping embedded art")
                 
@@ -621,6 +619,17 @@ class Download:
             )
         except Exception as e:
             safe_print(f"{RED}[!] Error tagging: {e}{OFF}")
+
+        # --- SALVA A CAPA INDIVIDUAL DA PLAYLIST COM O MESMO NOME DA MÚSICA ---
+        if getattr(self, 'is_playlist', False):
+            embed_file_path = os.path.join(root_dir, EMB_COVER_NAME)
+            cover_save_path = os.path.join(root_dir, formatted_path) + ".jpg"
+            if os.path.exists(embed_file_path):
+                try:
+                    shutil.copy(embed_file_path, cover_save_path)
+                except Exception as e:
+                    pass
+        # ----------------------------------------------------------------------
 
         if getattr(self, 'fetch_lyrics', False) and hasattr(self, 'lyrics_engine') and not abort_event.is_set():
             album_artist = _safe_get(track_metadata, "album", "artist", "name")
