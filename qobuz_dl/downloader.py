@@ -283,7 +283,7 @@ class Download:
                 if embed_size == saved_size and not self.settings.no_cover and os.path.exists(cover_path):
                     shutil.copy(cover_path, embed_path)
                 else:
-                    _get_extra(album_meta["image"]["large"], dirn, extra=EMB_COVER_NAME, art_size=self.settings.embedded_art_size)
+                    _get_extra(album_meta["image"]["large"], dirn, extra=EMB_COVER_NAME, art_size="org")
 
             if "goodies" in album_meta:
                 _download_goodies(album_meta, dirn)
@@ -428,7 +428,7 @@ class Download:
             elif self.settings.no_cover:
                 logger.info(f"{OFF}Skipping cover")
             else:
-                _get_extra(track_meta["album"]["image"]["large"], dirn, art_size=self.settings.saved_art_size)
+                _get_extra(track_meta["album"]["image"]["large"], dirn, art_size="org")
 
             if self.settings.embed_art:
                 embed_path = os.path.join(dirn, EMB_COVER_NAME)
@@ -443,7 +443,7 @@ class Download:
                 saved_size = str(self.settings.saved_art_size)
                 cover_path = os.path.join(dirn, "cover.jpg")
                 
-                if embed_size == saved_size and not getattr(self, 'is_playlist', False) and not self.settings.no_cover and os.path.exists(cover_path):
+                if os.path.exists(cover_path):
                     shutil.copy(cover_path, embed_path)
                 else:
                     _get_extra(track_meta["album"]["image"]["large"], dirn, extra=EMB_COVER_NAME,
