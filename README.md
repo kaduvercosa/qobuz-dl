@@ -1,4 +1,4 @@
-# qobuz-dl Master Edition
+# Qobuz-DL Master Edition
 
 Pesquise, explore e baixe músicas Lossless e Hi-Res do [Qobuz](https://www.qobuz.com/).
 
