@@ -134,8 +134,22 @@ def tag_flac(filename, root_dir, final_name, d: dict, album, istrack=True, em_im
     for k, v in tags.items():
         if v:
             audio[k] = v
+            
     if em_image:
         _embed_flac_img(root_dir, audio)
+        
+        # --- INJEÇÃO DAS INFOS DA CAPA NA TAG DE COMENTÁRIO (SEM PILLOW) ---
+        cover_path = _find_cover_image(root_dir)
+        if cover_path:
+            try:
+                size_mb = os.path.getsize(cover_path) / (1024 * 1024)
+                cover_info = f"Cover Quality: _org | Size: {size_mb:.2f} MB"
+            except Exception as e:
+                logger.warning(f"Não foi possível ler o tamanho da capa: {e}")
+                cover_info = "Cover Quality: _org"
+            
+            audio["comment"] = cover_info
+        # -------------------------------------------------------------------
 
     audio.save()
     os.rename(filename, final_name)
@@ -165,8 +179,24 @@ def tag_mp3(filename, root_dir, final_name, d, album, istrack=True, em_image=Fal
 
     audio["TRCK"] = id3.TRCK(encoding=3, text=f'{str(qobuz_item.get("track_number", "1"))}/{str(qobuz_album.get("tracks_count", "1"))}')
     audio["TPOS"] = id3.TPOS(encoding=3, text=f'{str(qobuz_item.get("media_number", "1"))}/{str(qobuz_album.get("media_count", "1"))}')
+    
     if em_image:
         _embed_id3_img(root_dir, audio)
+        
+        # --- INJEÇÃO DAS INFOS DA CAPA NA TAG DE COMENTÁRIO (SEM PILLOW) ---
+        cover_path = _find_cover_image(root_dir)
+        if cover_path:
+            try:
+                size_mb = os.path.getsize(cover_path) / (1024 * 1024)
+                cover_info = f"Cover Quality: _org | Size: {size_mb:.2f} MB"
+            except Exception as e:
+                logger.warning(f"Não foi possível ler o tamanho da capa: {e}")
+                cover_info = "Cover Quality: _org"
+            
+            # Adiciona o comentário específico para MP3 (ID3v2 COMM tag)
+            audio.add(id3.COMM(encoding=3, lang='eng', desc='CoverInfo', text=[cover_info]))
+        # -------------------------------------------------------------------
+        
     audio.save(filename, v2_version=3)
     os.rename(filename, final_name)
 
