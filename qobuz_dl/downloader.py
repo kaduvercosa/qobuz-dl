@@ -272,13 +272,15 @@ class Download:
         try:
             self._generate_tracklist(album_meta, dirn, album_title, file_format, bit_depth, sampling_rate)
 
+            # --- CAPAS FORÇADAS PARA _ORG ---
             if self.settings.no_cover:
                 logger.info(f"{OFF}Skipping cover")
             else:
-                _get_extra(album_meta["image"]["large"], dirn, art_size=self.settings.saved_art_size)
+                _get_extra(album_meta["image"]["large"], dirn, art_size="org")
 
             if self.settings.embed_art:
-                _get_extra(album_meta["image"]["large"], dirn, extra=EMB_COVER_NAME, art_size=self.settings.embedded_art_size)
+                _get_extra(album_meta["image"]["large"], dirn, extra=EMB_COVER_NAME, art_size="org")
+            # --------------------------------
 
             if "goodies" in album_meta:
                 _download_goodies(album_meta, dirn)
@@ -426,12 +428,13 @@ class Download:
             dirn = process_folder_format_with_subdirs(self.folder_format, track_attr, self.path, legacy_charmap=legacy_flag)
             os.makedirs(dirn, exist_ok=True)
 
+            # --- CAPAS FORÇADAS PARA _ORG ---
             if getattr(self, 'is_playlist', False):
                 logger.info(f"{OFF}Skipping standard cover save to keep playlist folder clean")
             elif self.settings.no_cover:
                 logger.info(f"{OFF}Skipping cover")
             else:
-                _get_extra(track_meta["album"]["image"]["large"], dirn, art_size=self.settings.saved_art_size)
+                _get_extra(track_meta["album"]["image"]["large"], dirn, art_size="org")
 
             if self.settings.embed_art:
                 embed_path = os.path.join(dirn, EMB_COVER_NAME)
@@ -441,10 +444,10 @@ class Download:
                     except OSError:
                         pass
                 
-                _get_extra(track_meta["album"]["image"]["large"], dirn, extra=EMB_COVER_NAME,
-                           art_size=self.settings.embedded_art_size)
+                _get_extra(track_meta["album"]["image"]["large"], dirn, extra=EMB_COVER_NAME, art_size="org")
             else:
                 logger.info(f"{OFF}Skipping embedded art")
+            # --------------------------------
                 
             is_mp3 = True if int(self.quality) == 5 else False
             
@@ -838,10 +841,6 @@ class Download:
                             curr_root_dir = os.path.join(root_dir, disc_dir)
                         
                         track_path = sanitize_filename(clean_filename(track_fmt.format(**filename_attr), legacy_charmap=legacy_flag), replacement_text="_")
-
-                    # --- FIX: REMOVED OBSOLETE LENGTH CHECK ---
-                    # We no longer invalidate the user's custom format if the path is too long.
-                    # String truncation is now safely handled downstream in _download_and_tag.
 
             except (KeyError, ValueError):
                 # Fallback to the next format ONLY if there is a missing tag/variable in the metadata
