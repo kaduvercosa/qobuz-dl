@@ -2,6 +2,7 @@ import logging
 import os
 import sys
 import time
+import getpass
 
 import requests
 from pathvalidate import sanitize_filename
@@ -48,14 +49,14 @@ class QobuzDL:
         self,
         directory="QobuzDownloads",
         quality=6,
-        embed_art=False,
+        embed_art=True, # Forçado como padrão
         lucky_limit=1,
         lucky_type="album",
         interactive_limit=20,
         ignore_singles_eps=False,
         no_m3u_for_playlists=False,
         quality_fallback=True,
-        cover_og_quality=False,
+        cover_og_quality=True,
         no_cover=False,
         downloads_db=None,
         folder_format="{artist} - {album} ({year}) [{bit_depth}B-"
@@ -73,7 +74,7 @@ class QobuzDL:
     ):
         self.directory = create_and_return_dir(directory)
         self.quality = quality
-        self.embed_art = embed_art
+        self.embed_art = embed_art # Agora sempre será True, ignorando o config
         self.lucky_limit = lucky_limit
         self.lucky_type = lucky_type
         self.interactive_limit = interactive_limit
@@ -104,6 +105,9 @@ class QobuzDL:
                 logger.error(f"{RED}[!] Failed to load blacklist: {e}{OFF}")
         
     def initialize_client(self, email, pwd, app_id, secrets):
+        # Aqui você insere o input manual
+        print(f"Coloque o seu Auth Token: ")
+        self.settings.user_auth_token = input()
         self.client = qopy.Client(email, pwd, app_id, secrets, self.settings.user_auth_token, force_english=self.force_english)
         logger.info(f"{YELLOW}Set max quality: {QUALITIES[int(self.quality)]}\n")
 
