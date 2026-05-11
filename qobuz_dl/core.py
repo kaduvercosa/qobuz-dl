@@ -105,9 +105,7 @@ class QobuzDL:
                 logger.error(f"{RED}[!] Failed to load blacklist: {e}{OFF}")
         
     def initialize_client(self, email, pwd, app_id, secrets):
-        # Aqui você insere o input manual
-        print(f"Coloque o seu Auth Token: ")
-        self.settings.user_auth_token = input()
+        # Removemos o input() daqui para ele voltar a ler o config.ini silenciosamente
         self.client = qopy.Client(email, pwd, app_id, secrets, self.settings.user_auth_token, force_english=self.force_english)
         logger.info(f"{YELLOW}Set max quality: {QUALITIES[int(self.quality)]}\n")
 
