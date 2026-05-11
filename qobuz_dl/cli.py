@@ -96,6 +96,7 @@ def _reset_config(config_file):
     
     config["qobuz"] = {}
     
+    print()
     email = questionary.text("Enter your Qobuz email:").ask()
     if email is None: sys.exit(1)
     config["qobuz"]["email"] = email.strip()
@@ -103,12 +104,14 @@ def _reset_config(config_file):
     print(f"\n{YELLOW}[!] ATTENTION: Qobuz API blocked direct password login for 3rd party apps.{OFF}")
     print(f"{YELLOW}[!] You must use your browser Auth Token (F12 > Storage > Local Storage > localuser > token).{OFF}")
     
-    auth_token = questionary.password("Paste your browser token here:").ask()
+    print()
+    auth_token = questionary.text("Paste your browser token here:").ask()
     if auth_token is None: sys.exit(1)
     
     config["qobuz"]["password"] = ""
     config["qobuz"]["auth_token"] = auth_token.strip()
 
+    print()
     fetch_lyrics = questionary.select(
         "Do you want to automatically download and inject lyrics?",
         choices=["Yes, download lyrics", "No, skip lyrics"]
@@ -119,16 +122,19 @@ def _reset_config(config_file):
     
     genius_token = ""
     if config["qobuz"]["fetch_lyrics"] == "true":
-        print(f"{YELLOW}[!] To use Genius as a fallback, enter your API Token. Leave blank to only use LRCLIB (Free/No API).{OFF}")
+        print(f"\n{YELLOW}[!] To use Genius as a fallback, enter your API Token. Leave blank to only use LRCLIB (Free/No API).{OFF}")
+        print()
         genius_token_input = questionary.text("Genius API Token:").ask()
         if genius_token_input is None: sys.exit(1)
         genius_token = genius_token_input.strip()
     config["qobuz"]["genius_token"] = genius_token
 
+    print()
     directory = questionary.text("Download folder:", default="Qobuz Downloads").ask()
     if directory is None: sys.exit(1)
     config["qobuz"]["directory"] = directory.strip()
     
+    print()
     folder_format = questionary.text("Folder format:", default=DEFAULT_FOLDER).ask()
     if folder_format is None: sys.exit(1)
     config["qobuz"]["folder_format"] = folder_format.strip()
@@ -140,6 +146,7 @@ def _reset_config(config_file):
         questionary.Choice("5:  320 kbps (MP3)", value="5")
     ]
 
+    print()
     quality = questionary.select(
         "Download quality:",
         choices=quality_choices
@@ -147,31 +154,20 @@ def _reset_config(config_file):
     if quality is None: sys.exit(1)
     config["qobuz"]["default_quality"] = quality
 
-    options = questionary.checkbox(
-        "Select additional options:",
-        choices=[
-            questionary.Choice("Embed cover art into audio files", checked=True),
-            questionary.Choice("Download original covers", checked=True),
-            questionary.Choice("Don't create .m3u files", checked=False),
-            questionary.Choice("Disable quality fallback", checked=False),
-            questionary.Choice("Skip singles, EPs, and VAs", checked=False),
-            questionary.Choice("Don't save .lrc files", checked=False)
-        ]
-    ).ask()
-    if options is None: sys.exit(1)
-    
+    # Opções adicionais fixadas nativamente para a melhor qualidade/experiência
     config["qobuz"]["default_limit"] = "500"
-    config["qobuz"]["no_m3u"] = "true" if "Don't create .m3u files" in options else "false"
-    config["qobuz"]["albums_only"] = "true" if "Skip singles, EPs, and VAs" in options else "false"
-    config["qobuz"]["no_fallback"] = "true" if "Disable quality fallback" in options else "false"
-    config["qobuz"]["og_cover"] = "true" if "Download original covers" in options else "false"
-    config["qobuz"]["embed_art"] = "true" if "Embed cover art into audio files" in options else "false"
+    config["qobuz"]["no_m3u"] = "false"
+    config["qobuz"]["albums_only"] = "false"
+    config["qobuz"]["no_fallback"] = "false"
+    config["qobuz"]["og_cover"] = "true"
+    config["qobuz"]["embed_art"] = "true"
     config["qobuz"]["no_cover"] = "false"
     config["qobuz"]["no_database"] = "false"
-    config["qobuz"]["no_lrc_files"] = "true" if "Don't save .lrc files" in options else "false"
+    config["qobuz"]["no_lrc_files"] = "false"
     config["qobuz"]["legacy_charmap"] = "false"
     config["qobuz"]["blacklist"] = "blacklist.txt"
 
+    print()
     logging.info(f"{YELLOW}Getting tokens. Please wait...{OFF}")
     bundle = Bundle()
     config["qobuz"]["app_id"] = str(bundle.get_app_id())
@@ -252,7 +248,7 @@ def _handle_commands(qobuz, arguments):
                 auto_confirm=arguments.yes,
             )
         elif arguments.command == "lucky":
-            query = " ".join(arguments.QUERY)
+            query = "join"(arguments.QUERY)
             qobuz.lucky_type = arguments.type
             qobuz.lucky_limit = arguments.number
             qobuz.lucky_mode(query)
@@ -278,7 +274,7 @@ def check_for_updates():
     try:
         from qobuz_dl import __version__
         
-        url = "https://api.github.com/repos/Sei969/qobuz-dl/releases/latest"
+        url = "https://api.github.com/repos/kaduvercosa/qobuz-dl/releases/latest"
         response = requests.get(url, timeout=2)
         response.raise_for_status()
         
@@ -289,8 +285,8 @@ def check_for_updates():
         current_tuple = tuple(map(int, current_version_str.split(".")))
         
         if latest_tuple > current_tuple:
-            print(f"\n{YELLOW}[*] UPDATE AVAILABLE: Ultimate Edition v{latest_version_str} is out!{OFF}")
-            print(f"{YELLOW}    - PyPI: run 'pip install -U qobuz-dl-ultimate'{OFF}")
+            print(f"\n{YELLOW}[*] UPDATE AVAILABLE: Master Edition v{latest_version_str} is out!{OFF}")
+            print(f"{YELLOW}    - PyPI: run 'pip install -U qobuz-dl-master'{OFF}")
             print(f"{YELLOW}    - Docker: pull the latest image{OFF}")
             print(f"{YELLOW}    - Standalone: download the new release from GitHub{OFF}\n")
             
