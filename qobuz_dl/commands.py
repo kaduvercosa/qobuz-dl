@@ -332,8 +332,8 @@ def add_common_arg(custom_parser, default_folder, default_quality):
     artwork_group.add_argument(
         "--embedded-art-size",
         choices=["50", "100", "150", "300", "600", "max", "org"],
-        default="600",
-        help="size of embedded artwork (default: 600)"
+        default="org",
+        help="size of embedded artwork (default: org)"
     )
     artwork_group.add_argument(
         "--saved-art-size",
