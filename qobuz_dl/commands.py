@@ -378,8 +378,9 @@ def qobuz_dl_args(
     parser = argparse.ArgumentParser(
         prog="qobuz-dl",
         description=(
-            "The ultimate Qobuz music downloader.\nSee usage"
-            " examples on https://github.com/Sei969/qobuz-dl"
+            "qobuz-dl Ultimate Edition\n"
+            "The Ultimate Lossless and Hi-Res music downloader for Qobuz.\n"
+            "See usage examples on https://github.com/kaduvercosa/qobuz-dl"
         ),
         formatter_class=argparse.RawTextHelpFormatter,
     )

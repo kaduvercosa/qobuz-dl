@@ -89,56 +89,86 @@ def validate_config_formats(formats_to_check):
 
 
 def _reset_config(config_file):
+    import questionary
+
     logging.info(f"\n{YELLOW}--- QOBUZ-DL CONFIGURATION WIZARD (2026 Update) ---{OFF}")
     config = configparser.ConfigParser(interpolation=None)
     
     config["qobuz"] = {}
     
-    email = input("Enter your Qobuz email:\n- ").strip()
-    config["qobuz"]["email"] = email
+    email = questionary.text("Enter your Qobuz email:").ask()
+    if email is None: sys.exit(1)
+    config["qobuz"]["email"] = email.strip()
     
     print(f"\n{YELLOW}[!] ATTENTION: Qobuz API blocked direct password login for 3rd party apps.{OFF}")
     print(f"{YELLOW}[!] You must use your browser Auth Token (F12 > Storage > Local Storage > localuser > token).{OFF}")
     
-    auth_token = input("Paste your browser token here:\n- ").strip()
+    auth_token = questionary.password("Paste your browser token here:").ask()
+    if auth_token is None: sys.exit(1)
     
     config["qobuz"]["password"] = ""
-    config["qobuz"]["auth_token"] = auth_token
+    config["qobuz"]["auth_token"] = auth_token.strip()
 
-    fetch_lyrics = input("Do you want to automatically download and inject lyrics? (yes/no) [Default: yes]\n- ").strip().lower()
-    config["qobuz"]["fetch_lyrics"] = "false" if fetch_lyrics in ['no', 'n', 'false'] else "true"
+    fetch_lyrics = questionary.select(
+        "Do you want to automatically download and inject lyrics?",
+        choices=["Yes, download lyrics", "No, skip lyrics"]
+    ).ask()
+    if fetch_lyrics is None: sys.exit(1)
+
+    config["qobuz"]["fetch_lyrics"] = "true" if fetch_lyrics == "Yes, download lyrics" else "false"
     
     genius_token = ""
     if config["qobuz"]["fetch_lyrics"] == "true":
         print(f"{YELLOW}[!] To use Genius as a fallback, enter your API Token. Leave blank to only use LRCLIB (Free/No API).{OFF}")
-        genius_token = input("Genius API Token:\n- ").strip()
+        genius_token_input = questionary.text("Genius API Token:").ask()
+        if genius_token_input is None: sys.exit(1)
+        genius_token = genius_token_input.strip()
     config["qobuz"]["genius_token"] = genius_token
 
-    config["qobuz"]["directory"] = (
-        input("Download folder (press Enter for 'Qobuz Downloads')\n- ")
-        or "Qobuz Downloads"
-    )
+    directory = questionary.text("Download folder:", default="Qobuz Downloads").ask()
+    if directory is None: sys.exit(1)
+    config["qobuz"]["directory"] = directory.strip()
     
-    # FIX: Use correct prompt and key for folder formatting
-    config["qobuz"]["folder_format"] = (
-        input(f"Folder format (press Enter for '{DEFAULT_FOLDER}')\n- ")
-        or DEFAULT_FOLDER
-    )
+    folder_format = questionary.text("Folder format:", default=DEFAULT_FOLDER).ask()
+    if folder_format is None: sys.exit(1)
+    config["qobuz"]["folder_format"] = folder_format.strip()
     
-    config["qobuz"]["default_quality"] = (
-        input("Download quality (5:MP3, 6:FLAC, 7:24b<96, 27:24b>96) [Default 27]\n- ")
-        or "27"
-    )
+    quality_choices = [
+        questionary.Choice("27: 24-Bit / >96 kHz (Hi-Res)", value="27"),
+        questionary.Choice("7:  24-Bit / <96 kHz (Hi-Res)", value="7"),
+        questionary.Choice("6:  16-Bit / 44.1 kHz (CD / FLAC)", value="6"),
+        questionary.Choice("5:  320 kbps (MP3)", value="5")
+    ]
+
+    quality = questionary.select(
+        "Download quality:",
+        choices=quality_choices
+    ).ask()
+    if quality is None: sys.exit(1)
+    config["qobuz"]["default_quality"] = quality
+
+    options = questionary.checkbox(
+        "Select additional options:",
+        choices=[
+            questionary.Choice("Embed cover art into audio files", checked=True),
+            questionary.Choice("Download original covers", checked=True),
+            questionary.Choice("Don't create .m3u files", checked=False),
+            questionary.Choice("Disable quality fallback", checked=False),
+            questionary.Choice("Skip singles, EPs, and VAs", checked=False),
+            questionary.Choice("Don't save .lrc files", checked=False)
+        ]
+    ).ask()
+    if options is None: sys.exit(1)
     
     config["qobuz"]["default_limit"] = "500"
-    config["qobuz"]["no_m3u"] = "false"
-    config["qobuz"]["albums_only"] = "false"
-    config["qobuz"]["no_fallback"] = "false"
-    config["qobuz"]["og_cover"] = "true" 
-    config["qobuz"]["embed_art"] = "true"
+    config["qobuz"]["no_m3u"] = "true" if "Don't create .m3u files" in options else "false"
+    config["qobuz"]["albums_only"] = "true" if "Skip singles, EPs, and VAs" in options else "false"
+    config["qobuz"]["no_fallback"] = "true" if "Disable quality fallback" in options else "false"
+    config["qobuz"]["og_cover"] = "true" if "Download original covers" in options else "false"
+    config["qobuz"]["embed_art"] = "true" if "Embed cover art into audio files" in options else "false"
     config["qobuz"]["no_cover"] = "false"
     config["qobuz"]["no_database"] = "false"
-    config["qobuz"]["no_lrc_files"] = "false"
+    config["qobuz"]["no_lrc_files"] = "true" if "Don't save .lrc files" in options else "false"
     config["qobuz"]["legacy_charmap"] = "false"
     config["qobuz"]["blacklist"] = "blacklist.txt"
 
@@ -147,7 +177,6 @@ def _reset_config(config_file):
     config["qobuz"]["app_id"] = str(bundle.get_app_id())
     config["qobuz"]["secrets"] = ",".join(bundle.get_secrets().values())
 
-    # Removed old folder_format override that caused custom format resets
     config["qobuz"]["track_format"] = "{track_number} - {track_title}"
     config["qobuz"]["fallback_folder_format"] = "{artist} - {album}"
     config["qobuz"]["smart_discography"] = "false"
@@ -289,15 +318,38 @@ def main():
         from qobuz_dl.db import get_stats
         
         # QOBUZ_DB è già definito all'inizio di cli.py, lo usiamo direttamente
-        artists = get_stats(QOBUZ_DB)
+        stats = get_stats(QOBUZ_DB)
         
         print(f"\n{CYAN}--- QOBUZ-DL ULTIMATE STATISTICS ---{OFF}")
-        if not artists:
-            print(f"{YELLOW}No artist data found yet. Start downloading to populate your stats!{OFF}")
+        if not stats or (stats.get('total_tracks', 0) == 0 and stats.get('total_albums', 0) == 0):
+            print(f"{YELLOW}No data found yet. Start downloading to populate your stats!{OFF}")
         else:
-            print(f"Total Unique Artists Downloaded: {len(artists)}\n")
-            for artist in artists:
-                print(f" - {artist}")
+            print(f"Total Tracks Downloaded:  {GREEN}{stats.get('total_tracks', 0)}{OFF}")
+            print(f"Total Albums Downloaded:  {GREEN}{stats.get('total_albums', 0)}{OFF}")
+            print(f"Total Unique Artists:     {GREEN}{stats.get('total_artists', 0)}{OFF}\n")
+
+            # Map quality numbers to readable labels
+            quality_map = {
+                "5": "320 kbps (MP3)",
+                "6": "16-Bit / 44.1 kHz (CD / FLAC)",
+                "7": "24-Bit / <96 kHz (Hi-Res)",
+                "27": "24-Bit / >96 kHz (Hi-Res)"
+            }
+
+            quality_dist = stats.get('quality_distribution', {})
+            if quality_dist:
+                print(f"{YELLOW}Quality Distribution:{OFF}")
+                for q_num, count in quality_dist.items():
+                    label = quality_map.get(q_num, f"Unknown ({q_num})")
+                    print(f" - {label}: {count}")
+                print()
+
+            top_artists = stats.get('top_artists', [])
+            if top_artists:
+                print(f"{YELLOW}Top Artists:{OFF}")
+                for i, (artist, count) in enumerate(top_artists, 1):
+                    print(f" {i}. {artist} ({count} items)")
+
         print(f"{CYAN}-------------------------------------{OFF}\n")
         sys.exit(0) # Esce immediatamente dopo aver stampato le statistiche
     # -------------------------------------------------
