@@ -38,7 +38,7 @@ def safe_print(*args, **kwargs):
         end = kwargs.get('end', '\n')
         tqdm.write(text, end=end)
 
-# --- GERENCIADOR DE PROGRESSO DE LINHA ÚNICA ---
+# --- GERENCIADOR DE PROGRESSO DE LINHA ÚNICA (ANTI-FLICKER) ---
 class TrackProgress:
     def __init__(self, track_no, track_title):
         self.track_no = str(track_no).zfill(2)
@@ -49,7 +49,8 @@ class TrackProgress:
         if len(self.base_name) > 35:
             self.base_name = self.base_name[:32] + "..."
             
-        self.bar = tqdm(total=0, bar_format="{desc}", leave=True)
+        # mininterval=0.5 impede que a tela tente atualizar mais de 2x por segundo
+        self.bar = tqdm(total=0, bar_format="{desc}", leave=True, mininterval=0.5)
         self._lock = threading.Lock()
 
     def update(self, status, tag="RUNNING", color=CYAN):
@@ -842,6 +843,7 @@ def tqdm_download(url_or_callable, fname, progress=None):
     total_size = 0
     max_retries = 5
     backoff_delays = [2, 4, 8, 16, 32] 
+    last_pct = -1
 
     for attempt in range(max_retries):
         if abort_event.is_set(): return
@@ -869,9 +871,15 @@ def tqdm_download(url_or_callable, fname, progress=None):
                         if data:
                             size = file.write(data)
                             downloaded_size += size
+                            
+                            # --- FILTRO ANTI-CINTILAÇÃO (ANTI-FLICKER) ---
+                            # Só atualiza a tela a cada 5% em vez de centenas de vezes.
                             if progress and total_size > 0:
                                 pct = int((downloaded_size / total_size) * 100)
-                                progress.update(f"Baixando Faixa... {pct}%")
+                                if pct >= last_pct + 5 or pct == 100:
+                                    progress.update(f"Baixando Faixa... {pct}%")
+                                    last_pct = pct
+                            # ---------------------------------------------
             
             if downloaded_size >= total_size: return 
 
@@ -953,9 +961,10 @@ def tqdm_download_segments(track_url_dict, fname, progress=None):
 
     dl_lock = threading.Lock()
     downloaded_size = 0
+    last_pct = -1
 
     def fetch_segment_fluid(seg_num):
-        nonlocal downloaded_size
+        nonlocal downloaded_size, last_pct
         if abort_event.is_set(): return bytearray()
         url = url_template.replace("$SEGMENT$", str(seg_num))
         r = requests.get(url, stream=True, timeout=15)
@@ -969,7 +978,12 @@ def tqdm_download_segments(track_url_dict, fname, progress=None):
                 with dl_lock:
                     downloaded_size += len(chunk)
                     pct = min(100, int((downloaded_size / total_size) * 100))
-                progress.update(f"Baixando Faixa... {pct}%")
+                
+                # --- FILTRO ANTI-CINTILAÇÃO ---
+                if pct >= last_pct + 5 or pct == 100:
+                    progress.update(f"Baixando Faixa... {pct}%")
+                    last_pct = pct
+                    
         return seg_data
 
     try:
