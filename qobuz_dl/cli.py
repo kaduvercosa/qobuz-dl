@@ -320,7 +320,7 @@ def main():
         # QOBUZ_DB è già definito all'inizio di cli.py, lo usiamo direttamente
         stats = get_stats(QOBUZ_DB)
         
-        print(f"\n{CYAN}--- QOBUZ-DL ULTIMATE STATISTICS ---{OFF}")
+        print(f"\n{CYAN}--- QOBUZ-DL MASTER STATISTICS ---{OFF}")
         if not stats or (stats.get('total_tracks', 0) == 0 and stats.get('total_albums', 0) == 0):
             print(f"{YELLOW}No data found yet. Start downloading to populate your stats!{OFF}")
         else:
