@@ -124,14 +124,36 @@ def handle_download_id(db_path, item_id, add_id=False, media_type='album', quali
  
  
 def get_stats(db_path):
-    """Returns a list of unique artists from the database."""
+    """Returns a comprehensive set of statistics from the database."""
     if not db_path:
-        return []
+        return None
     try:
         with sqlite3.connect(db_path) as conn:
             cursor = conn.cursor()
-            # We select unique artists, excluding empty strings
-            cursor.execute("SELECT DISTINCT artist FROM downloads WHERE artist != '' ORDER BY artist ASC")
-            return [row[0] for row in cursor.fetchall()]
+
+            stats = {}
+
+            # Total tracks downloaded
+            cursor.execute("SELECT COUNT(*) FROM downloads WHERE media_type = 'track'")
+            stats['total_tracks'] = cursor.fetchone()[0]
+
+            # Total albums downloaded
+            cursor.execute("SELECT COUNT(*) FROM downloads WHERE media_type = 'album'")
+            stats['total_albums'] = cursor.fetchone()[0]
+
+            # Quality distribution
+            cursor.execute("SELECT quality, COUNT(*) FROM downloads GROUP BY quality")
+            quality_counts = cursor.fetchall()
+            stats['quality_distribution'] = {str(q): count for q, count in quality_counts}
+
+            # Unique artists count
+            cursor.execute("SELECT COUNT(DISTINCT artist) FROM downloads WHERE artist != ''")
+            stats['total_artists'] = cursor.fetchone()[0]
+
+            # Top 5 artists
+            cursor.execute("SELECT artist, COUNT(*) as count FROM downloads WHERE artist != '' GROUP BY artist ORDER BY count DESC LIMIT 5")
+            stats['top_artists'] = cursor.fetchall()
+
+            return stats
     except sqlite3.Error:
-        return []            
+        return None
