@@ -93,4 +93,4 @@ Diga adeus a bibliotecas bagunçadas e downloads corrompidos. O baixador agora a
 ### Opção A: 📦 Pacote PyPI (Recomendado para todas as plataformas)
 A maneira mais fácil e oficial de instalar a Ultimate Edition. Abra seu terminal e execute:
 ```bash
-pip install qobuz-dl-ultimate
+pip install qobuz-dl-master
