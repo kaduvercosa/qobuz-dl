@@ -90,7 +90,7 @@ Diga adeus a bibliotecas bagunçadas e downloads corrompidos. O baixador agora a
 
 > ⚠️ **Requisito:** Você precisa de uma **assinatura ativa** do Qobuz.
 
-### Opção A: 📦 Pacote PyPI (Recomendado para todas as plataformas)
+### 📦 Pacote PyPI (Recomendado para todas as plataformas)
 A maneira mais fácil e oficial de instalar a Ultimate Edition. Abra seu terminal e execute:
 ```bash
 pip install qobuz-dl-master
