@@ -2,7 +2,7 @@
 
 Pesquise, explore e baixe músicas Lossless e Hi-Res do [Qobuz](https://www.qobuz.com/).
 
-**Este é um fork aprimorado e rico em recursos do projeto original qobuz-dl, projetado para a melhor experiência audiófila. Ele inclui um mecanismo de download resiliente com filtragem anti-spam inteligente, personalização profunda para manter sua biblioteca perfeitamente organizada e suporte amplo e nativo a metadados de música clássica.**
+**Este é um projeto aprimorado e rico em recursos do projeto original qobuz-dl, projetado para a melhor experiência audiófila. Ele inclui um mecanismo de download resiliente com filtragem anti-spam inteligente, personalização profunda para manter sua biblioteca perfeitamente organizada e suporte amplo e nativo a metadados de música clássica.**
 
 ## ✨ Recursos
 
