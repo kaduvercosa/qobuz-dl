@@ -11,7 +11,7 @@ from qobuz_dl.color import CYAN, GREEN, YELLOW, RED, OFF
 
 logger = logging.getLogger(__name__)
 
-def _process_single_file(file_path_str, engine):
+def _process_single_file(file_path_str, engine, overwrite=False):
     try:
         title, artist, album = "", "", ""
         needs_lyrics = False
@@ -19,8 +19,10 @@ def _process_single_file(file_path_str, engine):
 
         if file_path_lower.endswith(".flac"):
             audio = FLAC(file_path_str)
-            if audio.get("LYRICS") or audio.get("UNSYNCEDLYRICS"):
-                return "skipped"
+            # Se não for para sobrescrever, checa se já tem letra e pula
+            if not overwrite:
+                if audio.get("LYRICS") or audio.get("UNSYNCEDLYRICS"):
+                    return "skipped"
                 
             title = audio.get("TITLE", [""])[0]
             album_artist = audio.get("ALBUMARTIST", [""])[0]
@@ -35,8 +37,10 @@ def _process_single_file(file_path_str, engine):
             except ID3NoHeaderError:
                 return "skipped"
                 
-            if audio.getall("USLT") or audio.getall("SYLT"):
-                return "skipped"
+            # Se não for para sobrescrever, checa se já tem letra e pula
+            if not overwrite:
+                if audio.getall("USLT") or audio.getall("SYLT"):
+                    return "skipped"
                 
             title = audio.get("TIT2").text[0] if audio.get("TIT2") else ""
             artist = audio.get("TPE1").text[0] if audio.get("TPE1") else ""
@@ -47,12 +51,18 @@ def _process_single_file(file_path_str, engine):
             return "skipped"
             
         if needs_lyrics:
-            print(f"{YELLOW}  > Missing lyrics: {artist} - {title}. Searching...{OFF}")
+            if overwrite:
+                print(f"{YELLOW}  > Overwriting lyrics for: {artist} - {title}...{OFF}")
+            else:
+                print(f"{YELLOW}  > Missing lyrics: {artist} - {title}. Searching...{OFF}")
+                
+            # Chama a engine repassando a ordem de sobrescrever
             engine.fetch_and_inject(
                 file_path=file_path_str,
                 artist=artist,
                 track=title,
-                album=album
+                album=album,
+                overwrite=overwrite 
             )
             return "injected"
                 
@@ -61,8 +71,10 @@ def _process_single_file(file_path_str, engine):
         return "error"
     return "skipped"
 
-def inject_lyrics_retroactively(directory_path, genius_token=None):
+def inject_lyrics_retroactively(directory_path, genius_token=None, overwrite=False):
     print(f"\n{CYAN}[*] Starting retroactive lyrics scan in: {directory_path}{OFF}")
+    if overwrite:
+        print(f"{RED}[!] OVERWRITE MODE ENABLED: Existing lyrics will be replaced.{OFF}")
     
     target_dir = Path(directory_path)
     if not target_dir.is_dir():
@@ -88,7 +100,8 @@ def inject_lyrics_retroactively(directory_path, genius_token=None):
 
     # Processamento paralelo
     with ThreadPoolExecutor(max_workers=5) as executor:
-        futures = {executor.submit(_process_single_file, str(path), engine): path for path in all_files}
+        # Passando a variável overwrite para a thread
+        futures = {executor.submit(_process_single_file, str(path), engine, overwrite): path for path in all_files}
         for future in as_completed(futures):
             result = future.result()
             if result == "injected":
