@@ -1,8 +1,10 @@
 import os
+import re
 import requests
 import mutagen
-from mutagen.id3 import ID3, USLT, ID3NoHeaderError
 from mutagen.flac import FLAC
+from mutagen.id3 import ID3, USLT, ID3NoHeaderError
+from mutagen.easyid3 import EasyID3
 
 # Import lyricsgenius only if the user has configured the token
 try:
@@ -10,30 +12,130 @@ try:
 except ImportError:
     lyricsgenius = None
 
+# Import deep-translator for automatic translations
+try:
+    from deep_translator import GoogleTranslator
+except ImportError:
+    GoogleTranslator = None
+    print("⚠️ 'deep-translator' não encontrado. Instale com: pip install deep-translator")
+
 class LyricsEngine:
-    def __init__(self, genius_token=None):
+    def __init__(self, genius_token=None, translate=True, target_lang='pt', translation_symbol=" ⃗ "):
         self.genius_token = genius_token
         self.genius = None
+        self.translate = translate
+        self.target_lang = target_lang
+        self.translation_symbol = translation_symbol
+        
         if self.genius_token and lyricsgenius:
-            # Initialize Genius in silent mode (verbose=False)
             self.genius = lyricsgenius.Genius(self.genius_token, verbose=False, remove_section_headers=True)
 
-    def fetch_and_inject(self, file_path, artist, track, album, save_lrc=True):
-        """Waterfall engine: first try LRCLIB (for LRC format), then Genius."""
+    def _has_lyrics(self, file_path, check_lrc=True):
+        """Verifica se o arquivo já possui letra (.lrc externo ou embutida no metadado)."""
+        if check_lrc:
+            base_name = os.path.splitext(file_path)[0]
+            if os.path.exists(f"{base_name}.lrc"):
+                return True
+        
+        ext = os.path.splitext(file_path)[1].lower()
         try:
-            print(f"    🔍 Searching lyrics for: {track}...")
+            if ext == '.flac':
+                audio = FLAC(file_path)
+                if audio.get('LYRICS'):
+                    return True
+            elif ext == '.mp3':
+                try:
+                    audio = ID3(file_path)
+                    if any(frame.FrameID == 'USLT' for frame in audio.values()):
+                        return True
+                except ID3NoHeaderError:
+                    pass
+        except Exception:
+            pass
+        return False
+
+    def _process_translation(self, lyrics, is_synced=True):
+        """Traduz a letra mantendo o idioma original e duplicando os timestamps."""
+        if not self.translate or not GoogleTranslator:
+            return lyrics
+
+        print("    🌍 Traduzindo letra...")
+        translator = GoogleTranslator(source='auto', target=self.target_lang)
+        
+        lines = lyrics.split('\n')
+        texts_to_translate = []
+        line_mapping = []
+
+        for line in lines:
+            if not line.strip():
+                line_mapping.append(('empty', None, ''))
+                continue
+
+            if is_synced:
+                match = re.match(r'^((?:\[\d+:\d+(?:\.\d+)?\]\s*)+)(.*)', line)
+                if match:
+                    ts = match.group(1)
+                    txt = match.group(2).strip()
+                    if txt:
+                        texts_to_translate.append(txt)
+                        line_mapping.append(('synced', ts, txt))
+                    else:
+                        line_mapping.append(('empty_synced', ts, ''))
+                else:
+                    line_mapping.append(('raw', None, line))
+            else:
+                txt = line.strip()
+                if txt:
+                    texts_to_translate.append(txt)
+                    line_mapping.append(('text', None, txt))
+                else:
+                    line_mapping.append(('empty', None, ''))
+
+        translated_texts = []
+        if texts_to_translate:
+            try:
+                translated_texts = translator.translate_batch(texts_to_translate)
+            except Exception as e:
+                print(f"    ⚠️ Erro ao traduzir: {e}")
+                return lyrics 
+
+        result_lines = []
+        trans_idx = 0
+
+        for item in line_mapping:
+            l_type, ts, txt = item
             
-            # ATTEMPT 1: LRCLIB (Free search, priority to synchronized lyrics)
+            if l_type == 'synced':
+                result_lines.append(f"{ts}{txt}")
+                result_lines.append(f"{ts}{self.translation_symbol}{translated_texts[trans_idx]}")
+                trans_idx += 1
+            elif l_type == 'text':
+                result_lines.append(txt)
+                result_lines.append(f"{self.translation_symbol}{translated_texts[trans_idx]}")
+                trans_idx += 1
+            elif l_type == 'empty_synced':
+                result_lines.append(f"{ts}")
+            elif l_type in ('raw', 'empty'):
+                result_lines.append(txt)
+
+        return '\n'.join(result_lines)
+
+    def fetch_and_inject(self, file_path, artist, track, album, save_lrc=True, overwrite=False):
+        """Busca as letras no LRCLIB ou Genius e injeta no arquivo/LRC."""
+        if not overwrite:
+            if self._has_lyrics(file_path, check_lrc=save_lrc):
+                print(f"    ⏭️ Pulando: '{track}' (Letra já existente).")
+                return
+
+        try:
+            print(f"    🔍 Buscando letra para: {track}...")
+            
             lrclib_url = "https://lrclib.net/api/get"
-            
-            # Add an official User-Agent to avoid blocks or throttling from the API
             headers = {"User-Agent": "qobuz-dl-master/2.5 (https://github.com/kaduvercosa/qobuz-dl)"}
             
-            # Try A: Exact match (Artist + Track + Album)
             params = {"artist_name": artist, "track_name": track, "album_name": album}
             response = requests.get(lrclib_url, params=params, headers=headers, timeout=12) 
             
-            # Try B: If it fails, try again without album (often solves version/remaster issues)
             if response.status_code != 200:
                 params = {"artist_name": artist, "track_name": track}
                 response = requests.get(lrclib_url, params=params, headers=headers, timeout=12)
@@ -44,46 +146,41 @@ class LyricsEngine:
                 plain_lyrics = data.get("plainLyrics")
                 
                 if synced_lyrics:
-                    # CORRECT INJECTION: We pass the text with timestamps!
-                    self._inject_metadata(file_path, synced_lyrics)
-                    
+                    final_lyrics = self._process_translation(synced_lyrics, is_synced=True)
+                    self._inject_metadata(file_path, final_lyrics)
                     if save_lrc:
-                        self._save_lrc_file(file_path, synced_lyrics)
-                        print(f"    ✅ Synchronized lyrics injected and saved as .lrc!")
+                        self._save_lrc_file(file_path, final_lyrics)
+                        print(f"    ✅ Letra sincronizada e traduzida salva como .lrc e injetada!")
                     else:
-                        print(f"    ✅ Synchronized lyrics injected into metadata!")
+                        print(f"    ✅ Letra sincronizada e traduzida injetada!")
                     return
                 elif plain_lyrics:
-                    # If no synchronized version exists, fallback to the static one
-                    self._inject_metadata(file_path, plain_lyrics)
-                    print(f"    ✅ Standard lyrics injected into metadata!")
+                    final_lyrics = self._process_translation(plain_lyrics, is_synced=False)
+                    self._inject_metadata(file_path, final_lyrics)
+                    print(f"    ✅ Letra padrão (com tradução) injetada!")
                     return
 
-            # ATTEMPT 2: GENIUS FALLBACK (If the user provided a token)
             if self.genius:
                 song = self.genius.search_song(track, artist)
                 if song and song.lyrics:
-                    self._inject_metadata(file_path, song.lyrics)
-                    print(f"    ✅ Lyrics injected via Genius (Fallback)!")
+                    final_lyrics = self._process_translation(song.lyrics, is_synced=False)
+                    self._inject_metadata(file_path, final_lyrics)
+                    print(f"    ✅ Letra (com tradução) injetada via Genius!")
                     return
 
-            print(f"    ❌ No lyrics found for this track.")
+            print(f"    ❌ Nenhuma letra encontrada para esta faixa.")
 
         except Exception as e:
-            # Catch network or API errors to avoid interrupting the audio download
-            print(f"    ⚠️ Error during lyrics search: {e}")
+            print(f"    ⚠️ Erro durante a busca de letras: {e}")
 
     def _save_lrc_file(self, audio_file_path, synced_lyrics):
-        """Creates the .lrc file next to the audio file."""
         base_name = os.path.splitext(audio_file_path)[0]
         lrc_path = f"{base_name}.lrc"
         with open(lrc_path, 'w', encoding='utf-8') as f:
             f.write(synced_lyrics)
 
     def _inject_metadata(self, file_path, lyrics):
-        """Injects lyrics directly into FLAC or MP3 tags."""
         if not lyrics: return
-        
         ext = os.path.splitext(file_path)[1].lower()
         try:
             if ext == '.flac':
@@ -99,3 +196,65 @@ class LyricsEngine:
                 audio.save(file_path)
         except Exception:
             pass
+
+def extrair_metadados(file_path):
+    """Extrai artista, faixa e álbum do arquivo FLAC ou MP3."""
+    ext = os.path.splitext(file_path)[1].lower()
+    artista, faixa, album = "", "", ""
+    try:
+        if ext == '.flac':
+            audio = FLAC(file_path)
+            artista = audio.get('artist', [''])[0]
+            faixa = audio.get('title', [''])[0]
+            album = audio.get('album', [''])[0]
+        elif ext == '.mp3':
+            audio = EasyID3(file_path)
+            artista = audio.get('artist', [''])[0]
+            faixa = audio.get('title', [''])[0]
+            album = audio.get('album', [''])[0]
+    except Exception as e:
+        print(f"    ⚠️ Erro ao ler metadados de {os.path.basename(file_path)}: {e}")
+    
+    return artista, faixa, album
+
+def main():
+    print("=== Atualizador de Letras com Tradução ===")
+    pasta_musicas = input("Digite o caminho completo da pasta da sua biblioteca (ex: /caminho/para/musicas): ").strip()
+    
+    if not os.path.isdir(pasta_musicas):
+        print("❌ Diretório não encontrado. Verifique o caminho e tente novamente.")
+        return
+
+    escolha = input("\nDeseja SOBRESCREVER as letras e arquivos .lrc que já existem? (s/n): ").strip().lower()
+    sobrescrever_tudo = True if escolha == 's' else False
+    
+    if sobrescrever_tudo:
+        print("⚠️ Modo de SOBRESCRITA ativado. Atualizando todas as músicas...\n")
+    else:
+        print("⏭️ Modo de PULAR ativado. Músicas com letras existentes serão ignoradas.\n")
+
+    engine = LyricsEngine(translate=True)
+
+    # os.walk garante que todas as subpastas da sua biblioteca sejam verificadas
+    for root, dirs, files in os.walk(pasta_musicas):
+        for file in files:
+            if file.lower().endswith(('.flac', '.mp3')):
+                caminho_completo = os.path.join(root, file)
+                
+                artista, faixa, album = extrair_metadados(caminho_completo)
+                
+                if artista and faixa:
+                    print(f"🎵 Processando: {artista} - {faixa}")
+                    engine.fetch_and_inject(
+                        file_path=caminho_completo,
+                        artist=artista,
+                        track=faixa,
+                        album=album,
+                        save_lrc=True,
+                        overwrite=sobrescrever_tudo
+                    )
+                else:
+                    print(f"    ⚠️ Metadados incompletos (Artista ou Faixa faltando) para: {file}")
+
+if __name__ == "__main__":
+    main()
