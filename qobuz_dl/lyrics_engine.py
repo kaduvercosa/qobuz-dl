@@ -46,16 +46,16 @@ class LyricsEngine:
         return lyrics.strip()
 
     def _translate_synced_lyrics(self, synced_lyrics):
-        """Lê o LRC original, detecta o idioma, traduz em LOTE e cria versão bilíngue com Prefixos"""
-        print(f"    🌍 Verificando idioma e traduzindo letras...")
+        """Lê o LRC, traduz em lote e detecta o idioma LINHA POR LINHA para os prefixos."""
+        print(f"    🌍 Verificando idiomas e traduzindo letras...")
         bilingual_lrc = []
         parsed_lines = []
         texts_to_translate = []
         
-        # Regex suporta tempos múltiplos: [00:10.00][00:20.00] Letra
+        # Suporta tempos múltiplos na mesma linha: [00:10.00][00:20.00] Letra
         regex_lrc = re.compile(r'^((?:\[\d{2}:\d{2}\.\d{2,3}\])+)(.*)')
 
-        # PASSO 1: Extrair textos
+        # PASSO 1: Extrair os textos das linhas
         for line in synced_lyrics.splitlines():
             match = regex_lrc.match(line)
             if match:
@@ -68,38 +68,32 @@ class LyricsEngine:
             else:
                 parsed_lines.append({"type": "raw", "line": line})
 
-        # PASSO 2: Detectar o idioma original da música
-        orig_prefix = "ORIG" # Fallback caso a detecção falhe
+        # Mapeamento de idiomas comuns para exibir na tela
+        lang_map = {
+            'en': 'EN', 'es': 'ES', 'fr': 'FR', 'it': 'IT', 
+            'de': 'DE', 'ja': 'JP', 'ko': 'KR', 'pt': 'PT'
+        }
+
+        # PASSO 2: Descobrir o "Idioma Principal" da música como escudo de segurança
+        main_prefix = "ORIG"
         if texts_to_translate:
-            # Junta as primeiras linhas para dar contexto ao detector de idioma
             sample_text = " ".join(texts_to_translate[:5])
             try:
-                lang_code = detect(sample_text)
-                
-                # Mapeamento dos códigos de idioma para as siglas na tela
-                lang_map = {
-                    'en': 'EN',
-                    'es': 'ES',
-                    'fr': 'FR',
-                    'it': 'IT',
-                    'de': 'DE',
-                    'ja': 'JP',
-                    'ko': 'KR'
-                }
-                orig_prefix = lang_map.get(lang_code, lang_code.upper())
+                main_lang = detect(sample_text)
+                main_prefix = lang_map.get(main_lang, main_lang.upper())
             except Exception:
                 pass
 
-        # PASSO 3: Traduzir em lote (muito mais rápido que linha por linha)
+        # PASSO 3: Traduzir TUDO em lote (Super rápido via rede)
         translated_texts = []
         if texts_to_translate:
             try:
                 translated_texts = self.translator.translate_batch(texts_to_translate)
             except Exception as e:
-                print(f"    ⚠️ Falha na tradução: {e}")
+                print(f"    ⚠️ Falha na tradução automática: {e}")
                 translated_texts = texts_to_translate 
 
-        # PASSO 4: Montar o LRC com os Prefixos
+        # PASSO 4: Montar o LRC detectando o idioma LINHA POR LINHA (Local/Rápido)
         trans_index = 0
         for item in parsed_lines:
             if item["type"] == "raw":
@@ -109,17 +103,32 @@ class LyricsEngine:
                 text = item["text"]
                 
                 if not text:
-                    # Linhas de pausa instrumental
+                    # Mantém pausas instrumentais
                     bilingual_lrc.append(f"{timestamps}")
                 else:
                     translated_text = translated_texts[trans_index] if trans_index < len(translated_texts) else text
                     trans_index += 1
                     
-                    # Se a música já for no idioma alvo, não duplica a linha
-                    if orig_prefix == self.target_lang.upper() or text.lower() == translated_text.lower():
+                    # Trava de segurança caso o Google Translator retorne None
+                    if translated_text is None:
+                        translated_text = text
+
+                    # --- DETECÇÃO LINHA POR LINHA ---
+                    line_prefix = main_prefix
+                    # Só tenta detectar se a linha tiver mais de 3 letras (evita erros em "Oh", "Ah")
+                    if len(text) > 3:
+                        try:
+                            line_lang = detect(text)
+                            line_prefix = lang_map.get(line_lang, line_lang.upper())
+                        except Exception:
+                            pass # Falhou, continua usando o idioma principal da faixa
+                    # --------------------------------
+
+                    # Se a linha já for PT ou for idêntica à tradução, não duplica
+                    if line_prefix == self.target_lang.upper() or text.lower() == translated_text.lower():
                         bilingual_lrc.append(f"{timestamps}{text}")
                     else:
-                        bilingual_lrc.append(f"{timestamps}{orig_prefix}: {text}")
+                        bilingual_lrc.append(f"{timestamps}{line_prefix}: {text}")
                         bilingual_lrc.append(f"{timestamps}{self.target_lang.upper()}: {translated_text}")
                         
         return "\n".join(bilingual_lrc)
@@ -127,7 +136,7 @@ class LyricsEngine:
     def fetch_and_inject(self, file_path, artist, track, album, save_lrc=True):
         """Motor em cascata: Tenta LRCLIB primeiro, se falhar tenta Genius."""
         try:
-            print(f"    🔍 Buscando letra para: {track}...")
+            print(f"    🔍 Buscando letras para: {track}...")
             
             clean_track = self._clean_search_term(track)
             clean_artist = self._clean_search_term(artist)
@@ -181,7 +190,7 @@ class LyricsEngine:
             print(f"    ⚠️ Erro no processamento da letra: {e}")
 
     def _save_lrc_file(self, audio_file_path, synced_lyrics):
-        """Cria o arquivo .lrc e protege contra nomes de arquivos inválidos."""
+        """Cria o arquivo .lrc e protege contra caminhos inválidos."""
         base_name = os.path.splitext(audio_file_path)[0]
         lrc_path = f"{base_name}.lrc"
         
@@ -206,6 +215,7 @@ class LyricsEngine:
                     audio = ID3(file_path)
                 except ID3NoHeaderError:
                     audio = ID3()
+                # Remove letras antigas para evitar duplicação ou bugs de exibição no Player
                 audio.delall('USLT')
                 audio.add(USLT(encoding=3, lang='eng', desc='', text=lyrics))
                 audio.save(file_path)
