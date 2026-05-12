@@ -251,7 +251,7 @@ def main():
                         track=faixa,
                         album=album,
                         save_lrc=True,
-                        overwrite=sobrescrever_tudo
+                        overwrite=False
                     )
                 else:
                     print(f"    ⚠️ Metadados incompletos (Artista ou Faixa faltando) para: {file}")
