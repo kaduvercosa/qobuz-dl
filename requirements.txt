@@ -9,4 +9,3 @@ cryptography
 questionary
 lyricsgenius
 deep-translator
-langdetect
