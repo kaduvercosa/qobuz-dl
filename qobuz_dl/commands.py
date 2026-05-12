@@ -77,6 +77,11 @@ def lyrics_args(subparsers):
         metavar="DIRECTORY",
         help="The local directory containing the music files to be scanned",
     )
+    lyrics.add_argument(
+    		"--overwrite",
+        action="store_true",
+        help="overwrite existing lyrics and translations in the files",
+    )
     return lyrics
 
 def sync_playlist_args(subparsers):
