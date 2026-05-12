@@ -59,8 +59,10 @@ class TextCleaner:
         if not text:
             return ""
 
+        # Remove tudo após " - "
         text = text.split(" - ")[0]
 
+        # Remove feat/remaster/etc
         text = re.sub(
             r'(?i)\s*[\(\[][^\)\]]*(remaster|feat|mix|version|edit|mono|stereo)[\)\]]',
             '',
@@ -222,7 +224,7 @@ class LyricsTranslator:
         return results
 
     # =====================================================
-    # LRC TRANSLATION
+    # BUILD BILINGUAL LRC
     # =====================================================
 
     def build_bilingual_lrc(self, synced_lyrics):
@@ -349,7 +351,6 @@ class LyricsTranslator:
 
             line_prefix = main_prefix
 
-            # Evita detectar "Oh", "Yeah", etc
             if len(text.split()) >= 2:
 
                 try:
@@ -393,7 +394,7 @@ class LyricsTranslator:
         return "\n".join(bilingual_lrc)
 
     # =====================================================
-    # PLAIN LYRICS TRANSLATION
+    # BUILD BILINGUAL PLAIN
     # =====================================================
 
     def build_bilingual_plain_lyrics(
@@ -418,10 +419,6 @@ class LyricsTranslator:
             if line
         ]
 
-        # -------------------------------------------------
-        # MAIN LANGUAGE
-        # -------------------------------------------------
-
         main_prefix = "ORIG"
 
         if non_empty_lines:
@@ -444,10 +441,6 @@ class LyricsTranslator:
             except Exception:
                 pass
 
-        # -------------------------------------------------
-        # TRANSLATE
-        # -------------------------------------------------
-
         translated = self.translate_batch(
             non_empty_lines
         )
@@ -455,10 +448,6 @@ class LyricsTranslator:
         trans_index = 0
 
         for line in original_lines:
-
-            # ---------------------------------------------
-            # EMPTY
-            # ---------------------------------------------
 
             if not line:
 
@@ -473,10 +462,6 @@ class LyricsTranslator:
 
             if translated_text is None:
                 translated_text = line
-
-            # ---------------------------------------------
-            # LANGUAGE DETECTION
-            # ---------------------------------------------
 
             line_prefix = main_prefix
 
@@ -496,17 +481,9 @@ class LyricsTranslator:
                 except Exception:
                     pass
 
-            # ---------------------------------------------
-            # ORIGINAL
-            # ---------------------------------------------
-
             final_lines.append(
                 f"[{line_prefix}] {line}"
             )
-
-            # ---------------------------------------------
-            # TRANSLATION
-            # ---------------------------------------------
 
             if (
                 line_prefix != self.target_lang
@@ -552,7 +529,7 @@ class LRCLibProvider:
         )
 
         headers = {
-            "User-Agent": "qobuz-dl-ultimate/4.0"
+            "User-Agent": "qobuz-dl-ultimate/5.0"
         }
 
         # -------------------------------------------------
@@ -590,22 +567,13 @@ class LRCLibProvider:
                 timeout=REQUEST_TIMEOUT
             )
 
-        # -------------------------------------------------
-
         if response.status_code != 200:
             return None
 
         data = response.json()
 
-        synced = data.get(
-            "syncedLyrics"
-        )
-
-        plain = data.get(
-            "plainLyrics"
-        )
-
-        # -------------------------------------------------
+        synced = data.get("syncedLyrics")
+        plain = data.get("plainLyrics")
 
         if synced:
 
@@ -1048,3 +1016,27 @@ class LyricsEngine:
             )
 
         return False
+
+    # =====================================================
+    # BACKWARD COMPATIBILITY
+    # =====================================================
+
+    def fetch_and_inject(
+        self,
+        file_path,
+        artist,
+        track,
+        album,
+        overwrite_all=False
+    ):
+        """
+        Compatibilidade com versões antigas.
+        """
+
+        return self.fetch_and_process(
+            file_path=file_path,
+            artist=artist,
+            track=track,
+            album=album,
+            overwrite_all=overwrite_all
+        )
