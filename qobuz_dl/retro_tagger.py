@@ -99,7 +99,7 @@ def inject_lyrics_retroactively(directory_path, genius_token=None, overwrite=Fal
     print(f"{CYAN}[*] Found {processed} compatible audio files. Processing...{OFF}")
 
     # Processamento paralelo
-    with ThreadPoolExecutor(max_workers=5) as executor:
+    with ThreadPoolExecutor(max_workers=1) as executor:
         # Passando a variável overwrite para a thread
         futures = {executor.submit(_process_single_file, str(path), engine, overwrite): path for path in all_files}
         for future in as_completed(futures):
