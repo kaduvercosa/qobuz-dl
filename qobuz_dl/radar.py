@@ -65,30 +65,43 @@ def fetch_rss_releases(rss_url):
 def run_radar():
     """Main execution function for the radar command."""
     
-    # Verifica se é Windows(nt) ou UNix/Linux/Mac(Posix)
-    if os.name == "nt":
+    # 1. Ajuste Multiplataforma para encontrar o config.ini (Linux/Windows/macOS)
+    if os.name == 'nt':  # Windows
         base_path = os.getenv('APPDATA')
-    else:
-        base_path = os.path.join(os.environ["HOME"], ".config")
+    else:  # Linux / macOS
+        base_path = os.path.join(os.path.expanduser('~'), '.config')
+    
+    # Fallback de segurança caso base_path falhe
+    if not base_path:
+        base_path = os.path.expanduser('~')
         
     config_path = os.path.join(base_path, 'qobuz-dl', 'config.ini')
     
     config = configparser.ConfigParser()
+    config.read(config_path)
     
-    # 1. RSS Link Management
+    # Verifica se o arquivo foi lido e possui seções
+    if not config.sections():
+        print(f"{RED}[!] config.ini file not found at {config_path} or file is empty.{OFF}")
+        return
+        
+    # 2. Definição correta da variável section
+    section = config.sections()[0]
+    
+    # 3. RSS Link Management
     rss_url = get_or_save_rss_link(config_path, config, section)
     if not rss_url:
         print(f"{RED}[!] Operation cancelled. No link provided.{OFF}")
         return
 
-    # 2. Connect to Qobuz API
+    # 4. Connect to Qobuz API
     try:
         api = setup_client(config_path, config, section)
     except Exception as e:
         print(f"{RED}[!] Connection error to Qobuz: {e}{OFF}")
         return
 
-    # 3. Download and parse RSS
+    # 5. Download and parse RSS
     releases = fetch_rss_releases(rss_url)
     
     if not releases:
@@ -97,7 +110,7 @@ def run_radar():
         
     print(f"{GREEN}[+] Found {len(releases)} new releases! Searching on Qobuz...{OFF}\n")
 
-    # 4. Search on Qobuz and prepare the UI menu
+    # 6. Search on Qobuz and prepare the UI menu
     choices = []
     for release_title in releases:
         search_result = api.search_albums(release_title, limit=1)
@@ -118,7 +131,7 @@ def run_radar():
         print(f"{YELLOW}\n[!] None of the releases in the feed are currently available on Qobuz.{OFF}")
         return
 
-    # 5. Interactive UI Menu
+    # 7. Interactive UI Menu
     print("\n")
     selected_album_ids = questionary.checkbox(
         "🎧 Select releases to add to Favorites (Space to select, Enter to confirm):",
@@ -129,7 +142,7 @@ def run_radar():
         print(f"{YELLOW}[*] No albums selected. Exiting.{OFF}")
         return
 
-    # 6. Add to Favorites
+    # 8. Add to Favorites
     print(f"\n{CYAN}[*] Adding {len(selected_album_ids)} albums to favorites...{OFF}")
     for album_id in selected_album_ids:
         try:
