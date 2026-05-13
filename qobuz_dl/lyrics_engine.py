@@ -98,7 +98,7 @@ class LyricsEngine:
         if detect:
             try:
                 amostra = " ".join(texts_to_translate[:10])
-                if detect(amostra) == 'pt':
+                if detect(amostra) == self.target_lang:
                     return lyrics
             except Exception:
                 pass 
@@ -119,11 +119,15 @@ class LyricsEngine:
             
             if l_type == 'synced':
                 result_lines.append(f"{ts}{txt}")
-                result_lines.append(f"{ts}{self.translation_symbol}{translated_texts[trans_idx]}")
+                traducao = translated_texts[trans_idx]
+                if traducao and txt.strip().lower() != traducao.strip().lower():
+                    result_lines.append(f"{ts}{self.translation_symbol}{traducao}")
                 trans_idx += 1
             elif l_type == 'text':
                 result_lines.append(txt)
-                result_lines.append(f"{self.translation_symbol}{translated_texts[trans_idx]}")
+                traducao = translated_texts[trans_idx]
+                if traducao and txt.strip().lower() != traducao.strip().lower():
+                    result_lines.append(f"{self.translation_symbol}{traducao}")
                 trans_idx += 1
             elif l_type == 'empty_synced':
                 result_lines.append(f"{ts}")
