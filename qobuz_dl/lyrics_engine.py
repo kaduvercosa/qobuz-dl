@@ -133,7 +133,7 @@ class LyricsEngine:
         return '\n'.join(result_lines)
 
     def fetch_and_inject(self, file_path, artist, track, album, save_lrc=True, overwrite=False):
-        """Busca as letras de forma totalmente silenciosa. Retorna True ou False."""
+        # Busca as letras de forma totalmente silenciosa. Retorna True ou False
         if not overwrite and self._has_lyrics(file_path, check_lrc=save_lrc):
             return False
 
