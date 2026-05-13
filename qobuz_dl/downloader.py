@@ -634,7 +634,7 @@ class Download:
             
             letra_ok = self.lyrics_engine.fetch_and_inject(
                     file_path=final_file, 
-                    artist=search_artist, 
+                    album_artist=search_artist, 
                     track=track_title, 
                     album=search_album,
                     save_lrc=not self.no_lrc_files
