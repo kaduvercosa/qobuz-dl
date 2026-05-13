@@ -20,7 +20,7 @@ except ImportError:
     print("⚠️ 'deep-translator' não encontrado. Instale com: pip install deep-translator")
 
 class LyricsEngine:
-    def __init__(self, genius_token=None, translate=True, target_lang='pt', translation_symbol=" ⃗ "):
+    def __init__(self, genius_token=None, translate=True, target_lang='pt', translation_symbol=" L "):
         self.genius_token = genius_token
         self.genius = None
         self.translate = translate
