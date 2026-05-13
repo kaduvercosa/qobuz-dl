@@ -219,7 +219,7 @@ def inject_lyrics_retroactively(
                 _process_single_file,
                 str(path),
                 engine,
-                overwrite
+                overwrite,
                 idx,
                 processed
             )
