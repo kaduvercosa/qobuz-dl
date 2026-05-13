@@ -26,7 +26,7 @@ def safe_print(message):
 # PROCESS SINGLE FILE
 # =========================
 
-def _process_single_file(file_path_str, engine, overwrite=False):
+def _process_single_file(file_path_str, engine, overwrite=False, current_idx=0, total_files=0):
     try:
         title, artist, album = "", "", ""
         needs_lyrics = False
