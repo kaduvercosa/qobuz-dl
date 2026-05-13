@@ -4,7 +4,6 @@ import requests
 import mutagen
 from mutagen.flac import FLAC
 from mutagen.id3 import ID3, USLT, ID3NoHeaderError
-from mutagen.easyid3 import EasyID3
 
 # Import lyricsgenius only if the user has configured the token
 try:
@@ -17,10 +16,18 @@ try:
     from deep_translator import GoogleTranslator
 except ImportError:
     GoogleTranslator = None
-    print("⚠️ 'deep-translator' não encontrado. Instale com: pip install deep-translator")
+    print("⚠️ 'deep-translator' não encontrado. As traduções automáticas não funcionarão.")
+
+# Import langdetect para evitar traduzir músicas que já são em português
+try:
+    from langdetect import detect
+except ImportError:
+    detect = None
+    print("⚠️ 'langdetect' não encontrado. Instale com: pip install langdetect para habilitar a detecção inteligente.")
 
 class LyricsEngine:
-    def __init__(self, genius_token=None, translate=True, target_lang='pt', translation_symbol=" L "):
+    # SÍMBOLO ATUALIZADO AQUI ⬇️
+    def __init__(self, genius_token=None, translate=True, target_lang='pt', translation_symbol="⤷ "):
         self.genius_token = genius_token
         self.genius = None
         self.translate = translate
@@ -59,8 +66,6 @@ class LyricsEngine:
         if not self.translate or not GoogleTranslator:
             return lyrics
 
-        translator = GoogleTranslator(source='auto', target=self.target_lang)
-        
         lines = lyrics.split('\n')
         texts_to_translate = []
         line_mapping = []
@@ -90,12 +95,33 @@ class LyricsEngine:
                 else:
                     line_mapping.append(('empty', None, ''))
 
-        translated_texts = []
-        if texts_to_translate:
+        if not texts_to_translate:
+            return lyrics
+
+        # --- NOVA VERIFICAÇÃO DE IDIOMA ---
+        if detect:
             try:
-                translated_texts = translator.translate_batch(texts_to_translate)
-            except Exception as e:
-                return lyrics 
+                # Pega as primeiras 10 linhas de texto para ter uma amostra confiável do idioma
+                amostra = " ".join(texts_to_translate[:10])
+                idioma_original = detect(amostra)
+                
+                # Se for português, cancela a tradução e retorna a letra original intacta
+                if idioma_original == 'pt':
+                    print("    🇧🇷 Letra já está em Português. Mantendo formato original.")
+                    return lyrics
+            except Exception:
+                pass # Se o langdetect falhar (ex: música só instrumental), segue o jogo
+        # ----------------------------------
+
+        print("    🌍 Traduzindo letra...")
+        translator = GoogleTranslator(source='auto', target=self.target_lang)
+
+        translated_texts = []
+        try:
+            translated_texts = translator.translate_batch(texts_to_translate)
+        except Exception as e:
+            print(f"    ⚠️ Erro ao traduzir: {e}")
+            return lyrics 
 
         result_lines = []
         trans_idx = 0
@@ -122,9 +148,11 @@ class LyricsEngine:
         """Busca as letras no LRCLIB ou Genius e injeta no arquivo/LRC."""
         if not overwrite:
             if self._has_lyrics(file_path, check_lrc=save_lrc):
-                return False
+                print(f"    ⏭️ Pulando: '{track}' (Letra já existente).")
+                return
 
         try:
+            # ... o resto do seu método fetch_and_inject continua EXATAMENTE igual ...
             lrclib_url = "https://lrclib.net/api/get"
             headers = {"User-Agent": "qobuz-dl-master/2.5 (https://github.com/kaduvercosa/qobuz-dl)"}
             
@@ -145,23 +173,28 @@ class LyricsEngine:
                     self._inject_metadata(file_path, final_lyrics)
                     if save_lrc:
                         self._save_lrc_file(file_path, final_lyrics)
-                    return True
+                        print(f"    ✅ Letra sincronizada salva como .lrc e injetada!")
+                    else:
+                        print(f"    ✅ Letra sincronizada injetada!")
+                    return
                 elif plain_lyrics:
                     final_lyrics = self._process_translation(plain_lyrics, is_synced=False)
                     self._inject_metadata(file_path, final_lyrics)
-                    return True
+                    print(f"    ✅ Letra padrão injetada!")
+                    return
 
             if self.genius:
                 song = self.genius.search_song(track, artist)
                 if song and song.lyrics:
                     final_lyrics = self._process_translation(song.lyrics, is_synced=False)
                     self._inject_metadata(file_path, final_lyrics)
-                    return True
+                    print(f"    ✅ Letra injetada via Genius!")
+                    return
 
-            return False
+            print(f"    ❌ Nenhuma letra encontrada para esta faixa.")
 
         except Exception as e:
-            return False
+            print(f"    ⚠️ Erro durante a busca de letras: {e}")
 
     def _save_lrc_file(self, audio_file_path, synced_lyrics):
         base_name = os.path.splitext(audio_file_path)[0]
@@ -186,4 +219,3 @@ class LyricsEngine:
                 audio.save(file_path)
         except Exception:
             pass
-
