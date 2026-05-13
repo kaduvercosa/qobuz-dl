@@ -23,7 +23,7 @@ except ImportError:
     detect = None
 
 class LyricsEngine:
-    def __init__(self, genius_token=None, translate=True, target_lang='pt', translation_symbol="⤷ "):
+    def __init__(self, genius_token=None, translate=True, target_lang='pt', translation_symbol=" ¬ "):
         self.genius_token = genius_token
         self.genius = None
         self.translate = translate
