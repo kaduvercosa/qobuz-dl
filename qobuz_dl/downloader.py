@@ -638,10 +638,10 @@ class Download:
                     track=track_title, 
                     album=search_album,
                     save_lrc=not self.no_lrc_files
-                )
+            )
                 
-                if letra_ok:
-                    safe_print("{GREEN}   [•] Letras: sucess.. ")
+            if letra_ok:
+                safe_print("{GREEN}   [•] Letras: sucess.. ")
 
         delay_time = getattr(self.settings, 'delay', 0)
         if delay_time == 0 and '--delay' in sys.argv:
