@@ -131,7 +131,7 @@ def _process_single_file(file_path_str, engine, overwrite=False):
             )
 
             if success:
-                safe_print(f"{G}  L Completed: {artist} - {title}{O}")}")
+                safe_print(f"{G}  L Completed: {artist} - {title}{O}")
                 return "injected"
             else:
                 return "skipped"
