@@ -548,7 +548,10 @@ class QobuzDL:
                     if not raw_type:
                         t_count = i.get("tracks_count", 0)
                         duration = i.get("duration", 0) 
-                        
+                    
+                    if raw_type and raw_type.lower() in ["single", "ep"] and (t_count >= 7 or duration >= 1740:
+                        raw_type = "Album"
+                    elif not raw_type:    
                         if item_type == "album" and (t_count or duration):
                             if duration >= 1740 or t_count >= 7:
                                 raw_type = "Album"
