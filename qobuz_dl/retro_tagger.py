@@ -153,13 +153,13 @@ def inject_lyrics_retroactively(
 
     safe_print(
         f"\n{CYAN}[*] Starting retroactive lyrics scan in: "
-        f"{directory_path}{OFF}"
+        f"{directory_path}{OFF}\n"
     )
 
     if overwrite:
         safe_print(
             f"{RED}[!] OVERWRITE MODE ENABLED: "
-            f"Existing lyrics will be replaced.{OFF}"
+            f"Existing lyrics will be replaced.{OFF}\n"
         )
 
     target_dir = Path(directory_path)
@@ -168,7 +168,7 @@ def inject_lyrics_retroactively(
 
         safe_print(
             f"{RED}[!] Error: "
-            f"The directory '{directory_path}' does not exist.{OFF}"
+            f"The directory '{directory_path}' does not exist.{OFF}\n"
         )
 
         return
@@ -197,7 +197,7 @@ def inject_lyrics_retroactively(
 
     safe_print(
         f"{CYAN}[*] Found {processed} compatible audio files. "
-        f"Processing...{OFF}"
+        f"Processing...{OFF}\n"
     )
 
     # =========================
