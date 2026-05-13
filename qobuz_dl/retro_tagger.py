@@ -28,119 +28,95 @@ def safe_print(message):
 
 def _process_single_file(file_path_str, engine, overwrite=False, current_idx=0, total_files=0):
     try:
-        title, artist, album = "", "", ""
-        needs_lyrics = False
+        title, artist, album_artist, album = "", "", "", ""
+        has_lyrics = False
 
         file_path_lower = file_path_str.lower()
+
+        # Cores para a UI
+        C = "\033[96m"  # Cyan
+        G = "\033[92m"  # Green
+        Y = "\033[93m"  # Yellow
+        O = "\033[0m"   # Off/Reset
 
         # =========================
         # FLAC
         # =========================
-
         if file_path_lower.endswith(".flac"):
             audio = FLAC(file_path_str)
 
-            # Se não for overwrite, verifica se já possui letra
-            if not overwrite:
-                if (
-                    audio.get("LYRICS")
-                    or audio.get("UNSYNCEDLYRICS")
-                    or audio.get("LYRICS_SYNCED")
-                ):
-                    return "skipped"
+            # Verifica se já possui letra
+            if audio.get("LYRICS") or audio.get("UNSYNCEDLYRICS") or audio.get("LYRICS_SYNCED"):
+                has_lyrics = True
 
             title = audio.get("TITLE", [""])[0]
-
+            artist = audio.get("ARTIST", [""])[0]
             album_artist = audio.get("ALBUMARTIST", [""])[0]
-            performer_name = audio.get("ARTIST", ["Unknown Artist"])[0]
-
-            artist = (
-                performer_name
-                if album_artist in ["", "Various Artists"]
-                else album_artist
-            )
-
             album = audio.get("ALBUM", [""])[0]
-
-            needs_lyrics = True
 
         # =========================
         # MP3
         # =========================
-
         elif file_path_lower.endswith(".mp3"):
-
             try:
                 audio = id3.ID3(file_path_str)
-
             except ID3NoHeaderError:
                 return "skipped"
 
-            # Se não for overwrite, verifica se já possui letra
-            if not overwrite:
-                if audio.getall("USLT") or audio.getall("SYLT"):
-                    return "skipped"
+            # Verifica se já possui letra
+            if audio.getall("USLT") or audio.getall("SYLT"):
+                has_lyrics = True
 
-            title = (
-                audio.get("TIT2").text[0]
-                if audio.get("TIT2")
-                else ""
-            )
-
-            artist = (
-                audio.get("TPE1").text[0]
-                if audio.get("TPE1")
-                else ""
-            )
-
-            album = (
-                audio.get("TALB").text[0]
-                if audio.get("TALB")
-                else ""
-            )
-
-            needs_lyrics = True
+            title = audio.get("TIT2").text[0] if audio.get("TIT2") else ""
+            artist = audio.get("TPE1").text[0] if audio.get("TPE1") else ""
+            album_artist = audio.get("TPE2").text[0] if audio.get("TPE2") else ""
+            album = audio.get("TALB").text[0] if audio.get("TALB") else ""
 
         # =========================
-        # VALIDATION
+        # VALIDATION & LOGIC
         # =========================
 
         if not title or not artist:
             return "skipped"
 
+        # Prioriza o Álbum Artista para não quebrar na busca (exceto se for Various Artists)
+        search_artist = album_artist if album_artist and album_artist.lower() != "various artists" else artist
+        progresso = f"[{current_idx}/{total_files}]"
+
+        # Se não for overwrite e já tiver letra, avisa e pula
+        if not overwrite and has_lyrics:
+            safe_print(f"{Y}{progresso} Skipped (Already tagged): {search_artist} - {title}{O}")
+            return "skipped"
+
         # =========================
         # SEARCH & INJECT
         # =========================
+        
+        safe_print(f"{C}{progresso} Searching: {search_artist} - {title}{O}")
 
-        if needs_lyrics:
-            # Using specific ANSI codes to exactly match the downloader UI
-            C = "\033[96m"
-            G = "\033[92m"
-            O = "\033[0m"
-            
-            progresso = f"[{current_idx}/{total_files}]"
-            safe_print(f"{C}{progresso}: {artist} - {title}{O}")
+        # Engine atualizada usando o album_artist como foco principal
+        success = engine.fetch_and_inject(
+            file_path=file_path_str,
+            album_artist=search_artist,
+            track=title,
+            album=album,
+            overwrite=overwrite
+        )
 
-            # Engine
-            success = engine.fetch_and_inject(
-                file_path=file_path_str,
-                artist=artist,
-                track=title,
-                album=album,
-                overwrite=overwrite
-            )
-
-            if success:
-                safe_print(f"{G}  L Completed: {artist} - {title}{O}")
-                return "injected"
-            else:
-                return "skipped"
+        if success:
+            safe_print(f"{G}  L Completed: {search_artist} - {title}{O}")
+            return "injected"
+        else:
+            # Avisa se a letra não for encontrada em nenhum banco de dados
+            safe_print(f"{RED}  L Not found: {search_artist} - {title}{OFF}")
+            return "skipped"
 
     except Exception as e:
         safe_print(f"{RED}[!] Error processing {file_path_str}: {e}{OFF}")
         return "error"
 
     return "skipped"
+
 
 # =========================
 # MAIN RETRO SCAN
@@ -166,12 +142,10 @@ def inject_lyrics_retroactively(
     target_dir = Path(directory_path)
 
     if not target_dir.is_dir():
-
         safe_print(
             f"{RED}[!] Error: "
             f"The directory '{directory_path}' does not exist.{OFF}\n"
         )
-
         return
 
     engine = LyricsEngine(genius_token)
@@ -183,7 +157,6 @@ def inject_lyrics_retroactively(
     all_files = []
 
     for ext in [".flac", ".mp3"]:
-
         all_files.extend(list(target_dir.rglob(f"*{ext}")))
         all_files.extend(list(target_dir.rglob(f"*{ext.upper()}")))
 
@@ -191,7 +164,6 @@ def inject_lyrics_retroactively(
     all_files = list(set(all_files))
 
     processed = len(all_files)
-
     injected = 0
     skipped = 0
     errors = 0
@@ -205,9 +177,7 @@ def inject_lyrics_retroactively(
     # PARALLEL PROCESSING
     # =========================
 
-    # Ideal para iSH/iPad:
-    # rápido sem bagunçar o terminal
-
+    # Ideal para iSH/iPad: rápido sem bagunçar o terminal
     max_workers = 3
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -226,52 +196,32 @@ def inject_lyrics_retroactively(
             futures[future] = path
 
         for future in as_completed(futures):
-
             try:
                 result = future.result()
 
                 if result == "injected":
                     injected += 1
-
                 elif result == "skipped":
                     skipped += 1
-
                 elif result == "error":
                     errors += 1
 
             except Exception as e:
-
                 logger.error(
                     f"{RED}[!] Thread execution error: {e}{OFF}"
                 )
-
                 errors += 1
 
     # =========================
     # FINAL SUMMARY
     # =========================
 
-    safe_print(
-        f"\n{GREEN}[+] Retroactive Scan and Injection Completed!{OFF}"
-    )
-
-    safe_print(
-        f"{CYAN}  - Total files analyzed: {processed}{OFF}"
-    )
-
-    safe_print(
-        f"{GREEN}  - Injection attempts: {injected}{OFF}"
-    )
-
-    safe_print(
-        f"{YELLOW}  - Skipped files "
-        f"(already tagged or missing data): {skipped}{OFF}"
-    )
+    safe_print(f"\n{GREEN}[+] Retroactive Scan and Injection Completed!{OFF}")
+    safe_print(f"{CYAN}  - Total files analyzed: {processed}{OFF}")
+    safe_print(f"{GREEN}  - Injection attempts: {injected}{OFF}")
+    safe_print(f"{YELLOW}  - Skipped files (already tagged or missing data): {skipped}{OFF}")
 
     if errors > 0:
-
-        safe_print(
-            f"{RED}  - Errors encountered: {errors}{OFF}"
-        )
-
+        safe_print(f"{RED}  - Errors encountered: {errors}{OFF}")
+    
     safe_print("\n")
