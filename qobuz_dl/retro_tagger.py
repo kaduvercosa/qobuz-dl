@@ -118,7 +118,8 @@ def _process_single_file(file_path_str, engine, overwrite=False):
             G = "\033[92m"
             O = "\033[0m"
             
-            safe_print(f"{C}[+] In progress: {artist} - {title}{O}")
+            progresso = f"[{current_idx} / {total_files}]"
+            safe_print(f"{C}[+{progresso}]: {artist} - {title}{O}")
 
             # Engine
             success = engine.fetch_and_inject(
@@ -130,7 +131,7 @@ def _process_single_file(file_path_str, engine, overwrite=False):
             )
 
             if success:
-                safe_print(f"{G}  L Completed: {artist} - {title}{O}")
+                safe_print(f"{G}  L Completed: {artist} - {title}{O}")}")
                 return "injected"
             else:
                 return "skipped"
@@ -211,16 +212,18 @@ def inject_lyrics_retroactively(
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
 
-        futures = {
-            executor.submit(
+        futures = {}
+        
+        for idx, path in enumerate(all_files, 1):
+            future = executor.submit(
                 _process_single_file,
                 str(path),
                 engine,
                 overwrite
-            ): path
-
-            for path in all_files
-        }
+                idx,
+                processed
+            )
+            futures[future] = path
 
         for future in as_completed(futures):
 
