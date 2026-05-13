@@ -113,20 +113,15 @@ def _process_single_file(file_path_str, engine, overwrite=False):
         # =========================
 
         if needs_lyrics:
+            # Using specific ANSI codes to exactly match the downloader UI
+            C = "\033[96m"
+            G = "\033[92m"
+            O = "\033[0m"
 
-            if overwrite:
-                safe_print(
-                    f"{YELLOW}  > Overwriting lyrics for: "
-                    f"{artist} - {title}...{OFF}"
-                )
-            else:
-                safe_print(
-                    f"{YELLOW}  > Missing lyrics: "
-                    f"{artist} - {title}. Searching...{OFF}"
-                )
+            safe_print(f"{C}[+] In progress: {artist} - {title}{O}")
 
             # Engine
-            engine.fetch_and_inject(
+            success = engine.fetch_and_inject(
                 file_path=file_path_str,
                 artist=artist,
                 track=title,
@@ -134,14 +129,14 @@ def _process_single_file(file_path_str, engine, overwrite=False):
                 overwrite=overwrite
             )
 
-            return "injected"
+            if success:
+                safe_print(f"{G}  L Completed: {artist} - {title}{O}")
+                return "injected"
+            else:
+                return "skipped"
 
     except Exception as e:
-
-        logger.error(
-            f"{RED}[!] Error reading {file_path_str}: {e}{OFF}"
-        )
-
+        safe_print(f"{RED}[!] Error processing {file_path_str}: {e}{OFF}")
         return "error"
 
     return "skipped"
