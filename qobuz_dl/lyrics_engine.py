@@ -59,7 +59,6 @@ class LyricsEngine:
         if not self.translate or not GoogleTranslator:
             return lyrics
 
-        print("    🌍 Traduzindo letra...")
         translator = GoogleTranslator(source='auto', target=self.target_lang)
         
         lines = lyrics.split('\n')
@@ -96,7 +95,6 @@ class LyricsEngine:
             try:
                 translated_texts = translator.translate_batch(texts_to_translate)
             except Exception as e:
-                print(f"    ⚠️ Erro ao traduzir: {e}")
                 return lyrics 
 
         result_lines = []
@@ -124,12 +122,9 @@ class LyricsEngine:
         """Busca as letras no LRCLIB ou Genius e injeta no arquivo/LRC."""
         if not overwrite:
             if self._has_lyrics(file_path, check_lrc=save_lrc):
-                print(f"    ⏭️ Pulando: '{track}' (Letra já existente).")
-                return
+                return False
 
         try:
-            print(f"    🔍 Buscando letra para: {track}...")
-            
             lrclib_url = "https://lrclib.net/api/get"
             headers = {"User-Agent": "qobuz-dl-master/2.5 (https://github.com/kaduvercosa/qobuz-dl)"}
             
@@ -150,28 +145,23 @@ class LyricsEngine:
                     self._inject_metadata(file_path, final_lyrics)
                     if save_lrc:
                         self._save_lrc_file(file_path, final_lyrics)
-                        print(f"    ✅ Letra sincronizada e traduzida salva como .lrc e injetada!")
-                    else:
-                        print(f"    ✅ Letra sincronizada e traduzida injetada!")
-                    return
+                    return True
                 elif plain_lyrics:
                     final_lyrics = self._process_translation(plain_lyrics, is_synced=False)
                     self._inject_metadata(file_path, final_lyrics)
-                    print(f"    ✅ Letra padrão (com tradução) injetada!")
-                    return
+                    return True
 
             if self.genius:
                 song = self.genius.search_song(track, artist)
                 if song and song.lyrics:
                     final_lyrics = self._process_translation(song.lyrics, is_synced=False)
                     self._inject_metadata(file_path, final_lyrics)
-                    print(f"    ✅ Letra (com tradução) injetada via Genius!")
-                    return
+                    return True
 
-            print(f"    ❌ Nenhuma letra encontrada para esta faixa.")
+            return False
 
         except Exception as e:
-            print(f"    ⚠️ Erro durante a busca de letras: {e}")
+            return False
 
     def _save_lrc_file(self, audio_file_path, synced_lyrics):
         base_name = os.path.splitext(audio_file_path)[0]
