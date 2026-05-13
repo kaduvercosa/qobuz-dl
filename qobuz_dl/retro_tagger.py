@@ -118,7 +118,7 @@ def _process_single_file(file_path_str, engine, overwrite=False, current_idx=0, 
             G = "\033[92m"
             O = "\033[0m"
             
-            progresso = f"[{current_idx} / {total_files}]"
+            progresso = f"[{current_idx}/{total_files}]"
             safe_print(f"{C}{progresso}: {artist} - {title}{O}")
 
             # Engine
