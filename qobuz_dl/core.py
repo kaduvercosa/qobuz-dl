@@ -359,22 +359,75 @@ class QobuzDL:
             logger.error(f"{RED}Failed to update text file status: {e}{OFF}")
 
     def download_list_of_urls(self, urls, txt_file=None):
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        import threading
         if not urls or not isinstance(urls, list):
             logger.info(f"{OFF}Nothing to download")
             return
-        for url in urls:
-            # --- FIX QOBUZ NEW DOMAIN LINKS ---
-            original_url = url
-            url = url.replace("open.qobuz.com", "play.qobuz.com")
-            
-            if "last.fm" in url:
-                self.download_lastfm_pl(url)
-                self.mark_url_done_in_file(txt_file, original_url)
-            elif os.path.isfile(url):
-                self.download_from_txt_file(url)
-            else:
-                self.handle_url(url)
-                self.mark_url_done_in_file(txt_file, original_url)
+
+        # Disable multithreading for inner tracks when doing batch parallel downloads
+        max_batch_workers = getattr(self.settings, 'max_workers', 3)
+        if len(urls) > 1 and max_batch_workers > 1 and txt_file is not None:
+            logger.info(f"{YELLOW}[*] Batch download detected. Processing up to {max_batch_workers} items in parallel.{OFF}")
+            # To avoid "bagunça", we force sequential download inside Downloader, meaning one item at a time per URL
+            original_workers = getattr(self.settings, 'max_workers', 3)
+            # Optional: Disable the nested parallel track download temporarily
+            self.settings.max_workers = 1
+
+            def process_url(url):
+                original_url = url
+                url = url.replace("open.qobuz.com", "play.qobuz.com")
+                try:
+                    # In order to prevent the terminal mess (bagunça) while batch downloading
+                    # multiple items concurrently, we monkey patch sys.stdout for the handle_url call
+                    import sys
+                    import io
+                    # Create a dummy stream so tqdm prints are ignored but exceptions are not
+                    dummy_stream = io.StringIO()
+                    old_stdout = sys.stdout
+                    old_stderr = sys.stderr
+                    sys.stdout = dummy_stream
+                    sys.stderr = dummy_stream
+
+                    if "last.fm" in url:
+                        self.download_lastfm_pl(url)
+                        self.mark_url_done_in_file(txt_file, original_url)
+                    elif os.path.isfile(url):
+                        self.download_from_txt_file(url)
+                    else:
+                        self.handle_url(url)
+                        self.mark_url_done_in_file(txt_file, original_url)
+
+                    sys.stdout = old_stdout
+                    sys.stderr = old_stderr
+                    logger.info(f"{GREEN}[+] Completed download: {url}{OFF}")
+                except Exception as e:
+                    sys.stdout = old_stdout
+                    sys.stderr = old_stderr
+                    logger.error(f"{RED}[!] Error downloading {url}: {e}{OFF}")
+
+            try:
+                with ThreadPoolExecutor(max_workers=max_batch_workers) as executor:
+                    futures = [executor.submit(process_url, url) for url in urls]
+                    for future in as_completed(futures):
+                        pass
+            finally:
+                # Restore settings
+                self.settings.max_workers = original_workers
+        else:
+            for url in urls:
+                # --- FIX QOBUZ NEW DOMAIN LINKS ---
+                original_url = url
+                url = url.replace("open.qobuz.com", "play.qobuz.com")
+
+                if "last.fm" in url:
+                    self.download_lastfm_pl(url)
+                    self.mark_url_done_in_file(txt_file, original_url)
+                elif os.path.isfile(url):
+                    self.download_from_txt_file(url)
+                else:
+                    self.handle_url(url)
+                    self.mark_url_done_in_file(txt_file, original_url)
 
     def download_from_txt_file(self, txt_file):
         try:
