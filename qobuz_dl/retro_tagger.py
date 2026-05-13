@@ -119,7 +119,7 @@ def _process_single_file(file_path_str, engine, overwrite=False, current_idx=0, 
             O = "\033[0m"
             
             progresso = f"[{current_idx} / {total_files}]"
-            safe_print(f"{C}[+{progresso}]: {artist} - {title}{O}")
+            safe_print(f"{C}{progresso}: {artist} - {title}{O}")
 
             # Engine
             success = engine.fetch_and_inject(
