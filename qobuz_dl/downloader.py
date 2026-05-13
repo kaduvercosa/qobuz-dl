@@ -632,14 +632,16 @@ class Download:
 
             search_album = _safe_get(track_metadata, "album", "title", default="")
             
-            with print_lock:                           
-                self.lyrics_engine.fetch_and_inject(
+            letra_ok = self.lyrics_engine.fetch_and_inject(
                     file_path=final_file, 
                     artist=search_artist, 
                     track=track_title, 
                     album=search_album,
                     save_lrc=not self.no_lrc_files
                 )
+                
+                if letra_ok:
+                    safe_print("{GREEN}   [•] Letras: sucess.. ")
 
         delay_time = getattr(self.settings, 'delay', 0)
         if delay_time == 0 and '--delay' in sys.argv:
