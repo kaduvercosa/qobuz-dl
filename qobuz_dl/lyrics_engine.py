@@ -132,7 +132,7 @@ class LyricsEngine:
 
         return '\n'.join(result_lines)
 
-    def fetch_and_inject(self, file_path, artist, track, album, save_lrc=True, overwrite=False):
+    def fetch_and_inject(self, file_path, album_artist, track, album, save_lrc=True, overwrite=False):
         # Busca as letras de forma totalmente silenciosa. Retorna True ou False
         if not overwrite and self._has_lyrics(file_path, check_lrc=save_lrc):
             return False
@@ -141,11 +141,11 @@ class LyricsEngine:
             lrclib_url = "https://lrclib.net/api/get"
             headers = {"User-Agent": "qobuz-dl-master/2.5 (https://github.com/kaduvercosa/qobuz-dl)"}
             
-            params = {"artist_name": artist, "track_name": track, "album_name": album}
+            params = {"artist_name": album_artist, "track_name": track, "album_name": album}
             response = requests.get(lrclib_url, params=params, headers=headers, timeout=12) 
             
             if response.status_code != 200:
-                params = {"artist_name": artist, "track_name": track}
+                params = {"artist_name": album_artist, "track_name": track}
                 response = requests.get(lrclib_url, params=params, headers=headers, timeout=12)
 
             if response.status_code == 200:
@@ -165,7 +165,7 @@ class LyricsEngine:
                     return True
 
             if self.genius:
-                song = self.genius.search_song(track, artist)
+                song = self.genius.search_song(track, album_artist)
                 if song and song.lyrics:
                     final_lyrics = self._process_translation(song.lyrics, is_synced=False)
                     self._inject_metadata(file_path, final_lyrics)
