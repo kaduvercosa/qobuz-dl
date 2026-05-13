@@ -641,9 +641,9 @@ class Download:
             )
                 
             if letra_ok:
-                safe_print(f"  [•] sucess: Letra Encontrada")
+                safe_print(f"  [•] Letra Encontrada: {track_name} {O}")
             else:
-                safe_print(f"{RED}  [!] Letra Nao Encontrada..")
+                safe_print(f"{RED}  [!] Letra Nao Encontrada: {track_name} {O}")
 
         delay_time = getattr(self.settings, 'delay', 0)
         if delay_time == 0 and '--delay' in sys.argv:
