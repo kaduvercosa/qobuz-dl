@@ -3,6 +3,7 @@ import os
 import sys
 import time
 import getpass
+import threading
 
 import requests
 from pathvalidate import sanitize_filename
@@ -340,21 +341,24 @@ class QobuzDL:
             self.download_from_id(item_id, type_dict["album"])
 
     # --- SMART RESUME / BATCH DOWNLOADER LOGIC ---
+    _file_lock = threading.Lock()
+
     def mark_url_done_in_file(self, txt_file, url_to_mark):
         """Appends a [DONE] tag next to a processed URL in the text file."""
         if not txt_file or not os.path.isfile(txt_file):
             return
         try:
-            with open(txt_file, "r", encoding="utf-8") as f:
-                lines = f.readlines()
-            
-            with open(txt_file, "w", encoding="utf-8") as f:
-                for line in lines:
-                    # Safely compare by stripping whitespaces to avoid mismatch bugs
-                    if line.strip() == url_to_mark.strip():
-                        f.write(f"{line.rstrip()} [DONE]\n")
-                    else:
-                        f.write(line)
+            with self._file_lock:
+                with open(txt_file, "r", encoding="utf-8") as f:
+                    lines = f.readlines()
+                
+                with open(txt_file, "w", encoding="utf-8") as f:
+                    for line in lines:
+                        # Safely compare by stripping whitespaces to avoid mismatch bugs
+                        if line.strip() == url_to_mark.strip():
+                            f.write(f"{line.rstrip()} [DONE]\n")
+                        else:
+                            f.write(line)
         except Exception as e:
             logger.error(f"{RED}Failed to update text file status: {e}{OFF}")
 
@@ -372,23 +376,12 @@ class QobuzDL:
             # To avoid "bagunça", we force sequential download inside Downloader, meaning one item at a time per URL
             original_workers = getattr(self.settings, 'max_workers', 3)
             # Optional: Disable the nested parallel track download temporarily
-            self.settings.max_workers = 1
+            self.settings.max_workers = 1 
 
             def process_url(url):
                 original_url = url
                 url = url.replace("open.qobuz.com", "play.qobuz.com")
                 try:
-                    # In order to prevent the terminal mess (bagunça) while batch downloading
-                    # multiple items concurrently, we monkey patch sys.stdout for the handle_url call
-                    import sys
-                    import io
-                    # Create a dummy stream so tqdm prints are ignored but exceptions are not
-                    dummy_stream = io.StringIO()
-                    old_stdout = sys.stdout
-                    old_stderr = sys.stderr
-                    sys.stdout = dummy_stream
-                    sys.stderr = dummy_stream
-
                     if "last.fm" in url:
                         self.download_lastfm_pl(url)
                         self.mark_url_done_in_file(txt_file, original_url)
@@ -397,13 +390,9 @@ class QobuzDL:
                     else:
                         self.handle_url(url)
                         self.mark_url_done_in_file(txt_file, original_url)
-
-                    sys.stdout = old_stdout
-                    sys.stderr = old_stderr
+                    
                     logger.info(f"{GREEN}[+] Completed download: {url}{OFF}")
                 except Exception as e:
-                    sys.stdout = old_stdout
-                    sys.stderr = old_stderr
                     logger.error(f"{RED}[!] Error downloading {url}: {e}{OFF}")
 
             try:
@@ -419,7 +408,7 @@ class QobuzDL:
                 # --- FIX QOBUZ NEW DOMAIN LINKS ---
                 original_url = url
                 url = url.replace("open.qobuz.com", "play.qobuz.com")
-
+                
                 if "last.fm" in url:
                     self.download_lastfm_pl(url)
                     self.mark_url_done_in_file(txt_file, original_url)
