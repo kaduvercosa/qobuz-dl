@@ -351,7 +351,7 @@ class QobuzDL:
             with self._file_lock:
                 with open(txt_file, "r", encoding="utf-8") as f:
                     lines = f.readlines()
-
+                
                 with open(txt_file, "w", encoding="utf-8") as f:
                     for line in lines:
                         # Safely compare by stripping whitespaces to avoid mismatch bugs
@@ -376,7 +376,7 @@ class QobuzDL:
             # To avoid "bagunça", we force sequential download inside Downloader, meaning one item at a time per URL
             original_workers = getattr(self.settings, 'max_workers', 3)
             # Optional: Disable the nested parallel track download temporarily
-            self.settings.max_workers = 1
+            self.settings.max_workers = 1 
 
             def process_url(url):
                 original_url = url
@@ -390,7 +390,7 @@ class QobuzDL:
                     else:
                         self.handle_url(url)
                         self.mark_url_done_in_file(txt_file, original_url)
-
+                    
                     logger.info(f"{GREEN}[+] Completed download: {url}{OFF}")
                 except Exception as e:
                     logger.error(f"{RED}[!] Error downloading {url}: {e}{OFF}")
@@ -408,7 +408,7 @@ class QobuzDL:
                 # --- FIX QOBUZ NEW DOMAIN LINKS ---
                 original_url = url
                 url = url.replace("open.qobuz.com", "play.qobuz.com")
-
+                
                 if "last.fm" in url:
                     self.download_lastfm_pl(url)
                     self.mark_url_done_in_file(txt_file, original_url)
