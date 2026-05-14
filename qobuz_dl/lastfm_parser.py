@@ -1,8 +1,8 @@
-import requests
+import aiohttp
 from bs4 import BeautifulSoup
 from qobuz_dl.color import OFF, GREEN, RED, YELLOW, CYAN
 
-def fetch_lastfm_playlist(url: str) -> list:
+async def fetch_lastfm_playlist(url: str) -> list:
     """
     Fetches a Last.fm playlist URL and extracts the tracks.
     Returns a list of dictionaries: [{'artist': '...', 'title': '...'}]
@@ -14,14 +14,16 @@ def fetch_lastfm_playlist(url: str) -> list:
     }
     
     try:
-        response = requests.get(url, headers=headers, timeout=15)
-        response.raise_for_status()
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=headers, timeout=15) as response:
+                response.raise_for_status()
+                text = await response.text()
     except Exception as e:
         print(f"{RED}[!] Failed to connect to Last.fm: {e}{OFF}")
         return []
 
     # Parse the HTML content
-    soup = BeautifulSoup(response.text, 'html.parser')
+    soup = BeautifulSoup(text, 'html.parser')
     tracks = []
     
     # Locate all track rows in the playlist table

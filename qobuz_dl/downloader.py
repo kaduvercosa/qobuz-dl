@@ -15,7 +15,6 @@ import concurrent.futures
 import aiohttp
 import aiofiles
 import asyncio
-import requests
 from Crypto.Cipher import AES
 from pathvalidate import sanitize_filename, sanitize_filepath
 from tqdm import tqdm
@@ -634,7 +633,7 @@ class Download:
 
             search_album = _safe_get(track_metadata, "album", "title", default="")
             
-            letra_ok = self.lyrics_engine.fetch_and_inject(
+            letra_ok = await self.lyrics_engine.fetch_and_inject(
                     file_path=final_file, 
                     album_artist=search_artist, 
                     track=track_title, 
@@ -1089,7 +1088,7 @@ async def _get_extra(item, dirn, extra="cover.jpg", art_size=None, og_quality=Fa
         item = item.replace("_600.", f"_{art_size}.")
     
     try:
-        tqdm_download(item, extra_file, extra, is_parallel=False)
+        await tqdm_download(item, extra_file, extra, is_parallel=False)
     except Exception as e:
         await safe_print_async(f"  {YELLOW}[!] Skipping cover art '{extra}': URL unreachable ({e}){OFF}")
 

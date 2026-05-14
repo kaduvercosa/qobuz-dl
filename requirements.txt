@@ -1,5 +1,4 @@
 pathvalidate
-requests
 aiohttp
 aiofiles
 mutagen

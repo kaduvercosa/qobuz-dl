@@ -1,6 +1,6 @@
 import os
 import re
-import requests
+import aiohttp
 from mutagen.flac import FLAC
 from mutagen.id3 import ID3, USLT, ID3NoHeaderError
 
@@ -136,7 +136,7 @@ class LyricsEngine:
 
         return '\n'.join(result_lines)
 
-    def fetch_and_inject(self, file_path, album_artist, track, album, save_lrc=True, overwrite=False):
+    async def fetch_and_inject(self, file_path, album_artist, track, album, save_lrc=True, overwrite=False):
         # Busca as letras de forma totalmente silenciosa. Retorna True ou False
         if not overwrite and self._has_lyrics(file_path, check_lrc=save_lrc):
             return False
@@ -146,14 +146,21 @@ class LyricsEngine:
             headers = {"User-Agent": "qobuz-dl-master/2.5 (https://github.com/kaduvercosa/qobuz-dl)"}
             
             params = {"artist_name": album_artist, "track_name": track, "album_name": album}
-            response = requests.get(lrclib_url, params=params, headers=headers, timeout=12) 
             
-            if response.status_code != 200:
-                params = {"artist_name": album_artist, "track_name": track}
-                response = requests.get(lrclib_url, params=params, headers=headers, timeout=12)
+            async with aiohttp.ClientSession() as session:
+                async with session.get(lrclib_url, params=params, headers=headers, timeout=12) as response:
+                    status = response.status
+                    if status == 200:
+                        data = await response.json()
 
-            if response.status_code == 200:
-                data = response.json()
+                if status != 200:
+                    params = {"artist_name": album_artist, "track_name": track}
+                    async with session.get(lrclib_url, params=params, headers=headers, timeout=12) as response:
+                        status = response.status
+                        if status == 200:
+                            data = await response.json()
+
+            if status == 200:
                 synced_lyrics = data.get("syncedLyrics")
                 plain_lyrics = data.get("plainLyrics")
                 

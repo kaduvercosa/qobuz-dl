@@ -6,7 +6,6 @@ import getpass
 import asyncio
 
 
-import requests
 from pathvalidate import sanitize_filename
 
 from qobuz_dl.bundle import Bundle
@@ -345,12 +344,12 @@ class QobuzDL:
     # --- SMART RESUME / BATCH DOWNLOADER LOGIC ---
     _file_lock = asyncio.Lock()
 
-    def mark_url_done_in_file(self, txt_file, url_to_mark):
+    async def mark_url_done_in_file(self, txt_file, url_to_mark):
         """Appends a [DONE] tag next to a processed URL in the text file."""
         if not txt_file or not os.path.isfile(txt_file):
             return
         try:
-            with self._file_lock:
+            async with self._file_lock:
                 with open(txt_file, "r", encoding="utf-8") as f:
                     lines = f.readlines()
                 
@@ -388,12 +387,12 @@ class QobuzDL:
                     try:
                         if "last.fm" in url:
                             await self.download_lastfm_pl(url)
-                            self.mark_url_done_in_file(txt_file, original_url)
+                            await self.mark_url_done_in_file(txt_file, original_url)
                         elif os.path.isfile(url):
                             await self.download_from_txt_file(url)
                         else:
                             await self.handle_url(url)
-                            self.mark_url_done_in_file(txt_file, original_url)
+                            await self.mark_url_done_in_file(txt_file, original_url)
 
                         logger.info(f"{GREEN}[+] Completed download: {url}{OFF}")
                     except Exception as e:
@@ -413,12 +412,12 @@ class QobuzDL:
                 
                 if "last.fm" in url:
                     await self.download_lastfm_pl(url)
-                    self.mark_url_done_in_file(txt_file, original_url)
+                    await self.mark_url_done_in_file(txt_file, original_url)
                 elif os.path.isfile(url):
                     await self.download_from_txt_file(url)
                 else:
                     await self.handle_url(url)
-                    self.mark_url_done_in_file(txt_file, original_url)
+                    await self.mark_url_done_in_file(txt_file, original_url)
 
     async def download_from_txt_file(self, txt_file):
         try:
@@ -529,6 +528,8 @@ class QobuzDL:
             else:
                 # Standard API call
                 results = await mode_dict["func"](query, limit)
+                if not results or mode_dict["key"] not in results or "items" not in results[mode_dict["key"]]:
+                    return []
                 iterable = results[mode_dict["key"]]["items"]
             # --------------------------------------------
             

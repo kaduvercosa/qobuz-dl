@@ -110,7 +110,7 @@ class Client:
     async def auth(self, email, pwd, user_auth_token=None):
         if user_auth_token:
             self.uat = user_auth_token
-        elif len(pwd) > 60:
+        elif pwd and len(pwd) > 60:
             self.uat = pwd
         else:
             usr_info = await self.api_call("user/login", email=email, pwd=pwd)
@@ -119,6 +119,8 @@ class Client:
             self.uat = usr_info["user_auth_token"]
         
         self.headers.update({"X-User-Auth-Token": self.uat})
+        if getattr(self, 'session', None):
+            self.session.headers.update({"X-User-Auth-Token": self.uat})
         
         try:
             user_info = await self.api_call("user/get")
@@ -138,7 +140,7 @@ class Client:
             value = params[key]
             if key not in ("request_ts", "request_sig") and isinstance(value, (str, int, float)):
                 r_sig.extend((key, str(value)))
-        r_sig.extend((str(params["request_ts"]), sec))
+        r_sig.extend((str(params["request_ts"]), str(sec) if sec is not None else ""))
         return self._generate_signature("".join(r_sig))
 
     @staticmethod
@@ -184,7 +186,7 @@ class Client:
             params["request_sig"] = self._generate_signature(r_sig)
 
         elif epoint == "session/start":
-            params = {"profile": "qbz-1"}
+            params = {"profile": "qbz-1", "app_id": self.id}
             params["request_ts"] = int(time.time())
             params["request_sig"] = self._modern_sig(epoint, params, kwargs.get("sec", self.sec))
         elif epoint == "file/url":
@@ -446,6 +448,8 @@ class Client:
             self.session_infos = session["infos"]
             self.session_key = self._derive_session_key()
             self.headers.update({"X-Session-Id": self.session_id})
+            if getattr(self, 'session', None):
+                self.session.headers.update({"X-Session-Id": self.session_id})
 
         track = await self.api_call("file/url", id=id, fmt_id=fmt_id)
         if "bits_depth" in track and "bit_depth" not in track: track["bit_depth"] = track["bits_depth"]
