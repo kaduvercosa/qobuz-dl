@@ -15,7 +15,6 @@ import concurrent.futures
 import aiohttp
 import aiofiles
 import asyncio
-import requests
 from Crypto.Cipher import AES
 from pathvalidate import sanitize_filename, sanitize_filepath
 from tqdm import tqdm
@@ -310,7 +309,7 @@ class Download:
             async def bound_download(dirn, count, parse, i, album_meta, is_mp3, multiple, is_parallel):
                 async with sem:
                     return await self._download_and_tag(dirn, count, parse, i, album_meta, False, is_mp3, multiple, is_parallel=is_parallel)
-
+            
             tasks = []
             for i in album_meta["tracks"]["items"]:
                 if abort_event.is_set():
@@ -332,7 +331,7 @@ class Download:
                     logger.info(f"{OFF}Demo. Skipping")
                     failed_tracks += 1
                 count += 1
-
+                
             try:
                 results = await asyncio.gather(*tasks, return_exceptions=True)
                 for res in results:
@@ -634,7 +633,7 @@ class Download:
 
             search_album = _safe_get(track_metadata, "album", "title", default="")
             
-            letra_ok = self.lyrics_engine.fetch_and_inject(
+            letra_ok = await self.lyrics_engine.fetch_and_inject(
                     file_path=final_file, 
                     album_artist=search_artist, 
                     track=track_title, 
@@ -1024,7 +1023,7 @@ async def tqdm_download(url_or_callable, fname, track_name, is_parallel=False):
             
             async with aiohttp.ClientSession() as s:
                 async with s.get(url, allow_redirects=True, headers=headers, timeout=aiohttp.ClientTimeout(total=70)) as r:
-                    if r.status == 416: return
+                    if r.status == 416: return 
                     if r.status not in [200, 206]:
                         raise Exception(f"Status Server: {r.status}")
 
@@ -1089,7 +1088,7 @@ async def _get_extra(item, dirn, extra="cover.jpg", art_size=None, og_quality=Fa
         item = item.replace("_600.", f"_{art_size}.")
     
     try:
-        tqdm_download(item, extra_file, extra, is_parallel=False)
+        await tqdm_download(item, extra_file, extra, is_parallel=False)
     except Exception as e:
         await safe_print_async(f"  {YELLOW}[!] Skipping cover art '{extra}': URL unreachable ({e}){OFF}")
 
@@ -1160,7 +1159,7 @@ async def tqdm_download_segments(track_url_dict, fname, track_name, is_parallel=
                 if abort_event.is_set(): return bytearray()
                 seg_data.extend(chunk)
                 if not is_parallel:
-                    bar.update(len(chunk))
+                    bar.update(len(chunk)) 
             return seg_data
 
     try:
@@ -1170,7 +1169,7 @@ async def tqdm_download_segments(track_url_dict, fname, track_name, is_parallel=
                     total=total_size, unit="iB", unit_scale=True, unit_divisor=1024,
                     desc=tqdm_desc, bar_format=b_format, leave=False, disable=is_parallel
                 ) as bar:
-
+        
                     segment_uuid = None
                     for i in range(2):
                         seg_data = await fetch_segment_fluid(session, i, bar)
@@ -1179,15 +1178,15 @@ async def tqdm_download_segments(track_url_dict, fname, track_name, is_parallel=
                             segment_uuid = _get_qobuz_segment_uuid(seg_data)
                             if segment_uuid is None:
                                 raise ConnectionError(f"Cannot find segment UUID for {fname}")
-
+        
                         await file.write(_decrypt_qobuz_segment(seg_data, raw_key, segment_uuid))
-
+        
                     if n_segments >= 2:
                         sem = asyncio.Semaphore(8)
                         async def bounded_fetch(i):
                             async with sem:
                                 return await fetch_segment_fluid(session, i, bar)
-
+                        
                         tasks = [bounded_fetch(i) for i in range(2, n_segments + 1)]
                         # We must preserve order!
                         results = await asyncio.gather(*tasks)
