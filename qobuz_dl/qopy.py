@@ -190,6 +190,18 @@ class Client:
                 "request_ts": unix,
                 "request_sig": self._generate_signature(r_sig),
             }
+        elif epoint == "playlist/getUserPlaylists":
+            unix = int(time.time())
+            r_sig = f"playlistgetUserPlaylists{unix}{kwargs.get('sec', self.sec)}"
+            params = {
+                "app_id": self.id,
+                "user_auth_token": getattr(self, 'uat', None),
+                "user_id": getattr(self, 'user_id', None),
+                "limit": kwargs.get("limit", 100),
+                "offset": kwargs.get("offset", 0),
+                "request_ts": unix,
+                "request_sig": self._generate_signature(r_sig),
+            }
         else:
             params = {'app_id': self.id}
             if getattr(self, 'force_english', True):
@@ -312,12 +324,16 @@ class Client:
 
     def get_favorites(self, fav_type="albums", limit=100, offset=0):
         try: 
-            if fav_type == "playlists": # Playlist utilizam um endpoint separado do qobuz
-                return self.api_call("playlist/getUserPlaylists", limit=limit, offset=offset)
-            else:
-                return self.api_call("favorite/getUserFavorites", fav_type=fav_type, limit=limit, offset=offset)
+            return self.api_call("favorite/getUserFavorites", fav_type=fav_type, limit=limit, offset=offset)
         except Exception as e: 
             logger.error(f"{RED}[!] API Error fetching {fav_type}: {e}{OFF}")
+            return {}
+
+    def get_user_playlists(self, limit=100, offset=0):
+        try: 
+            return self.api_call("playlist/getUserPlaylists", limit=limit, offset=offset)
+        except Exception as e: 
+            logger.error(f"{RED}[!] API Error fetching playlists: {e}{OFF}")
             return {}
             
     def add_favorite_album(self, album_id):
