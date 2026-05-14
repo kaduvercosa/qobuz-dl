@@ -8,7 +8,7 @@ import os
 import getpass
 import hashlib
 import signal
-import requests
+import aiohttp
 
 from qobuz_dl.bundle import Bundle
 from qobuz_dl.color import GREEN, RED, YELLOW, OFF, CYAN
@@ -270,15 +270,17 @@ def _initial_checks():
     if len(sys.argv) < 2:
         sys.exit(qobuz_dl_args().print_help())
 
-def check_for_updates():
+async def check_for_updates():
     try:
         from qobuz_dl import __version__
         
         url = "https://api.github.com/repos/kaduvercosa/qobuz-dl/releases/latest"
-        response = requests.get(url, timeout=2)
-        response.raise_for_status()
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=2) as response:
+                response.raise_for_status()
+                data = await response.json()
         
-        latest_version_str = response.json().get("tag_name", "").replace("v", "")
+        latest_version_str = data.get("tag_name", "").replace("v", "")
         current_version_str = __version__
         
         latest_tuple = tuple(map(int, latest_version_str.split(".")))
@@ -294,7 +296,7 @@ def check_for_updates():
         pass
 
 async def amain():
-    check_for_updates()
+    await check_for_updates()
 
     # --- RADAR FEATURE (Standalone Intercept) ---
     import sys
@@ -531,18 +533,18 @@ async def amain():
 
 def main():
     import asyncio
-
-    # We must ensure synchronous initial configuration logic (like questionary)
+    
+    # We must ensure synchronous initial configuration logic (like questionary) 
     # runs BEFORE creating the asyncio loop.
     import sys
-
-
+    
+    
     # Pre-flight config checks before loop
     if len(sys.argv) > 1 and sys.argv[1].lower() == "-r":
         sys.exit(_reset_config(CONFIG_FILE))
-
+        
     _initial_checks()
-
+        
     try:
         asyncio.run(amain())
     except KeyboardInterrupt:
