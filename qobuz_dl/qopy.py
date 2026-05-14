@@ -6,6 +6,8 @@ import unicodedata
 import json
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from Crypto.Protocol.KDF import HKDF
 from Crypto.Hash import SHA256
 from Crypto.Cipher import AES
@@ -46,6 +48,17 @@ class Client:
                 pass
 
         self.session = requests.Session()
+        
+        # Add retry mechanism for network resilience
+        retry_strategy = Retry(
+        		total=4,
+            backoff_factor=1,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["HEAD", "GET", ÖPTIONS"]
+        )
+        adapter = HTTPAdapter(max_retries=retry_strategy)
+        self.session.mount("https://", adapter)
+        self.session.mount("http://", adapter)
         
         if self.force_english:
             self.session.headers.update({
