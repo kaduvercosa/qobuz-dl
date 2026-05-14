@@ -85,7 +85,7 @@ def _process_single_file(file_path_str, engine, overwrite=False, current_idx=0, 
 
         # Se não for overwrite e já tiver letra, avisa e pula
         if not overwrite and has_lyrics:
-            safe_print(f"{Y}{progresso} Skipped (Already tagged): {search_artist} - {title}{O}")
+            safe_print(f"{Y}{progresso} Ignorado (Já Marcado): {search_artist} - {title}{O}")
             return "skipped"
 
         # =========================
@@ -104,11 +104,11 @@ def _process_single_file(file_path_str, engine, overwrite=False, current_idx=0, 
         )
 
         if success:
-            safe_print(f"{G}  L Completed: {search_artist} - {title}{O}")
+            safe_print(f"{OFF}  [*] Letra Encontrada: {search_artist} - {title}{OFF}")
             return "injected"
         else:
             # Avisa se a letra não for encontrada em nenhum banco de dados
-            safe_print(f"{RED}  L Not found: {search_artist} - {title}{OFF}")
+            safe_print(f"{RED}  [!] Letra Nao Encontrada: {search_artist} - {title}{OFF}")
             return "skipped"
 
     except Exception as e:
