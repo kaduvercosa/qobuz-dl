@@ -217,9 +217,9 @@ def inject_lyrics_retroactively(
     # =========================
 
     safe_print(f"\n{GREEN}[+] Retroactive Scan and Injection Completed!{OFF}")
-    safe_print(f"{CYAN}  - Total files analyzed: {processed}{OFF}")
-    safe_print(f"{GREEN}  - Injection attempts: {injected}{OFF}")
-    safe_print(f"{YELLOW}  - Skipped files (already tagged or missing data): {skipped}{OFF}")
+    safe_print(f"{CYAN}  - TOTAL DE ARQUIVOS ANALISADOS: {processed}{OFF}")
+    safe_print(f"{OFF}  - ARQUIVOS EDITADOS/TAGGEADOS: {injected}{OFF}")
+    safe_print(f"{YELLOW}  - ARQUIVOS PULADOS (dados já etiquetados ou ausentes): {skipped}{OFF}")
 
     if errors > 0:
         safe_print(f"{RED}  - Errors encountered: {errors}{OFF}")
