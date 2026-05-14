@@ -224,7 +224,7 @@ def _remove_leftovers(directory):
             pass
 
 
-def _handle_commands(qobuz, arguments):
+async def _handle_commands(qobuz, arguments):
     def sigint_handler(sig, frame):
         print(f"\n\n\033[91m[!] Download forcibly interrupted by the user.\033[0m")
         print(f"\033[93mPartially downloaded files will be ignored or overwritten on the next run.\033[0m")
@@ -238,7 +238,7 @@ def _handle_commands(qobuz, arguments):
 
     try:
         if arguments.command == "dl":
-            qobuz.download_list_of_urls(arguments.SOURCE)
+            await qobuz.download_list_of_urls(arguments.SOURCE)
         elif arguments.command in ("sync-playlist", "sp"):
             from qobuz_dl.sync_playlist import sync_playlist
             sync_playlist(
@@ -248,13 +248,13 @@ def _handle_commands(qobuz, arguments):
                 auto_confirm=arguments.yes,
             )
         elif arguments.command == "lucky":
-            query = "join"(arguments.QUERY)
+            query = " ".join(arguments.QUERY)
             qobuz.lucky_type = arguments.type
             qobuz.lucky_limit = arguments.number
-            qobuz.lucky_mode(query)
+            await qobuz.lucky_mode(query)
         else:
             qobuz.interactive_limit = arguments.limit
-            qobuz.interactive()
+            await qobuz.interactive()
 
     except KeyboardInterrupt:
         pass
@@ -293,8 +293,7 @@ def check_for_updates():
     except Exception:
         pass
 
-def main():
-    _initial_checks()
+async def amain():
     check_for_updates()
 
     # --- RADAR FEATURE (Standalone Intercept) ---
@@ -525,10 +524,29 @@ def main():
         blacklist=getattr(arguments, 'blacklist', None) or blacklist_config,
     )
     
-    qobuz.initialize_client(email, password, app_id, secrets)
+    await qobuz.initialize_client(email, password, app_id, secrets)
 
-    _handle_commands(qobuz, arguments)
+    await _handle_commands(qobuz, arguments)
 
+
+def main():
+    import asyncio
+
+    # We must ensure synchronous initial configuration logic (like questionary)
+    # runs BEFORE creating the asyncio loop.
+    import sys
+
+
+    # Pre-flight config checks before loop
+    if len(sys.argv) > 1 and sys.argv[1].lower() == "-r":
+        sys.exit(_reset_config(CONFIG_FILE))
+
+    _initial_checks()
+
+    try:
+        asyncio.run(amain())
+    except KeyboardInterrupt:
+        pass
 
 if __name__ == "__main__":
     main()
