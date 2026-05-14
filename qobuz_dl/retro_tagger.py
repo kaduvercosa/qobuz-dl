@@ -26,6 +26,8 @@ def safe_print(message):
 # PROCESS SINGLE FILE
 # =========================
 
+import asyncio
+
 def _process_single_file(file_path_str, engine, overwrite=False, current_idx=0, total_files=0):
     try:
         title, artist, album_artist, album = "", "", "", ""
@@ -95,13 +97,13 @@ def _process_single_file(file_path_str, engine, overwrite=False, current_idx=0, 
         safe_print(f"{C}{progresso} Searching: {search_artist} - {title}{O}")
 
         # Engine atualizada usando o album_artist como foco principal
-        success = engine.fetch_and_inject(
+        success = asyncio.run(engine.fetch_and_inject(
             file_path=file_path_str,
             album_artist=search_artist,
             track=title,
             album=album,
             overwrite=overwrite
-        )
+        ))
 
         if success:
             safe_print(f"{OFF}  [*] Letra Encontrada: {search_artist} - {title}{OFF}")
