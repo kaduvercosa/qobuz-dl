@@ -28,8 +28,8 @@ requirements = [
     "pick==1.6.0",
     "beautifulsoup4",
     "colorama",
-    # NOTE: cryptography was used in the original downloader, keeping it for safety
-    "cryptography",
+    # NOTE: cryptography was replaced with pycryptodome for better portability (e.g. ish-shell/IOS)
+    "pycryptodome",
     "questionary",
     "lyricsgenius",
     "deep-translator"
