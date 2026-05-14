@@ -112,24 +112,29 @@ Diga adeus a bibliotecas bagunçadas e downloads corrompidos. O baixador agora a
 A maneira mais fácil e oficial de instalar a Ultimate Edition. Abra seu terminal e execute:
 ```bash
 pip install qobuz-dl-master
+```
 
 ### 🍏 Instalação no iSH Shell (iOS)
+
 Se você estiver utilizando o aplicativo **iSH Shell** no iOS, é possível que a instalação do pacote padrão através do `pip install` retorne um erro (como *Building wheel for pycryptodome (PEP 517)*). Isso ocorre porque a distribuição Alpine do iSH não possui compiladores C embutidos.
 
 Para resolver isso, você tem duas opções no terminal do iSH antes de instalar o `qobuz-dl`:
 
 **Opção 1: Usando o pacote pré-compilado do Alpine (Recomendado e mais rápido)**
 Baixe a versão já compilada da biblioteca de criptografia diretamente pelo gerenciador do sistema:
+
 ```bash
 apk update
 apk add py3-pycryptodome
 ```
+
 Após isso, você pode rodar a instalação do `qobuz-dl` normalmente usando o `pip`.
 
 **Opção 2: Instalando compiladores C no iSH**
 Se preferir compilar do código-fonte ou se houver atualizações na biblioteca, instale as ferramentas essenciais de build:
+
 ```bash
 apk update
 apk add gcc musl-dev python3-dev libffi-dev make
 pip install qobuz-dl-master
-
+```
