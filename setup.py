@@ -22,7 +22,8 @@ def read_file(fname):
 
 requirements = [
     "pathvalidate",
-    "requests",
+    "aiohttp",
+    "aiofiles",
     "mutagen",
     "tqdm",
     "pick==1.6.0",
