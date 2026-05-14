@@ -13,7 +13,7 @@ import concurrent.futures
 from concurrent.futures import ThreadPoolExecutor
 
 import requests
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from Crypto.Cipher import AES
 from pathvalidate import sanitize_filename, sanitize_filepath
 from tqdm import tqdm
 
@@ -1248,8 +1248,8 @@ def _decrypt_qobuz_segment(segment_data, raw_key, segment_uuid):
 
                 if flags:
                     counter = bytes(buf[pointer : pointer + counter_len]) + (b"\x00" * (16 - counter_len))
-                    decryptor = Cipher(algorithms.AES(raw_key), modes.CTR(counter)).decryptor()
-                    buf[frame_start:data_end] = decryptor.update(bytes(buf[frame_start:data_end])) + decryptor.finalize()
+                    cipher = AES.new(raw_key, AES.MODE_CTR, initial_value=counter, nonce=b'')
+                    buf[frame_start:data_end] = cipher.decrypt(bytes(buf[frame_start:data_end]))
                 pointer += counter_len
         pos += size
     return bytes(buf)
