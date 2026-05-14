@@ -311,7 +311,11 @@ class Client:
         except Exception: return {}
 
     def get_favorites(self, fav_type="albums", limit=100, offset=0):
-        try: return self.api_call("favorite/getUserFavorites", fav_type=fav_type, limit=limit, offset=offset)
+        try: 
+            if fav_type == "playlists": # Playlist utilizam um endpoint separado do qobuz
+                return self.api_call("playlist/getUserPlaylists", limit=limit, offset=offset)
+            else:
+                return self.api_call("favorite/getUserFavorites", fav_type=fav_type, limit=limit, offset=offset)
         except Exception as e: 
             logger.error(f"{RED}[!] API Error fetching favorites: {e}{OFF}")
             return {}
