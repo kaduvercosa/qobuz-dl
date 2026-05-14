@@ -66,7 +66,7 @@ class Client:
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
                 "X-App-Id": self.id,
             })
-
+            
         self.session = None
         self.base = "https://www.qobuz.com/api.json/0.2/"
         self.sec = None
@@ -86,7 +86,7 @@ class Client:
             self.session = aiohttp.ClientSession(headers=self.headers)
         await self.auth(self._initial_email, self._initial_pwd, self._initial_uat)
         await self.cfg_setup()
-
+        
     async def close(self):
         if self.session:
             await self.session.close()
@@ -110,7 +110,7 @@ class Client:
     async def auth(self, email, pwd, user_auth_token=None):
         if user_auth_token:
             self.uat = user_auth_token
-        elif len(pwd) > 60:
+        elif pwd and len(pwd) > 60:
             self.uat = pwd
         else:
             usr_info = await self.api_call("user/login", email=email, pwd=pwd)
@@ -119,6 +119,8 @@ class Client:
             self.uat = usr_info["user_auth_token"]
         
         self.headers.update({"X-User-Auth-Token": self.uat})
+        if getattr(self, 'session', None):
+            self.session.headers.update({"X-User-Auth-Token": self.uat})
         
         try:
             user_info = await self.api_call("user/get")
@@ -138,7 +140,7 @@ class Client:
             value = params[key]
             if key not in ("request_ts", "request_sig") and isinstance(value, (str, int, float)):
                 r_sig.extend((key, str(value)))
-        r_sig.extend((str(params["request_ts"]), sec))
+        r_sig.extend((str(params["request_ts"]), str(sec) if sec is not None else ""))
         return self._generate_signature("".join(r_sig))
 
     @staticmethod
@@ -184,7 +186,7 @@ class Client:
             params["request_sig"] = self._generate_signature(r_sig)
 
         elif epoint == "session/start":
-            params = {"profile": "qbz-1"}
+            params = {"profile": "qbz-1", "app_id": self.id}
             params["request_ts"] = int(time.time())
             params["request_sig"] = self._modern_sig(epoint, params, kwargs.get("sec", self.sec))
         elif epoint == "file/url":
@@ -255,7 +257,7 @@ class Client:
                         status = r.status
                         text = await r.text()
                         json_resp = await r.json() if "application/json" in r.headers.get("Content-Type", "") else None
-
+                
                 if status in [429, 500, 502, 503, 504]:
                     if attempt < max_retries - 1:
                         import asyncio
@@ -272,11 +274,11 @@ class Client:
                         raise InvalidAppSecretError(f"Invalid app secret: {json_resp}.\n" + RESET)
                     else:
                         raise InvalidAppSecretError(f"Invalid app secret. Status 400.\n" + RESET)
-
+                
                 if epoint == "user/get" and status == 400: return {}
                 if status >= 400 and status != 400:
                      r.raise_for_status()
-
+                
                 if json_resp is not None:
                      return self._normalize_json_strings(json_resp)
                 try:
@@ -446,6 +448,8 @@ class Client:
             self.session_infos = session["infos"]
             self.session_key = self._derive_session_key()
             self.headers.update({"X-Session-Id": self.session_id})
+            if getattr(self, 'session', None):
+                self.session.headers.update({"X-Session-Id": self.session_id})
 
         track = await self.api_call("file/url", id=id, fmt_id=fmt_id)
         if "bits_depth" in track and "bit_depth" not in track: track["bit_depth"] = track["bits_depth"]
