@@ -6,9 +6,10 @@ import unicodedata
 import json
 
 import requests
-from cryptography.hazmat.primitives import hashes, padding
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+from Crypto.Protocol.KDF import HKDF
+from Crypto.Hash import SHA256
+from Crypto.Cipher import AES
+from Crypto.Util.Padding import unpad
 
 from qobuz_dl.exceptions import (
     AuthenticationError,
@@ -131,21 +132,22 @@ class Client:
     def _derive_session_key(self):
         salt, info = self.session_infos.split(".")
         return HKDF(
-            algorithm=hashes.SHA256(),
-            length=16,
+            master=bytes.fromhex(self.sec),
+            key_len=16,
             salt=self._b64url_decode(salt),
-            info=self._b64url_decode(info),
-        ).derive(bytes.fromhex(self.sec))
+            hasmod=SHA256,
+            context=self._b64url_decode(info)
+        )
 
     def _unwrap_track_key(self, key_token):
         _, wrapped, iv = key_token.split(".")
-        decryptor = Cipher(
-            algorithms.AES(self.session_key),
-            modes.CBC(self._b64url_decode(iv)),
-        ).decryptor()
-        padded = decryptor.update(self._b64url_decode(wrapped)) + decryptor.finalize()
-        unpadder = padding.PKCS7(128).unpadder()
-        return unpadder.update(padded) + unpadder.finalize()
+        cipher = AES.new(
+            self.session_key,
+            AES.MODE_CBC,
+            self._b64url_decode(iv)
+        )
+        padded = cipher.decrypt(self._b64url_decode(wrapped))
+        return unpad(padded, AES.block_size)
 
     def api_call(self, epoint, **kwargs):
         if epoint == "user/login":
