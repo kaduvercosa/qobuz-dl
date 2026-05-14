@@ -191,7 +191,7 @@ class Client:
                 "request_sig": self._generate_signature(r_sig),
             }
         elif epoint == "playlist/getUserPlaylists":
-            # Conforme o atalho do iOS, este endpoint não exige signature ou timestamp
+            # Sem assinaturas desnecessárias (conforme descoberto na API via iOS)
             params = {
                 "app_id": self.id,
                 "user_auth_token": getattr(self, 'uat', None),
@@ -322,14 +322,42 @@ class Client:
     def get_favorites(self, fav_type="albums", limit=100, offset=0):
         try: 
             if fav_type in ["playlists", "playlist"]:
-                return self.api_call("playlist/getUserPlaylists", limit=limit, offset=offset)
+                # 1. Faz a busca usando o endpoint que descobrimos funcionar no iOS
+                res = self.api_call("playlist/getUserPlaylists", limit=limit, offset=offset)
+                
+                # 2. Extrai os dados
+                items = []
+                total = 0
+                if "playlists" in res and "items" in res["playlists"]:
+                    items = res["playlists"]["items"]
+                    total = res["playlists"].get("total", len(items))
+                elif "items" in res:
+                    items = res["items"]
+                    total = res.get("total", len(items))
+                    
+                # 3. O PULO DO GATO: Reconstruímos a estrutura exata que o menu interativo
+                # original do qobuz-dl espera receber. Evita erro de chaves e quebra o loop infinito.
+                safe_response = {
+                    "favorites": {
+                        "playlists": {
+                            "items": items,
+                            "total": total
+                        }
+                    },
+                    "playlists": {
+                        "items": items,
+                        "total": total
+                    }
+                }
+                return safe_response
+                
+            # Se for álbuns ou faixas, segue o fluxo normal
             return self.api_call("favorite/getUserFavorites", fav_type=fav_type, limit=limit, offset=offset)
         except Exception as e: 
             logger.error(f"{RED}[!] API Error fetching {fav_type}: {e}{OFF}")
             return {}
 
     def get_user_playlists(self, limit=100, offset=0):
-        # Mantive essa função caso você queira chamá-la diretamente no futuro
         try: 
             return self.api_call("playlist/getUserPlaylists", limit=limit, offset=offset)
         except Exception as e: 
