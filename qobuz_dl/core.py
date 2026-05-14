@@ -3,7 +3,8 @@ import os
 import sys
 import time
 import getpass
-import threading
+import asyncio
+
 
 import requests
 from pathvalidate import sanitize_filename
@@ -105,9 +106,10 @@ class QobuzDL:
             except Exception as e:
                 logger.error(f"{RED}[!] Failed to load blacklist: {e}{OFF}")
         
-    def initialize_client(self, email, pwd, app_id, secrets):
+    async def initialize_client(self, email, pwd, app_id, secrets):
         # Removemos o input() daqui para ele voltar a ler o config.ini silenciosamente
         self.client = qopy.Client(email, pwd, app_id, secrets, self.settings.user_auth_token, force_english=self.force_english)
+        await self.client.start()
         logger.info(f"{YELLOW}Set max quality: {QUALITIES[int(self.quality)]}\n")
 
     def get_tokens(self):
@@ -117,7 +119,7 @@ class QobuzDL:
             secret for secret in bundle.get_secrets().values() if secret
         ]  
 
-    def download_from_id(self, item_id, album=True, alt_path=None, is_playlist=False, playlist_index=None):
+    async def download_from_id(self, item_id, album=True, alt_path=None, is_playlist=False, playlist_index=None):
         if handle_download_id(self.downloads_db, item_id, add_id=False, quality=self.quality):
             logger.info(
                 f"{OFF}This release ID ({item_id}) was already downloaded "
@@ -148,16 +150,16 @@ class QobuzDL:
                 playlist_track_number=playlist_index,
                 booklet_only=self.booklet_only,
             )
-            dloader.download_id_by_type(not album)
+            await dloader.download_id_by_type(not album)
         except (requests.exceptions.RequestException, NonStreamable) as e:
             logger.error(f"{RED}Error getting release: {e}. Skipping...")
             
         # --- HUMAN BEHAVIOR DELAY ---
         if getattr(self, 'delay', 0) > 0:
             logger.info(f"{YELLOW}[*] Sleeping for {self.delay} seconds to prevent rate limiting...{OFF}")
-            time.sleep(self.delay)
+            await asyncio.sleep(self.delay)
 
-    def handle_url(self, url):
+    async def handle_url(self, url):
         possibles = {
             "playlist": {
                 "func": self.client.get_plist_meta,
@@ -183,7 +185,7 @@ class QobuzDL:
             )
             return
         if type_dict["func"]:
-            content = [item for item in type_dict["func"](item_id)]
+            content = [item async for item in type_dict["func"](item_id)]
             content_name = content[0]["name"]
             logger.info(
                 f"{YELLOW}Downloading all the music from {content_name} "
@@ -265,9 +267,9 @@ class QobuzDL:
                         # 1. Attempt to fetch official Qobuz tag
                         full_meta = None
                         if hasattr(self.client, "get_album_meta"):
-                            full_meta = self.client.get_album_meta(item["id"])
+                            full_meta = await self.client.get_album_meta(item["id"])
                         elif hasattr(self.client, "get_album"):
-                            full_meta = self.client.get_album(item["id"])
+                            full_meta = await self.client.get_album(item["id"])
                             
                         if full_meta:
                             r_type = (full_meta.get("release_type") or full_meta.get("product_type") or "unknown").lower()
@@ -321,7 +323,7 @@ class QobuzDL:
                         logger.info(f"{YELLOW}[!] Skipped (Blacklisted): {display_name}{OFF}")
                         continue
 
-                self.download_from_id(
+                await self.download_from_id(
                     item["id"],
                     True if type_dict["iterable_key"] == "albums" else False,
                     new_path,
@@ -338,10 +340,10 @@ class QobuzDL:
             if url_type == "playlist" and not self.no_m3u_for_playlists:
                 make_m3u(new_path)
         else:
-            self.download_from_id(item_id, type_dict["album"])
+            await self.download_from_id(item_id, type_dict["album"])
 
     # --- SMART RESUME / BATCH DOWNLOADER LOGIC ---
-    _file_lock = threading.Lock()
+    _file_lock = asyncio.Lock()
 
     def mark_url_done_in_file(self, txt_file, url_to_mark):
         """Appends a [DONE] tag next to a processed URL in the text file."""
@@ -362,9 +364,9 @@ class QobuzDL:
         except Exception as e:
             logger.error(f"{RED}Failed to update text file status: {e}{OFF}")
 
-    def download_list_of_urls(self, urls, txt_file=None):
-        from concurrent.futures import ThreadPoolExecutor, as_completed
-        import threading
+    async def download_list_of_urls(self, urls, txt_file=None):
+
+
         if not urls or not isinstance(urls, list):
             logger.info(f"{OFF}Nothing to download")
             return
@@ -378,28 +380,28 @@ class QobuzDL:
             # Optional: Disable the nested parallel track download temporarily
             self.settings.max_workers = 1 
 
-            def process_url(url):
-                original_url = url
-                url = url.replace("open.qobuz.com", "play.qobuz.com")
-                try:
-                    if "last.fm" in url:
-                        self.download_lastfm_pl(url)
-                        self.mark_url_done_in_file(txt_file, original_url)
-                    elif os.path.isfile(url):
-                        self.download_from_txt_file(url)
-                    else:
-                        self.handle_url(url)
-                        self.mark_url_done_in_file(txt_file, original_url)
-                    
-                    logger.info(f"{GREEN}[+] Completed download: {url}{OFF}")
-                except Exception as e:
-                    logger.error(f"{RED}[!] Error downloading {url}: {e}{OFF}")
+            sem = asyncio.Semaphore(max_batch_workers)
+            async def process_url(url):
+                async with sem:
+                    original_url = url
+                    url = url.replace("open.qobuz.com", "play.qobuz.com")
+                    try:
+                        if "last.fm" in url:
+                            await self.download_lastfm_pl(url)
+                            self.mark_url_done_in_file(txt_file, original_url)
+                        elif os.path.isfile(url):
+                            await self.download_from_txt_file(url)
+                        else:
+                            await self.handle_url(url)
+                            self.mark_url_done_in_file(txt_file, original_url)
+
+                        logger.info(f"{GREEN}[+] Completed download: {url}{OFF}")
+                    except Exception as e:
+                        logger.error(f"{RED}[!] Error downloading {url}: {e}{OFF}")
 
             try:
-                with ThreadPoolExecutor(max_workers=max_batch_workers) as executor:
-                    futures = [executor.submit(process_url, url) for url in urls]
-                    for future in as_completed(futures):
-                        pass
+                tasks = [process_url(url) for url in urls]
+                await asyncio.gather(*tasks)
             finally:
                 # Restore settings
                 self.settings.max_workers = original_workers
@@ -410,15 +412,15 @@ class QobuzDL:
                 url = url.replace("open.qobuz.com", "play.qobuz.com")
                 
                 if "last.fm" in url:
-                    self.download_lastfm_pl(url)
+                    await self.download_lastfm_pl(url)
                     self.mark_url_done_in_file(txt_file, original_url)
                 elif os.path.isfile(url):
-                    self.download_from_txt_file(url)
+                    await self.download_from_txt_file(url)
                 else:
-                    self.handle_url(url)
+                    await self.handle_url(url)
                     self.mark_url_done_in_file(txt_file, original_url)
 
-    def download_from_txt_file(self, txt_file):
+    async def download_from_txt_file(self, txt_file):
         try:
             valid_urls = []
             with open(txt_file, "r", encoding="utf-8") as txt:
@@ -451,10 +453,10 @@ class QobuzDL:
             f"{YELLOW}qobuz-dl will download {len(valid_urls)}"
             f" urls from file: {txt_file}{OFF}"
         )
-        self.download_list_of_urls(valid_urls, txt_file=txt_file)
+        await self.download_list_of_urls(valid_urls, txt_file=txt_file)
     # ---------------------------------------------
 
-    def lucky_mode(self, query, download=True):
+    async def lucky_mode(self, query, download=True):
         if len(query) < 3:
             logger.info(f"{RED}Your search query is too short or invalid")
             return
@@ -464,14 +466,14 @@ class QobuzDL:
             f"{YELLOW}qobuz-dl will attempt to download the first "
             f"{self.lucky_limit} results."
         )
-        results = self.search_by_type(query, self.lucky_type, self.lucky_limit, True)
+        results = await self.search_by_type(query, self.lucky_type, self.lucky_limit, True)
 
         if download:
-            self.download_list_of_urls(results)
+            await self.download_list_of_urls(results)
 
         return results
 
-    def search_by_type(self, query, item_type, limit=10, lucky=False, fav_subtype=None):
+    async def search_by_type(self, query, item_type, limit=10, lucky=False, fav_subtype=None):
         # Prevent crash if query is None (which happens when searching favorites)
         if item_type != "favorites" and (not query or len(query) < 3):
             logger.info(f"{RED}Your search query is too short or invalid")
@@ -516,7 +518,7 @@ class QobuzDL:
             # --- NEW FAVORITES EXTRACTION LOGIC ---
             if item_type == "favorites":
                 # API call for favorites
-                results = mode_dict["func"](fav_type=fav_subtype, limit=limit)
+                results = await mode_dict["func"](fav_type=fav_subtype, limit=limit)
                 iterable = results.get(fav_subtype, {}).get("items", [])
                 
                 # Adjust requires_extra based on the subtype for the minimalist table
@@ -526,7 +528,7 @@ class QobuzDL:
                     mode_dict["requires_extra"] = True
             else:
                 # Standard API call
-                results = mode_dict["func"](query, limit)
+                results = await mode_dict["func"](query, limit)
                 iterable = results[mode_dict["key"]]["items"]
             # --------------------------------------------
             
@@ -596,7 +598,7 @@ class QobuzDL:
             logger.info(f"{RED}Invalid type: {item_type}")
             return
 
-    def interactive(self, download=True):
+    async def interactive(self, download=True):
         # --- NEW: Flag to let the engine know we are in a TTY session ---
         self._is_interactive_session = True
         # ----------------------------------------------------------------
@@ -644,13 +646,13 @@ class QobuzDL:
                     selected_fav = pick.pick(fav_types, "Which favorites do you want to browse?\n[press Intro]")[0].lower()
                     
                     logger.info(f"{YELLOW}Fetching your favorite {selected_fav}...{RESET}")
-                    options = self.search_by_type(None, selected_type, limit=self.interactive_limit, fav_subtype=selected_fav)
+                    options = await self.search_by_type(None, selected_type, limit=self.interactive_limit, fav_subtype=selected_fav)
                     query_title = f"My Favorite {selected_fav.title()}"
                 else:
                     # --- STANDARD FLOW: Type the keyword ---
                     query = input(f"{CYAN}Enter your search: [Ctrl + c to quit]\n-{DF} ")
                     logger.info(f"{YELLOW}Searching...{RESET}")
-                    options = self.search_by_type(query, selected_type, self.interactive_limit)
+                    options = await self.search_by_type(query, selected_type, self.interactive_limit)
                     query_title = query.title()
                 
                 if not options:
@@ -713,7 +715,7 @@ class QobuzDL:
                 self.quality = qualities[selected_quality[1]]["q"]
 
                 if download:
-                    self.download_list_of_urls(final_url_list)
+                    await self.download_list_of_urls(final_url_list)
 
                 return final_url_list
                 
@@ -721,7 +723,7 @@ class QobuzDL:
             logger.info(f"{YELLOW}Bye")
             return
 
-    def download_lastfm_pl(self, playlist_url):
+    async def download_lastfm_pl(self, playlist_url):
         from qobuz_dl.lastfm_parser import fetch_lastfm_playlist
         
         logger.info(f"{CYAN}[*] Last.fm URL detected! Initiating Last.fm integration...{OFF}")
@@ -743,7 +745,7 @@ class QobuzDL:
         )
 
         # Step 2: Convert to Qobuz IDs using our new method in qopy.py
-        track_ids = self.client.get_track_ids_from_list(tracks_list)
+        track_ids = await self.client.get_track_ids_from_list(tracks_list)
         
         if not track_ids:
             logger.info(f"{RED}[!] No matching tracks found on Qobuz. Aborting.{OFF}")
@@ -762,7 +764,7 @@ class QobuzDL:
         # Use enumerate to get the playlist track number (1, 2, 3...)
         for idx, t_id in enumerate(track_ids, start=1):
             try:
-                self.download_from_id(
+                await self.download_from_id(
                     t_id, 
                     False, 
                     pl_directory, 
