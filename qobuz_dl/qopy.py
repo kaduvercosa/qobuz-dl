@@ -217,7 +217,7 @@ class Client:
         if epoint == "user/login" and r.status_code == 400:
             if "invalid" in r.text.lower(): raise AuthenticationError("Invalid email or password.")
             else: logger.info(f"{GREEN}Logged: OK{OFF}")
-        elif epoint in ["track/getFileUrl", "favorite/getUserFavorites", "file/url"] and r.status_code == 400:
+        elif epoint in ["track/getFileUrl", "favorite/getUserFavorites", "playlist/getUserPlaylists", "file/url"] and r.status_code == 400:
             raise InvalidAppSecretError(f"Invalid app secret: {r.json()}.\n" + RESET)
         
         if epoint == "user/get" and r.status_code == 400: return {}
@@ -317,7 +317,7 @@ class Client:
             else:
                 return self.api_call("favorite/getUserFavorites", fav_type=fav_type, limit=limit, offset=offset)
         except Exception as e: 
-            logger.error(f"{RED}[!] API Error fetching favorites: {e}{OFF}")
+            logger.error(f"{RED}[!] API Error fetching {fav_type}: {e}{OFF}")
             return {}
             
     def add_favorite_album(self, album_id):
