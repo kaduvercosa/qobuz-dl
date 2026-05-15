@@ -99,10 +99,20 @@ class LyricsEngine:
         if detect:
             try:
                 amostra = " ".join(texts_to_translate[:10])
-                if detect(amostra) == self.target_lang:
+                detected_lang = detect(amostra)
+                if detected_lang == self.target_lang:
+                    import logging
+                    print(f"\033[93m[*] Letra ignorada para tradução: O idioma detectado já é '{detected_lang}'\033[0m")
+                    logging.info(f"Letra ignorada. Idioma detectado: {detected_lang}")
                     return lyrics
-            except Exception:
+            except Exception as e:
+                import logging
+                print(f"\033[93m[*] langdetect falhou (Ignorando filtro): {e}\033[0m")
                 pass 
+
+        if not GoogleTranslator:
+            print("\033[91m[!] O pacote deep-translator nao esta instalado ou quebrou.\033[0m")
+            return lyrics
 
         translator = GoogleTranslator(source='auto', target=self.target_lang)
 
