@@ -342,12 +342,17 @@ class QobuzDL:
             await self.download_from_id(item_id, type_dict["album"])
 
     # --- SMART RESUME / BATCH DOWNLOADER LOGIC ---
-    _file_lock = asyncio.Lock()
+    _file_lock = None
 
     async def mark_url_done_in_file(self, txt_file, url_to_mark):
         """Appends a [DONE] tag next to a processed URL in the text file."""
         if not txt_file or not os.path.isfile(txt_file):
             return
+
+        if self._file_lock is None:
+            import asyncio
+            self._file_lock = asyncio.Lock()
+
         try:
             async with self._file_lock:
                 with open(txt_file, "r", encoding="utf-8") as f:
