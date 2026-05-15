@@ -5,7 +5,6 @@ import time
 import getpass
 import asyncio
 
-
 from pathvalidate import sanitize_filename
 
 from qobuz_dl.bundle import Bundle
@@ -150,7 +149,7 @@ class QobuzDL:
                 booklet_only=self.booklet_only,
             )
             await dloader.download_id_by_type(not album)
-        except (requests.exceptions.RequestException, NonStreamable) as e:
+        except(aiohttp.ClientError, asyncio.TimeoutError, NonStreamable) as e:
             logger.error(f"{RED}Error getting release: {e}. Skipping...")
             
         # --- HUMAN BEHAVIOR DELAY ---
