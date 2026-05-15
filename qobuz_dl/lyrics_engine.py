@@ -133,6 +133,7 @@ class LyricsEngine:
         except Exception as e:
             # Em vez de passar silenciosamente, registra no terminal a causa raiz
             import logging
+            print(f"\n\033[91m[!] Erro no GoogleTranslator ao traduzir: {e}\033[0m")
             logging.error(f"[!] Erro no GoogleTranslator: {e}")
             return lyrics 
 
