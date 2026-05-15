@@ -160,27 +160,50 @@ A maneira mais fácil e oficial de instalar a Ultimate Edition. Abra seu termina
 pip install qobuz-dl-master
 ```
 
-### 🍏 Instalação no iSH Shell (iOS)
+## 🖥️ 1. Computadores (Windows / Mac / Linux - Ubuntu/Debian)
 
-Se você estiver utilizando o aplicativo **iSH Shell** no iOS, é possível que a instalação do pacote padrão através do `pip install` retorne um erro (como *Building wheel for pycryptodome (PEP 517)*). Isso ocorre porque a distribuição Alpine do iSH não possui compiladores C embutidos.
+O pip cuida de absolutamente tudo sozinho, pois esses sistemas já possuem bibliotecas criptográficas e compiladores padrão ou aceitam pacotes Python pré-compilados (wheels).
 
-Para resolver isso, você tem duas opções no terminal do iSH antes de instalar o `qobuz-dl`:
-
-**Opção 1: Usando o pacote pré-compilado do Alpine (Recomendado e mais rápido)**
-Baixe a versão já compilada da biblioteca de criptografia diretamente pelo gerenciador do sistema:
+Basta rodar:
 
 ```bash
-apk update
-apk add py3-pycryptodome
+pip install qobuz-dl-master
 ```
 
-Após isso, você pode rodar a instalação do `qobuz-dl` normalmente usando o `pip`.
+Se o problema da tradução ocorrer em versões muito antigas do Python (raro no PC), rodar ```pip install --upgrade typing-extensions beautifulsoup4```resolve.
 
-**Opção 2: Instalando compiladores C no iSH**
-Se preferir compilar do código-fonte ou se houver atualizações na biblioteca, instale as ferramentas essenciais de build:
+## 🍏 2. iSH Shell (iOS - Alpine Linux)
+
+O Alpine Linux do iSH não vem com pacotes pré-compilados do Python ("wheels") para algumas ferramentas, nem vem com os compiladores C necessários (gcc) para montá-los. Além disso, pacotes como beautifulsoup4 e typing-extensions podem ser puxados em versões erradas para o Python embarcado no iSH.
+
+O que o PIP instala sozinho: mutagen, tqdm, questionary, deep-translator (parcialmente).
+O que você DEVE instalar ANTES (Via Alpine/APK): Como a biblioteca pycryptodome (usada pelo qobuz-dl) exige compilação C que quebra no iSH, ela deve ser instalada via pacote do Alpine.
 
 ```bash
 apk update
-apk add gcc musl-dev python3-dev libffi-dev make
+apk add py3-pycryptodome py3-aiohttp
+```
+
+Solucionando o problema de dependências da tradução (depois de instalar o qobuz-dl): Para garantir que a tradução com deep-translator e as bibliotecas do pacote funcionem corretamente, garanta:
+
+```bash
+pip install --upgrade typing-extensions beautifulsoup4
+```
+
+## 🤖 3. Android (Via Termux)
+
+O Termux é muito robusto, mas como não é um Linux GNU "comum", ele também precisa que você baixe bibliotecas criptográficas ou headers de rede e build antes de rodar o pip.
+
+O que você DEVE instalar ANTES no Termux:
+
+```bash
+pkg update
+pkg install python build-essential libffi libxml2 libxslt
+```
+
+Isso garantirá que tanto o PyCryptodome quanto ferramentas como o BeautifulSoup (do deep-translator) funcionem sem erro.
+Depois, rodar normalmente:
+
+```bash
 pip install qobuz-dl-master
 ```
