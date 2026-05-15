@@ -106,12 +106,31 @@ class LyricsEngine:
         import asyncio
         translator = GoogleTranslator(source='auto', target=self.target_lang)
 
+        # Join lines with a unique separator that Google Translate usually respects
+        separator = " |&| "
+        joined_text = separator.join(texts_to_translate)
+
         translated_texts = []
         try:
             # RUN SYNCHRONOUS TRANSLATION IN A BACKGROUND THREAD
-            translated_texts = await asyncio.to_thread(translator.translate_batch, texts_to_translate)
+            if len(joined_text) < 4500:
+                translated_joined = await asyncio.to_thread(translator.translate, joined_text)
+                if translated_joined:
+                    translated_texts = [t.strip() for t in translated_joined.split("|&|")]
+                    # Fallback cleanup just in case Google Translate adds spaces
+                    translated_texts = [t.strip(' |&') for t in translated_texts]
+            else:
+                # If too large, we fall back to translate_batch or list comprehension chunking
+                translated_texts = await asyncio.to_thread(translator.translate_batch, texts_to_translate)
+
+            if not translated_texts or len(translated_texts) < len(texts_to_translate):
+                translated_texts = await asyncio.to_thread(translator.translate_batch, texts_to_translate)
         except Exception:
             return lyrics 
+
+        # Guarantee same length to avoid index out of bounds
+        if len(translated_texts) < len(texts_to_translate):
+            translated_texts.extend([""] * (len(texts_to_translate) - len(translated_texts)))
 
         result_lines = []
         trans_idx = 0
