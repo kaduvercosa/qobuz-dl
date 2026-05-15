@@ -194,6 +194,8 @@ class LyricsEngine:
                 elif plain_lyrics:
                     final_lyrics = await self._process_translation(plain_lyrics, is_synced=False)
                     self._inject_metadata(file_path, final_lyrics)
+                    if save_lrc:
+                        self._save_lrc_file(file_path, final_lyrics)
                     return True
 
             if self.genius:
@@ -203,6 +205,8 @@ class LyricsEngine:
                 if song and song.lyrics:
                     final_lyrics = await self._process_translation(song.lyrics, is_synced=False)
                     self._inject_metadata(file_path, final_lyrics)
+                    if save_lrc:
+                        self._save_lrc_file(file_path, final_lyrics)
                     return True
 
         except Exception:
