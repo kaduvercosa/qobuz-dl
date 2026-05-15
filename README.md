@@ -104,6 +104,52 @@ Diga adeus a bibliotecas bagunçadas e downloads corrompidos. O baixador agora a
 
 *Nota: O mecanismo é inteligente o suficiente para retomar downloads sem problemas diretamente em pastas `[INCOMPLETE]` ou `[IN PROGRESS]` na sua próxima execução!*
 
+agrado:
+
+## 🕹️ Comandos e Atalhos do Qobuz-DL
+
+Abaixo estão todos os comandos e modos de operação disponíveis no Qobuz-DL Master Edition, com exemplos práticos de como utilizá-los.
+
+### `qobuz-dl fun` ou `qobuz-dl interactive` ou `qobuz-dl i`
+**O que faz:** Abre o Modo Interativo no terminal. Permite navegar na sua conta (Favoritos, Playlists, Artistas) e buscar músicas usando uma interface de seleção visual.
+* **Exemplo:** `qobuz-dl fun`
+* **Dica:** Use as setas para navegar, a Barra de Espaço para selecionar vários itens e o Enter para iniciar o download massivo.
+
+### `qobuz-dl dl`
+**O que faz:** O modo clássico de download por URL. Permite baixar álbuns, faixas, playlists ou até URLs do Last.fm inserindo o link diretamente ou através de um arquivo de texto.
+* **Exemplo URL:** `qobuz-dl dl https://play.qobuz.com/album/12345`
+* **Exemplo Arquivo (Lote):** `qobuz-dl dl fila_de_downloads.txt`
+* **Dica:** O mecanismo lembrará os downloads concluídos no arquivo `.txt` adicionando a tag `[CONCLUÍDO]`.
+
+### `qobuz-dl lucky`
+**O que faz:** Busca um termo no Qobuz e baixa automaticamente o primeiro resultado (ou os primeiros "N" resultados). Ótimo para baixar rápido sem navegar.
+* **Exemplo (Baixar 1 álbum):** `qobuz-dl lucky "Daft Punk Discovery"`
+* **Exemplo (Baixar 3 faixas):** `qobuz-dl lucky -t track -n 3 "Billie Jean"`
+* **Argumentos:** `-t` ou `--type` (album, track, artist, playlist) e `-n` (número de resultados).
+
+### `qobuz-dl lyrics`
+**O que faz:** Modo de injeção retroativa. Escaneia uma pasta local cheia de arquivos FLAC/MP3 e busca/injetar as letras sincronizadas (e traduzidas) que estiverem faltando, sem precisar baixar o áudio novamente.
+* **Exemplo:** `qobuz-dl lyrics "C:\Musicas\Meus Albuns"`
+* **Sobrescrever:** Adicione `--overwrite` para forçar a substituição das letras existentes (útil se você configurou a tradução automática recentemente e quer atualizar as músicas antigas).
+
+### `qobuz-dl sync-playlist` ou `qobuz-dl sp`
+**O que faz:** Mantém uma pasta local espelhada com uma Playlist do Qobuz. Ele baixa as faixas novas e deleta do seu computador as faixas que foram removidas da playlist online.
+* **Exemplo:** `qobuz-dl sp https://play.qobuz.com/playlist/12345`
+* **Confirmação:** Adicione `--yes` ou `-y` para pular o aviso de confirmação antes de deletar arquivos locais.
+
+### `qobuz-dl stats`
+**O que faz:** Exibe um resumo estatístico da sua biblioteca baseado no banco de dados local (Total de faixas, álbuns, artistas únicos e distribuição por qualidade/resolução).
+* **Exemplo:** `qobuz-dl stats`
+
+### `qobuz-dl radar`
+**O que faz:** Conecta com o feed RSS privado do MusicButler, escaneia novos lançamentos de seus artistas favoritos e permite injetá-los diretamente em seus Favoritos do Qobuz para download posterior.
+* **Exemplo:** `qobuz-dl radar`
+
+### Atualização e Limpeza
+* **Mostrar Config:** `qobuz-dl -sc` ou `--show-config`
+* **Resetar Config:** `qobuz-dl -r` ou `--reset` (Executa o Assistente de Configuração).
+* **Limpar DB:** `qobuz-dl -p` ou `--purge` (Deleta o banco de dados local para baixar faixas ignoradas/repetidas).
+
 ## 📥 Instalação e Configuração
 
 > ⚠️ **Requisito:** Você precisa de uma **assinatura ativa** do Qobuz.
