@@ -537,18 +537,18 @@ async def amain():
 
 def main():
     import asyncio
-    
-    # We must ensure synchronous initial configuration logic (like questionary) 
+
+    # We must ensure synchronous initial configuration logic (like questionary)
     # runs BEFORE creating the asyncio loop.
     import sys
-    
-    
+
+
     # Pre-flight config checks before loop
     if len(sys.argv) > 1 and sys.argv[1].lower() == "-r":
         sys.exit(_reset_config(CONFIG_FILE))
-        
+
     _initial_checks()
-        
+
     try:
         asyncio.run(amain())
     except KeyboardInterrupt:
