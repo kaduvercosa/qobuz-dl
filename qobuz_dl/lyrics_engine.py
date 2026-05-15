@@ -130,7 +130,10 @@ class LyricsEngine:
                         translated_texts.append(res if res else line)
                     except Exception:
                         translated_texts.append(line)
-        except Exception:
+        except Exception as e:
+            # Em vez de passar silenciosamente, registra no terminal a causa raiz
+            import logging
+            logging.error(f"[!] Erro no GoogleTranslator: {e}")
             return lyrics 
 
         # Garante o mesmo tamanho para evitar index out of bounds
