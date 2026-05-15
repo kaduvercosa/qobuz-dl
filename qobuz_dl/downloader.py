@@ -311,9 +311,16 @@ class Download:
                     return await self._download_and_tag(dirn, count, parse, i, album_meta, False, is_mp3, multiple, is_parallel=is_parallel)
 
             tasks = []
+            continuous_track_index = 1
             for i in album_meta["tracks"]["items"]:
                 if abort_event.is_set():
                     break
+
+                # [FEATURE] Continuous numbering for multi-disc flat folders
+                if is_multiple and self.settings.multiple_disc_one_dir:
+                    i["track_number"] = continuous_track_index
+                continuous_track_index += 1
+
                 try:
                     parse = await self.client.get_track_url(i["id"], fmt_id=self.quality)
                 except Exception as e:

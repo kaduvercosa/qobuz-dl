@@ -83,7 +83,7 @@ class Client:
 
     async def start(self):
         if self.session is None:
-            self.session = aiohttp.ClientSession(headers=self.headers)
+            self.session = aiohttp.ClientSession()
         await self.auth(self._initial_email, self._initial_pwd, self._initial_uat)
         await self.cfg_setup()
 
@@ -120,7 +120,9 @@ class Client:
         
         self.headers.update({"X-User-Auth-Token": self.uat})
         if getattr(self, 'session', None):
-            self.session.headers.update({"X-User-Auth-Token": self.uat})
+            # Aiohttp ClientSession headers are immutable. We must close and recreate, or we just pass the updated headers in the next requests.
+            # Easiest way is to just let api_call use self.headers
+            pass
         
         try:
             user_info = await self.api_call("user/get")
@@ -448,8 +450,6 @@ class Client:
             self.session_infos = session["infos"]
             self.session_key = self._derive_session_key()
             self.headers.update({"X-Session-Id": self.session_id})
-            if getattr(self, 'session', None):
-                self.session.headers.update({"X-Session-Id": self.session_id})
 
         track = await self.api_call("file/url", id=id, fmt_id=fmt_id)
         if "bits_depth" in track and "bit_depth" not in track: track["bit_depth"] = track["bits_depth"]

@@ -528,7 +528,11 @@ async def amain():
     
     await qobuz.initialize_client(email, password, app_id, secrets)
 
-    await _handle_commands(qobuz, arguments)
+    try:
+        await _handle_commands(qobuz, arguments)
+    finally:
+        if hasattr(qobuz, 'client') and qobuz.client:
+            await qobuz.client.close()
 
 
 def main():
