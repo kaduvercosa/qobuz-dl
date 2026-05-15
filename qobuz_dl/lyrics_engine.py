@@ -1,5 +1,6 @@
 import os
 import re
+import asyncio
 import aiohttp
 from mutagen.flac import FLAC
 from mutagen.id3 import ID3, USLT, ID3NoHeaderError
@@ -103,37 +104,36 @@ class LyricsEngine:
             except Exception:
                 pass 
 
-        import asyncio
         translator = GoogleTranslator(source='auto', target=self.target_lang)
 
-        # Join lines with a unique separator that Google Translate usually respects
-        separator = " |&| "
+        # Usa quebra de linha como separador (mais respeitado pelo Google Tradutor)
+        separator = "\n"
         joined_text = separator.join(texts_to_translate)
 
         translated_texts = []
         try:
-            # RUN SYNCHRONOUS TRANSLATION IN A BACKGROUND THREAD
+            # Tenta traduzir tudo em um único bloco se não for muito grande
             if len(joined_text) < 4500:
                 translated_joined = await asyncio.to_thread(translator.translate, joined_text)
                 if translated_joined:
-                    translated_texts = [t.strip() for t in translated_joined.split("|&|")]
-                    # Fallback cleanup just in case Google Translate adds spaces
-                    translated_texts = [t.strip(' |&') for t in translated_texts]
+                    translated_texts = [t.strip() for t in translated_joined.split(separator)]
             else:
                 translated_texts = []
 
+            # Se falhou ou a quantidade de linhas descasou, usa fallback sequencial
             if not translated_texts or len(translated_texts) != len(texts_to_translate):
-                # Google Translate usually strips separators or translates them. Fallback chunk line by line to ensure 100% accuracy on mismatch
-                async def fetch_line(line):
+                translated_texts = []
+                for line in texts_to_translate:
                     try:
-                        return await asyncio.to_thread(translator.translate, line)
+                        # Executa de forma sequencial para evitar block (Rate Limit 429)
+                        res = await asyncio.to_thread(translator.translate, line)
+                        translated_texts.append(res if res else line)
                     except Exception:
-                        return line
-                translated_texts = await asyncio.gather(*(fetch_line(line) for line in texts_to_translate))
+                        translated_texts.append(line)
         except Exception:
             return lyrics 
 
-        # Guarantee same length to avoid index out of bounds
+        # Garante o mesmo tamanho para evitar index out of bounds
         if len(translated_texts) < len(texts_to_translate):
             translated_texts.extend([""] * (len(texts_to_translate) - len(translated_texts)))
 
@@ -204,8 +204,6 @@ class LyricsEngine:
                     return True
 
             if self.genius:
-                # Genius search is also blocking, wrap in thread
-                import asyncio
                 song = await asyncio.to_thread(self.genius.search_song, track, album_artist)
                 if song and song.lyrics:
                     final_lyrics = await self._process_translation(song.lyrics, is_synced=False)
