@@ -364,8 +364,8 @@ class QobuzDL:
             logger.error(f"{RED}Failed to update text file status: {e}{OFF}")
 
     async def download_list_of_urls(self, urls, txt_file=None):
-        
-        
+
+
         if not urls or not isinstance(urls, list):
             logger.info(f"{OFF}Nothing to download")
             return
@@ -393,7 +393,7 @@ class QobuzDL:
                         else:
                             await self.handle_url(url)
                             await self.mark_url_done_in_file(txt_file, original_url)
-                        
+
                         logger.info(f"{GREEN}[+] Completed download: {url}{OFF}")
                     except Exception as e:
                         logger.error(f"{RED}[!] Error downloading {url}: {e}{OFF}")
@@ -518,7 +518,10 @@ class QobuzDL:
             if item_type == "favorites":
                 # API call for favorites
                 results = await mode_dict["func"](fav_type=fav_subtype, limit=limit)
-                iterable = results.get(fav_subtype, {}).get("items", [])
+                # handle new nested safe_response from get_favorites
+                iterable = results.get("favorites", {}).get(fav_subtype, {}).get("items", [])
+                if not iterable: # fallback just in case
+                    iterable = results.get(fav_subtype, {}).get("items", [])
                 
                 # Adjust requires_extra based on the subtype for the minimalist table
                 if fav_subtype in ["artists", "playlists"]:
