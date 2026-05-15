@@ -57,7 +57,7 @@ class LyricsEngine:
             pass
         return False
 
-    def _process_translation(self, lyrics, is_synced=True):
+    async def _process_translation(self, lyrics, is_synced=True):
         """Traduz a letra mantendo o idioma original e duplicando os timestamps."""
         if not self.translate or not GoogleTranslator:
             return lyrics
@@ -103,11 +103,13 @@ class LyricsEngine:
             except Exception:
                 pass 
 
+        import asyncio
         translator = GoogleTranslator(source='auto', target=self.target_lang)
 
         translated_texts = []
         try:
-            translated_texts = translator.translate_batch(texts_to_translate)
+            # RUN SYNCHRONOUS TRANSLATION IN A BACKGROUND THREAD
+            translated_texts = await asyncio.to_thread(translator.translate_batch, texts_to_translate)
         except Exception:
             return lyrics 
 
@@ -165,20 +167,22 @@ class LyricsEngine:
                 plain_lyrics = data.get("plainLyrics")
                 
                 if synced_lyrics:
-                    final_lyrics = self._process_translation(synced_lyrics, is_synced=True)
+                    final_lyrics = await self._process_translation(synced_lyrics, is_synced=True)
                     self._inject_metadata(file_path, final_lyrics)
                     if save_lrc:
                         self._save_lrc_file(file_path, final_lyrics)
                     return True
                 elif plain_lyrics:
-                    final_lyrics = self._process_translation(plain_lyrics, is_synced=False)
+                    final_lyrics = await self._process_translation(plain_lyrics, is_synced=False)
                     self._inject_metadata(file_path, final_lyrics)
                     return True
 
             if self.genius:
-                song = self.genius.search_song(track, album_artist)
+                # Genius search is also blocking, wrap in thread
+                import asyncio
+                song = await asyncio.to_thread(self.genius.search_song, track, album_artist)
                 if song and song.lyrics:
-                    final_lyrics = self._process_translation(song.lyrics, is_synced=False)
+                    final_lyrics = await self._process_translation(song.lyrics, is_synced=False)
                     self._inject_metadata(file_path, final_lyrics)
                     return True
 
