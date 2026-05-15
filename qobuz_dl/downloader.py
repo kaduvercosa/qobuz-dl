@@ -28,13 +28,16 @@ from qobuz_dl.db import handle_download_id
 from qobuz_dl.constants import DEFAULT_FOLDER, DEFAULT_TRACK, DEFAULT_MULTIPLE_DISC_TRACK, OK_MAX_CHARACTER_LENGTH
 
 # UI Lock to prevent text scrambling during multithreading
-print_lock = asyncio.Lock()
+print_lock = None
 _sync_print_lock = threading.Lock()
 
 # Global Abort Event for graceful CTRL+C handling and file unlock
 abort_event = threading.Event()
 
 async def safe_print_async(*args, **kwargs):
+    global print_lock
+    if print_lock is None:
+        print_lock = asyncio.Lock()
     async with print_lock:
         text = " ".join(map(str, args))
         end = kwargs.get('end', '\n')
@@ -543,7 +546,7 @@ class Download:
         if abort_event.is_set():
             return False
 
-        time.sleep(1)
+        await asyncio.sleep(1)
         try:
             url = track_url_dict["url"]
         except KeyError:
@@ -660,7 +663,7 @@ class Download:
             
         if delay_time > 0 and not abort_event.is_set():
             await safe_print_async(f"{YELLOW}[*] Sleeping for {delay_time} seconds to prevent rate limiting...{OFF}")
-            time.sleep(delay_time)
+            await asyncio.sleep(delay_time)
             
         return True
 

@@ -120,11 +120,16 @@ class LyricsEngine:
                     # Fallback cleanup just in case Google Translate adds spaces
                     translated_texts = [t.strip(' |&') for t in translated_texts]
             else:
-                # If too large, we fall back to translate_batch or list comprehension chunking
-                translated_texts = await asyncio.to_thread(translator.translate_batch, texts_to_translate)
+                translated_texts = []
 
-            if not translated_texts or len(translated_texts) < len(texts_to_translate):
-                translated_texts = await asyncio.to_thread(translator.translate_batch, texts_to_translate)
+            if not translated_texts or len(translated_texts) != len(texts_to_translate):
+                # Google Translate usually strips separators or translates them. Fallback chunk line by line to ensure 100% accuracy on mismatch
+                async def fetch_line(line):
+                    try:
+                        return await asyncio.to_thread(translator.translate, line)
+                    except Exception:
+                        return line
+                translated_texts = await asyncio.gather(*(fetch_line(line) for line in texts_to_translate))
         except Exception:
             return lyrics 
 
