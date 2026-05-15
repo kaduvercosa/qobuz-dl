@@ -245,17 +245,19 @@ class Client:
         for attempt in range(max_retries):
             try:
                 if epoint in ["user/login", "favorite/create"]:
-                    async with self.session.post(self.base + epoint, data=params) as r:
+                    async with self.session.post(self.base + epoint, data=params, headers=self.headers) as r:
                         status = r.status
                         text = await r.text()
                         json_resp = await r.json() if "application/json" in r.headers.get("Content-Type", "") else None
                 elif epoint == "session/start":
-                    async with self.session.post(self.base + epoint, data=params, headers={"Content-Type": "application/x-www-form-urlencoded"}) as r:
+                    h = self.headers.copy()
+                    h["Content-Type"] = "application/x-www-form-urlencoded"
+                    async with self.session.post(self.base + epoint, data=params, headers=h) as r:
                         status = r.status
                         text = await r.text()
                         json_resp = await r.json() if "application/json" in r.headers.get("Content-Type", "") else None
                 else:
-                    async with self.session.get(self.base + epoint, params=params) as r:
+                    async with self.session.get(self.base + epoint, params=params, headers=self.headers) as r:
                         status = r.status
                         text = await r.text()
                         json_resp = await r.json() if "application/json" in r.headers.get("Content-Type", "") else None
@@ -389,10 +391,8 @@ class Client:
     async def get_favorites(self, fav_type="albums", limit=100, offset=0):
         try: 
             if fav_type in ["playlists", "playlist"]:
-                # 1. Faz a busca usando o endpoint que descobrimos funcionar no iOS
                 res = await self.api_call("playlist/getUserPlaylists", limit=limit, offset=offset)
                 
-                # 2. Extrai os dados
                 items = []
                 total = 0
                 if "playlists" in res and "items" in res["playlists"]:
@@ -402,9 +402,7 @@ class Client:
                     items = res["items"]
                     total = res.get("total", len(items))
                     
-                # 3. O PULO DO GATO: Reconstruímos a estrutura exata que o menu interativo
-                # original do qobuz-dl espera receber. Evita erro de chaves e quebra o loop infinito.
-                safe_response = {
+                return {
                     "favorites": {
                         "playlists": {
                             "items": items,
@@ -416,10 +414,33 @@ class Client:
                         "total": total
                     }
                 }
-                return safe_response
                 
-            # Se for álbuns ou faixas, segue o fluxo normal
-            return await self.api_call("favorite/getUserFavorites", fav_type=fav_type, limit=limit, offset=offset)
+            # Default to favorites extraction if NOT playlist
+            res = await self.api_call("favorite/getUserFavorites", fav_type=fav_type, limit=limit, offset=offset)
+
+            # Reconstruct safely for normal items so it doesn't return NoneType on items extraction
+            items = []
+            total = 0
+            if "favorites" in res and fav_type in res["favorites"]:
+                items = res["favorites"][fav_type].get("items", [])
+                total = res["favorites"][fav_type].get("total", len(items))
+            elif fav_type in res:
+                items = res[fav_type].get("items", [])
+                total = res[fav_type].get("total", len(items))
+
+            return {
+                "favorites": {
+                    fav_type: {
+                        "items": items,
+                        "total": total
+                    }
+                },
+                fav_type: {
+                    "items": items,
+                    "total": total
+                }
+            }
+
         except Exception as e: 
             logger.error(f"{RED}[!] API Error fetching {fav_type}: {e}{OFF}")
             return {}

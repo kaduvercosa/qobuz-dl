@@ -518,7 +518,10 @@ class QobuzDL:
             if item_type == "favorites":
                 # API call for favorites
                 results = await mode_dict["func"](fav_type=fav_subtype, limit=limit)
-                iterable = results.get(fav_subtype, {}).get("items", [])
+                # handle new nested safe_response from get_favorites
+                iterable = results.get("favorites", {}).get(fav_subtype, {}).get("items", [])
+                if not iterable: # fallback just in case
+                    iterable = results.get(fav_subtype, {}).get("items", [])
                 
                 # Adjust requires_extra based on the subtype for the minimalist table
                 if fav_subtype in ["artists", "playlists"]:
