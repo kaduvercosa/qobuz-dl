@@ -109,7 +109,7 @@ class LyricsEngine:
         # Join lines with a unique separator that Google Translate usually respects
         separator = " |&| "
         joined_text = separator.join(texts_to_translate)
-        
+
         translated_texts = []
         try:
             # RUN SYNCHRONOUS TRANSLATION IN A BACKGROUND THREAD
@@ -120,14 +120,19 @@ class LyricsEngine:
                     # Fallback cleanup just in case Google Translate adds spaces
                     translated_texts = [t.strip(' |&') for t in translated_texts]
             else:
-                # If too large, we fall back to translate_batch or list comprehension chunking
-                translated_texts = await asyncio.to_thread(translator.translate_batch, texts_to_translate)
-                
-            if not translated_texts or len(translated_texts) < len(texts_to_translate):
-                translated_texts = await asyncio.to_thread(translator.translate_batch, texts_to_translate)
+                translated_texts = []
+
+            if not translated_texts or len(translated_texts) != len(texts_to_translate):
+                # Google Translate usually strips separators or translates them. Fallback chunk line by line to ensure 100% accuracy on mismatch
+                async def fetch_line(line):
+                    try:
+                        return await asyncio.to_thread(translator.translate, line)
+                    except Exception:
+                        return line
+                translated_texts = await asyncio.gather(*(fetch_line(line) for line in texts_to_translate))
         except Exception:
             return lyrics 
-            
+
         # Guarantee same length to avoid index out of bounds
         if len(translated_texts) < len(texts_to_translate):
             translated_texts.extend([""] * (len(texts_to_translate) - len(translated_texts)))
@@ -173,7 +178,7 @@ class LyricsEngine:
                     status = response.status
                     if status == 200:
                         data = await response.json()
-                
+
                 if status != 200:
                     params = {"artist_name": album_artist, "track_name": track}
                     async with session.get(lrclib_url, params=params, headers=headers, timeout=12) as response:
