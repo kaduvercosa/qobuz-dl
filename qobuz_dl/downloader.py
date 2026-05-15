@@ -28,13 +28,16 @@ from qobuz_dl.db import handle_download_id
 from qobuz_dl.constants import DEFAULT_FOLDER, DEFAULT_TRACK, DEFAULT_MULTIPLE_DISC_TRACK, OK_MAX_CHARACTER_LENGTH
 
 # UI Lock to prevent text scrambling during multithreading
-print_lock = asyncio.Lock()
+print_lock = None
 _sync_print_lock = threading.Lock()
 
 # Global Abort Event for graceful CTRL+C handling and file unlock
 abort_event = threading.Event()
 
 async def safe_print_async(*args, **kwargs):
+    global print_lock
+    if print_lock is None:
+        print_lock = asyncio.Lock()
     async with print_lock:
         text = " ".join(map(str, args))
         end = kwargs.get('end', '\n')
@@ -309,18 +312,18 @@ class Download:
             async def bound_download(dirn, count, parse, i, album_meta, is_mp3, multiple, is_parallel):
                 async with sem:
                     return await self._download_and_tag(dirn, count, parse, i, album_meta, False, is_mp3, multiple, is_parallel=is_parallel)
-            
+
             tasks = []
             continuous_track_index = 1
             for i in album_meta["tracks"]["items"]:
                 if abort_event.is_set():
                     break
-                    
+
                 # [FEATURE] Continuous numbering for multi-disc flat folders
                 if is_multiple and self.settings.multiple_disc_one_dir:
                     i["track_number"] = continuous_track_index
                 continuous_track_index += 1
-                
+
                 try:
                     parse = await self.client.get_track_url(i["id"], fmt_id=self.quality)
                 except Exception as e:
@@ -338,7 +341,7 @@ class Download:
                     logger.info(f"{OFF}Demo. Skipping")
                     failed_tracks += 1
                 count += 1
-                
+
             try:
                 results = await asyncio.gather(*tasks, return_exceptions=True)
                 for res in results:
@@ -543,7 +546,7 @@ class Download:
         if abort_event.is_set():
             return False
 
-        time.sleep(1)
+        await asyncio.sleep(1)
         try:
             url = track_url_dict["url"]
         except KeyError:
@@ -660,7 +663,7 @@ class Download:
             
         if delay_time > 0 and not abort_event.is_set():
             await safe_print_async(f"{YELLOW}[*] Sleeping for {delay_time} seconds to prevent rate limiting...{OFF}")
-            time.sleep(delay_time)
+            await asyncio.sleep(delay_time)
             
         return True
 
@@ -1030,7 +1033,7 @@ async def tqdm_download(url_or_callable, fname, track_name, is_parallel=False):
             
             async with aiohttp.ClientSession() as s:
                 async with s.get(url, allow_redirects=True, headers=headers, timeout=aiohttp.ClientTimeout(total=70)) as r:
-                    if r.status == 416: return 
+                    if r.status == 416: return
                     if r.status not in [200, 206]:
                         raise Exception(f"Status Server: {r.status}")
 
@@ -1166,7 +1169,7 @@ async def tqdm_download_segments(track_url_dict, fname, track_name, is_parallel=
                 if abort_event.is_set(): return bytearray()
                 seg_data.extend(chunk)
                 if not is_parallel:
-                    bar.update(len(chunk)) 
+                    bar.update(len(chunk))
             return seg_data
 
     try:
@@ -1176,7 +1179,7 @@ async def tqdm_download_segments(track_url_dict, fname, track_name, is_parallel=
                     total=total_size, unit="iB", unit_scale=True, unit_divisor=1024,
                     desc=tqdm_desc, bar_format=b_format, leave=False, disable=is_parallel
                 ) as bar:
-        
+
                     segment_uuid = None
                     for i in range(2):
                         seg_data = await fetch_segment_fluid(session, i, bar)
@@ -1185,15 +1188,15 @@ async def tqdm_download_segments(track_url_dict, fname, track_name, is_parallel=
                             segment_uuid = _get_qobuz_segment_uuid(seg_data)
                             if segment_uuid is None:
                                 raise ConnectionError(f"Cannot find segment UUID for {fname}")
-        
+
                         await file.write(_decrypt_qobuz_segment(seg_data, raw_key, segment_uuid))
-        
+
                     if n_segments >= 2:
                         sem = asyncio.Semaphore(8)
                         async def bounded_fetch(i):
                             async with sem:
                                 return await fetch_segment_fluid(session, i, bar)
-                        
+
                         tasks = [bounded_fetch(i) for i in range(2, n_segments + 1)]
                         # We must preserve order!
                         results = await asyncio.gather(*tasks)
