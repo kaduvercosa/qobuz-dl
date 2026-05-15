@@ -238,6 +238,9 @@ class Client:
             elif epoint == "artist/get": params["artist_id"] = val_id; params["extra"] = "albums"
             elif epoint == "label/get": params["label_id"] = val_id; params["extra"] = "albums"
 
+        # Ensure no None values in params (fixes yarl TypeError)
+        params = {k: v for k, v in params.items() if v is not None}
+
         # Async request with custom retry
         max_retries = 4
         backoff_factor = 1
