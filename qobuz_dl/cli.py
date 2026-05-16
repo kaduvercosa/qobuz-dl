@@ -133,8 +133,10 @@ def _reset_config(config_file):
         genius_token_input = questionary.text("Genius API Token:").ask()
         if genius_token_input is None: sys.exit(1)
         genius_token = genius_token_input.strip()
+    
     config["qobuz"]["genius_token"] = genius_token
-
+    config["qobuz"]["target_lang"] = target_lang
+    
     print()
     directory = questionary.text("Download folder:", default="Qobuz Downloads").ask()
     if directory is None: sys.exit(1)
@@ -369,6 +371,7 @@ async def amain():
         
         fetch_lyrics = config.getboolean(section, "fetch_lyrics", fallback=False)
         genius_token = config.get(section, "genius_token", fallback=None)
+        target_lang = config.get(section, "target_lang", fallback="pt")
         
         # --- FIX: Backward compatibility for default_folder ---
         directory_val = config.get(section, "directory", fallback=None)
@@ -478,7 +481,7 @@ async def amain():
         try:
             # Captura a flag do terminal usando getattr(retorna False se a flag não for digitada)
             overwrite_flag = getattr(arguments, 'overwrite', False)
-            inject_lyrics_retroactively(target_dir, genius_token=genius_token, overwrite=overwrite_flag)
+            inject_lyrics_retroactively(target_dir, genius_token=genius_token, overwrite=overwrite_flag, target_lang=target_lang)
         except KeyboardInterrupt:
             print("\n\n\033[91m[!] Operation manually interrupted by the user (CTRL+C).\033[0m")
             print("\033[93mAlready processed files are safe. Exiting...\033[0m")
@@ -525,6 +528,7 @@ async def amain():
         fetch_lyrics=fetch_lyrics,
         no_lrc_files=("--no-lrc-files" in sys.argv) or no_lrc_files_config,
         genius_token=genius_token,
+        target_lang=target_lang,
         force_english=force_english,
         no_credits=no_credits_flag,
         settings=settings,
