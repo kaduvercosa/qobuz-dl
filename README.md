@@ -165,13 +165,13 @@ Para resolver isso, você deve instalar os pré-requisitos através do pacote do
 
 ```bash
 apk update
-apk add py3-pycryptodome
-pip install qobuz-dl-master
-```
 
-**Problemas com a Tradução de Letras no iSH:** Se o programa rodar mas não traduzir as letras, o problema é causado por uma dependência quebrada no Python do iSH. Force a atualização com o comando abaixo para a tradução voltar a funcionar:
-```bash
-pip install --upgrade typing-extensions beautifulsoup4
+apk add nano ffmpeg python3 py3-pip py3-pycryptodome py3-aiohttp
+
+python3.9 pip install --upgrade typing-extensions beautifulsoup4 deep-translator langdetect lyricsgenius mutagen
+
+pip install qobuz-dl-master
+
 ```
 
 ### 🤖 3. Instalação no Termux (Android)
