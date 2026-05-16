@@ -89,78 +89,69 @@ def validate_config_formats(formats_to_check):
 
 
 def _reset_config(config_file):
-    import questionary
-
     logging.info(f"\n{YELLOW}--- QOBUZ-DL CONFIGURATION WIZARD (2026 Update) ---{OFF}")
     config = configparser.ConfigParser(interpolation=None)
     
     config["qobuz"] = {}
     
-    print()
-    email = questionary.text("Enter your Qobuz email:").ask()
-    if email is None: sys.exit(1)
-    config["qobuz"]["email"] = email.strip()
-    
-    print(f"\n{YELLOW}[!] ATTENTION: Qobuz API blocked direct password login for 3rd party apps.{OFF}")
-    print(f"{YELLOW}[!] You must use your browser Auth Token (F12 > Storage > Local Storage > localuser > token).{OFF}")
-    
-    print()
-    auth_token = questionary.text("Paste your browser token here:").ask()
-    if auth_token is None: sys.exit(1)
-    
-    config["qobuz"]["password"] = ""
-    config["qobuz"]["auth_token"] = auth_token.strip()
-
-    print()
-    fetch_lyrics = questionary.select(
-        "Do you want to automatically download and inject lyrics?",
-        choices=["Yes, download lyrics", "No, skip lyrics"]
-    ).ask()
-    if fetch_lyrics is None: sys.exit(1)
-
-    config["qobuz"]["fetch_lyrics"] = "true" if fetch_lyrics == "Yes, download lyrics" else "false"
-    
-    target_lang = "pt"
-    genius_token = ""
-    if config["qobuz"]["fetch_lyrics"] == "true":
+    try:
         print()
-        target_lang_input = questionary.text("Target language for translation (e.g. 'pt', 'en', 'es'):", default="pt").ask()
-        if target_lang_input is None: sys.exit(1)
-        target_lang = target_lang_input.strip()
+        email = input("Enter your Qobuz email: ")
+        if not email: sys.exit(1)
+        config["qobuz"]["email"] = email.strip()
 
-        print(f"\n{YELLOW}[!] To use Genius as a fallback, enter your API Token. Leave blank to only use LRCLIB (Free/No API).{OFF}")
+        print(f"\n{YELLOW}[!] ATTENTION: Qobuz API blocked direct password login for 3rd party apps.{OFF}")
+        print(f"{YELLOW}[!] You must use your browser Auth Token (F12 > Storage > Local Storage > localuser > token).{OFF}")
         print()
-        genius_token_input = questionary.text("Genius API Token:").ask()
-        if genius_token_input is None: sys.exit(1)
-        genius_token = genius_token_input.strip()
+        auth_token = input("Paste your browser token here: ")
+        if not auth_token: sys.exit(1)
 
-    config["qobuz"]["target_lang"] = target_lang
-    config["qobuz"]["genius_token"] = genius_token
+        config["qobuz"]["password"] = ""
+        config["qobuz"]["auth_token"] = auth_token.strip()
 
-    print()
-    directory = questionary.text("Download folder:", default="Qobuz Downloads").ask()
-    if directory is None: sys.exit(1)
-    config["qobuz"]["directory"] = directory.strip()
-    
-    print()
-    folder_format = questionary.text("Folder format:", default=DEFAULT_FOLDER).ask()
-    if folder_format is None: sys.exit(1)
-    config["qobuz"]["folder_format"] = folder_format.strip()
-    
-    quality_choices = [
-        questionary.Choice("27: 24-Bit / >96 kHz (Hi-Res)", value="27"),
-        questionary.Choice("7:  24-Bit / <96 kHz (Hi-Res)", value="7"),
-        questionary.Choice("6:  16-Bit / 44.1 kHz (CD / FLAC)", value="6"),
-        questionary.Choice("5:  320 kbps (MP3)", value="5")
-    ]
+        print("\nDo you want to automatically download and inject lyrics?")
+        print("  1) Yes, download lyrics")
+        print("  2) No, skip lyrics")
+        fetch_lyrics_opt = input("Choice (1 or 2): ")
+        config["qobuz"]["fetch_lyrics"] = "true" if fetch_lyrics_opt.strip() == "1" else "false"
 
-    print()
-    quality = questionary.select(
-        "Download quality:",
-        choices=quality_choices
-    ).ask()
-    if quality is None: sys.exit(1)
-    config["qobuz"]["default_quality"] = quality
+        target_lang = "pt"
+        genius_token = ""
+        if config["qobuz"]["fetch_lyrics"] == "true":
+            print()
+            target_lang_input = input("Target language for translation (e.g. 'pt', 'en', 'es') [default: pt]: ")
+            if target_lang_input.strip():
+                target_lang = target_lang_input.strip()
+
+            print(f"\n{YELLOW}[!] To use Genius as a fallback, enter your API Token. Leave blank to only use LRCLIB (Free/No API).{OFF}")
+            genius_token_input = input("Genius API Token: ")
+            genius_token = genius_token_input.strip()
+
+        config["qobuz"]["target_lang"] = target_lang
+        config["qobuz"]["genius_token"] = genius_token
+
+        print()
+        directory = input(f"Download folder [default: Qobuz Downloads]: ")
+        if not directory.strip(): directory = "Qobuz Downloads"
+        config["qobuz"]["directory"] = directory.strip()
+
+        print()
+        folder_format = input(f"Folder format [default: {DEFAULT_FOLDER}]: ")
+        if not folder_format.strip(): folder_format = DEFAULT_FOLDER
+        config["qobuz"]["folder_format"] = folder_format.strip()
+
+        print("\nDownload quality:")
+        print("  27) 24-Bit / >96 kHz (Hi-Res)")
+        print("  7)  24-Bit / <96 kHz (Hi-Res)")
+        print("  6)  16-Bit / 44.1 kHz (CD / FLAC)")
+        print("  5)  320 kbps (MP3)")
+        quality = input("Choice (27, 7, 6, 5) [default: 7]: ")
+        if not quality.strip(): quality = "7"
+        config["qobuz"]["default_quality"] = quality.strip()
+
+    except KeyboardInterrupt:
+        print("\nWizard aborted.")
+        sys.exit(1)
 
     # Opções adicionais fixadas nativamente para a melhor qualidade/experiência
     config["qobuz"]["default_limit"] = "500"
