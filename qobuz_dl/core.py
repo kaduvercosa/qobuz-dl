@@ -4,7 +4,6 @@ import sys
 import time
 import getpass
 import asyncio
-import aiohttp
 
 from pathvalidate import sanitize_filename
 
@@ -130,27 +129,27 @@ class QobuzDL:
             return
         try:
             dloader = downloader.Download(
-                self.client,
-                item_id,
-                alt_path or self.directory,
-                int(self.quality),
-                self.embed_art,
-                self.ignore_singles_eps,
-                self.quality_fallback,
-                self.cover_og_quality,
-                self.no_cover,
-                self.folder_format,
-                self.track_format,
-                self.fetch_lyrics,
-                self.no_lrc_files,
-                self.genius_token,
-                getattr(self, 'target_lang', 'pt'),
-                self.no_credits, 
-                self.settings,
-                self.downloads_db,
+                client=self.client,
+                item_id=item_id,
+                path=alt_path or self.directory,
+                quality=int(self.quality),
+                embed_art=self.embed_art,
+                albums_only=self.ignore_singles_eps,
+                downgrade_quality=self.quality_fallback,
+                cover_og_quality=self.cover_og_quality,
+                no_cover=self.no_cover,
+                folder_format=self.folder_format,
+                track_format=self.track_format,
+                fetch_lyrics=self.fetch_lyrics,
+                no_lrc_files=self.no_lrc_files,
+                genius_token=self.genius_token,
+                target_lang=getattr(self, 'target_lang', 'pt'),
+                no_credits=self.no_credits,
+                settings=self.settings,
+                download_db=self.downloads_db,
                 is_playlist=is_playlist,
                 playlist_track_number=playlist_index,
-                booklet_only=self.booklet_only,
+                booklet_only=self.booklet_only
             )
             await dloader.download_id_by_type(not album)
         except(aiohttp.ClientError, asyncio.TimeoutError, NonStreamable) as e:
