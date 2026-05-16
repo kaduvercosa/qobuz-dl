@@ -4,6 +4,8 @@ import asyncio
 import aiohttp
 import logging
 import sys
+import difflib
+import string
 from mutagen.flac import FLAC
 from mutagen.id3 import ID3, USLT, ID3NoHeaderError
 
@@ -43,7 +45,6 @@ class LyricsEngine:
         self.target_lang = target_lang
         self.translation_symbol = translation_symbol
         
-        # BUG FIX: Verificar se deep-translator está disponível E mostrar erro real
         if self.translate and not DEEP_TRANSLATOR_AVAILABLE:
             print(f"\n\033[93m[!] AVISO: Tradução desabilitada! (Erro: {TRANSLATOR_IMPORT_ERROR})\033[0m")
             self.translate = False
@@ -75,12 +76,48 @@ class LyricsEngine:
             pass
         return False
 
+    def _is_valid_translation(self, original, translated):
+        """
+        Filtro de Inteligência: Impede que correções gramaticais de gírias
+        (ex: 'cê' -> 'você') sejam consideradas como traduções válidas.
+        """
+        if not translated: 
+            return False
+            
+        orig_clean = original.strip().lower()
+        trad_clean = translated.strip().lower()
+        
+        if orig_clean == trad_clean: 
+            return False
+            
+        # Remove pontuações para focar apenas nas palavras
+        o_no_punct = orig_clean.translate(str.maketrans('', '', string.punctuation)).strip()
+        t_no_punct = trad_clean.translate(str.maketrans('', '', string.punctuation)).strip()
+        
+        if not o_no_punct or not t_no_punct:
+            return False
+            
+        if o_no_punct == t_no_punct: 
+            return False
+        
+        # Filtro 1: Se for uma palavra muito curta (gíria) que foi expandida (ex: "vê" em "veja")
+        if len(o_no_punct) <= 5 and o_no_punct in t_no_punct:
+            return False
+            
+        # Filtro 2: Similaridade alta (acima de 75%). 
+        # Traduzir "Cê tá pronta" para "Você está pronta" dá ~85% de similaridade, então é bloqueado.
+        ratio = difflib.SequenceMatcher(None, o_no_punct, t_no_punct).ratio()
+        if ratio > 0.75:
+            return False
+            
+        return True
+
     async def _process_translation(self, lyrics, is_synced=True):
         """Traduz a letra mantendo o idioma original e duplicando os timestamps."""
         if not self.translate:
             return lyrics
 
-        # Verificação de Idioma (Evitar Duplicação de PT-BR)
+        # Verificação Global de Idioma (Evitar Duplicação de PT-BR)
         if detect:
             try:
                 texto_limpo = re.sub(r'\[\d+:\d+(?:\.\d+)?\]', '', lyrics).strip()
@@ -174,7 +211,8 @@ class LyricsEngine:
                 result_lines.append(f"{ts}{txt}")
                 if trans_idx < len(translated_texts):
                     traducao = translated_texts[trans_idx]
-                    if traducao and txt.strip().lower() != traducao.strip().lower():
+                    # Usa o novo filtro de inteligência para evitar duplicação
+                    if self._is_valid_translation(txt, traducao):
                         result_lines.append(f"{ts}{self.translation_symbol}{traducao}")
                 trans_idx += 1
                 
@@ -182,7 +220,8 @@ class LyricsEngine:
                 result_lines.append(txt)
                 if trans_idx < len(translated_texts):
                     traducao = translated_texts[trans_idx]
-                    if traducao and txt.strip().lower() != traducao.strip().lower():
+                    # Usa o novo filtro de inteligência para evitar duplicação
+                    if self._is_valid_translation(txt, traducao):
                         result_lines.append(f"{self.translation_symbol}{traducao}")
                 trans_idx += 1
                 
@@ -234,9 +273,8 @@ class LyricsEngine:
                         self._save_lrc_file(file_path, final_lyrics)
                     has_translation = (self.translation_symbol in final_lyrics)
                     
-                    # AVISO LIMPO PARA O USUÁRIO (Sincronizada)
-                    trad_status = "Sim" if has_translation else "Não (Idioma original)"
-                    print(f"  [+] Letra injetada: {track} | Sincronizada: Sim | Traduzida: {trad_status}")
+                    trad_status = "Sim" if has_translation else "Não"
+                    print(f"  [*] Letra Encontrada: {album_artist} - {track} | Sincronizada: Sim | Traduzida: {trad_status}")
                     return (True, has_translation)
                     
                 elif plain_lyrics:
@@ -246,9 +284,8 @@ class LyricsEngine:
                         self._save_lrc_file(file_path, final_lyrics)
                     has_translation = (self.translation_symbol in final_lyrics)
                     
-                    # AVISO LIMPO PARA O USUÁRIO (Simples)
-                    trad_status = "Sim" if has_translation else "Não (Idioma original)"
-                    print(f"  [+] Letra injetada: {track} | Sincronizada: Não | Traduzida: {trad_status}")
+                    trad_status = "Sim" if has_translation else "Não"
+                    print(f"  [*] Letra Encontrada: {album_artist} - {track} | Sincronizada: Não | Traduzida: {trad_status}")
                     return (True, has_translation)
 
             if self.genius:
@@ -260,12 +297,10 @@ class LyricsEngine:
                         self._save_lrc_file(file_path, final_lyrics)
                     has_translation = (self.translation_symbol in final_lyrics)
                     
-                    # AVISO LIMPO PARA O USUÁRIO (Via Genius)
-                    trad_status = "Sim" if has_translation else "Não (Idioma original)"
-                    print(f"  [+] Letra injetada: {track} (via Genius) | Sincronizada: Não | Traduzida: {trad_status}")
+                    trad_status = "Sim" if has_translation else "Não"
+                    print(f"  [*] Letra Encontrada: {album_artist} - {track} (via Genius) | Sincronizada: Não | Traduzida: {trad_status}")
                     return (True, has_translation)
 
-            # Só avisa se realmente não achar nada em nenhum lugar
             print(f"  [-] Letra não encontrada: {track}")
 
         except Exception as e:
