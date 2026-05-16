@@ -104,8 +104,6 @@ Diga adeus a bibliotecas bagunçadas e downloads corrompidos. O baixador agora a
 
 *Nota: O mecanismo é inteligente o suficiente para retomar downloads sem problemas diretamente em pastas `[INCOMPLETE]` ou `[IN PROGRESS]` na sua próxima execução!*
 
-agrado:
-
 ## 🕹️ Comandos e Atalhos do Qobuz-DL
 
 Abaixo estão todos os comandos e modos de operação disponíveis no Qobuz-DL Master Edition, com exemplos práticos de como utilizá-los.
@@ -150,60 +148,37 @@ Abaixo estão todos os comandos e modos de operação disponíveis no Qobuz-DL M
 * **Resetar Config:** `qobuz-dl -r` ou `--reset` (Executa o Assistente de Configuração).
 * **Limpar DB:** `qobuz-dl -p` ou `--purge` (Deleta o banco de dados local para baixar faixas ignoradas/repetidas).
 
+
 ## 📥 Instalação e Configuração
 
 > ⚠️ **Requisito:** Você precisa de uma **assinatura ativa** do Qobuz.
 
-### 📦 Pacote PyPI (Recomendado para todas as plataformas)
-A maneira mais fácil e oficial de instalar a Ultimate Edition. Abra seu terminal e execute:
+### 🖥️ 1. Instalação no Computador (Windows / Mac / Linux)
+A maneira mais fácil e oficial de instalar a Ultimate Edition. O `pip` cuida de tudo sozinho. Abra seu terminal e execute:
 ```bash
 pip install qobuz-dl-master
 ```
 
-## 🖥️ 1. Computadores (Windows / Mac / Linux - Ubuntu/Debian)
-
-O pip cuida de absolutamente tudo sozinho, pois esses sistemas já possuem bibliotecas criptográficas e compiladores padrão ou aceitam pacotes Python pré-compilados (wheels).
-
-Basta rodar:
-
-```bash
-pip install qobuz-dl-master
-```
-
-Se o problema da tradução ocorrer em versões muito antigas do Python (raro no PC), rodar ```pip install --upgrade typing-extensions beautifulsoup4```resolve.
-
-## 🍏 2. iSH Shell (iOS - Alpine Linux)
-
-O Alpine Linux do iSH não vem com pacotes pré-compilados do Python ("wheels") para algumas ferramentas, nem vem com os compiladores C necessários (gcc) para montá-los. Além disso, pacotes como beautifulsoup4 e typing-extensions podem ser puxados em versões erradas para o Python embarcado no iSH.
-
-O que o PIP instala sozinho: mutagen, tqdm, questionary, deep-translator (parcialmente).
-O que você DEVE instalar ANTES (Via Alpine/APK): Como a biblioteca pycryptodome (usada pelo qobuz-dl) exige compilação C que quebra no iSH, ela deve ser instalada via pacote do Alpine.
+### 🍏 2. Instalação no iSH Shell (iOS / iPadOS)
+Se você estiver utilizando o aplicativo **iSH Shell** no iOS, a instalação padrão falhará pela falta de compiladores C (que são necessários para pacotes de criptografia).
+Para resolver isso, você deve instalar os pré-requisitos através do pacote do Alpine (APK) antes do `pip`:
 
 ```bash
 apk update
-apk add py3-pycryptodome py3-aiohttp
+apk add py3-pycryptodome
+pip install qobuz-dl-master
 ```
 
-Solucionando o problema de dependências da tradução (depois de instalar o qobuz-dl): Para garantir que a tradução com deep-translator e as bibliotecas do pacote funcionem corretamente, garanta:
-
+**Problemas com a Tradução de Letras no iSH:** Se o programa rodar mas não traduzir as letras, o problema é causado por uma dependência quebrada no Python do iSH. Force a atualização com o comando abaixo para a tradução voltar a funcionar:
 ```bash
 pip install --upgrade typing-extensions beautifulsoup4
 ```
 
-## 🤖 3. Android (Via Termux)
-
-O Termux é muito robusto, mas como não é um Linux GNU "comum", ele também precisa que você baixe bibliotecas criptográficas ou headers de rede e build antes de rodar o pip.
-
-O que você DEVE instalar ANTES no Termux:
+### 🤖 3. Instalação no Termux (Android)
+O Termux possui um ambiente Linux restrito. Portanto, você deve compilar os headers criptográficos básicos e ferramentas de build antes da instalação principal. Execute os comandos um a um:
 
 ```bash
 pkg update
 pkg install python build-essential libffi libxml2 libxslt
-```
-
-Isso garantirá que tanto o PyCryptodome quanto ferramentas como o BeautifulSoup (do deep-translator) funcionem sem erro.
-Depois, rodar normalmente:
-
-```bash
 pip install qobuz-dl-master
 ```
