@@ -2,6 +2,7 @@ import os
 import re
 import asyncio
 import aiohttp
+import logging
 from mutagen.flac import FLAC
 from mutagen.id3 import ID3, USLT, ID3NoHeaderError
 
@@ -96,21 +97,15 @@ class LyricsEngine:
             return lyrics
 
         if not GoogleTranslator:
-            import logging
             logging.error("[!] A engine de traducao deep-translator nao esta instalada ou nao foi encontrada.")
             print("\n\033[91m[!] O pacote deep-translator não está instalado! Tradução pulada.\033[0m")
             return lyrics
 
         translator = GoogleTranslator(source='auto', target=self.target_lang)
 
-        # Usa quebra de linha como separador (mais respeitado pelo Google Tradutor)
-        separator = "\n"
-        joined_text = separator.join(texts_to_translate)
-
         translated_texts = []
         try:
             # Tenta traduzir tudo em um único bloco se não for muito grande
-            # O separador '
             separator_block = " |&| "
             joined_text = separator_block.join(texts_to_translate)
 
@@ -123,7 +118,6 @@ class LyricsEngine:
 
             # Se falhou ou a quantidade de linhas descasou (por causa do separador ser engolido pelo tradutor), usa fallback
             if not translated_texts or len(translated_texts) != len(texts_to_translate):
-                import logging
                 logging.warning(f"Batch translation failed or length mismatch. Using sequential fallback.")
                 translated_texts = []
 
@@ -144,10 +138,7 @@ class LyricsEngine:
                 translated_texts = await asyncio.gather(*(trans_line(line) for line in texts_to_translate))
 
         except Exception as e:
-
-
             # Em vez de passar silenciosamente, registra no terminal a causa raiz
-            import logging
             print(f"\n\033[91m[!] Erro fatal no GoogleTranslator ao traduzir: {e}\033[0m")
             logging.error(f"[!] Erro fatal no GoogleTranslator: {e}")
             return lyrics 
@@ -186,9 +177,15 @@ class LyricsEngine:
         return '\n'.join(result_lines)
 
     async def fetch_and_inject(self, file_path, album_artist, track, album, save_lrc=True, overwrite=False):
-        # Busca as letras de forma totalmente silenciosa. Retorna True ou False
-        if not overwrite and self._has_lyrics(file_path, check_lrc=save_lrc):
-            return False, False
+        """
+        Busca e injeta as letras em arquivo de áudio.
+        
+        Retorna:
+            (bool, bool): Tupla contendo (sucesso, tem_traducao)
+        """
+        # BUG FIX: Sempre verifica .lrc como parte da detecção (check_lrc=True)
+        if not overwrite and self._has_lyrics(file_path, check_lrc=True):
+            return (False, False)
 
         try:
             lrclib_url = "https://lrclib.net/api/get"
@@ -218,13 +215,13 @@ class LyricsEngine:
                     self._inject_metadata(file_path, final_lyrics)
                     if save_lrc:
                         self._save_lrc_file(file_path, final_lyrics)
-                    return True, (self.translation_symbol in final_lyrics)
+                    return (True, (self.translation_symbol in final_lyrics))
                 elif plain_lyrics:
                     final_lyrics = await self._process_translation(plain_lyrics, is_synced=False)
                     self._inject_metadata(file_path, final_lyrics)
                     if save_lrc:
                         self._save_lrc_file(file_path, final_lyrics)
-                    return True, (self.translation_symbol in final_lyrics)
+                    return (True, (self.translation_symbol in final_lyrics))
 
             if self.genius:
                 song = await asyncio.to_thread(self.genius.search_song, track, album_artist)
@@ -233,24 +230,30 @@ class LyricsEngine:
                     self._inject_metadata(file_path, final_lyrics)
                     if save_lrc:
                         self._save_lrc_file(file_path, final_lyrics)
-                    return True, (self.translation_symbol in final_lyrics)
+                    return (True, (self.translation_symbol in final_lyrics))
 
         except Exception as e:
-            import logging
             print(f"\033[91m[!] Erro fatal no fetch_and_inject: {e}\033[0m")
             logging.error(f"[!] Erro fatal no fetch_and_inject: {e}")
             pass # Ignora timeouts e erros de conexão
 
-        return False
+        # BUG FIX: Sempre retorna tupla consistente (bool, bool), não apenas False
+        return (False, False)
 
     def _save_lrc_file(self, audio_file_path, synced_lyrics):
-        base_name = os.path.splitext(audio_file_path)[0]
-        lrc_path = f"{base_name}.lrc"
-        with open(lrc_path, 'w', encoding='utf-8') as f:
-            f.write(synced_lyrics)
+        """Salva as letras em arquivo .lrc com tratamento de erro."""
+        try:
+            base_name = os.path.splitext(audio_file_path)[0]
+            lrc_path = f"{base_name}.lrc"
+            with open(lrc_path, 'w', encoding='utf-8') as f:
+                f.write(synced_lyrics)
+        except Exception as e:
+            logging.error(f"[!] Erro ao salvar arquivo .lrc: {e}")
 
     def _inject_metadata(self, file_path, lyrics):
-        if not lyrics: return
+        """Injeta as letras nos metadados do arquivo de áudio."""
+        if not lyrics:
+            return
         ext = os.path.splitext(file_path)[1].lower()
         try:
             if ext == '.flac':
@@ -264,5 +267,5 @@ class LyricsEngine:
                     audio = ID3()
                 audio.add(USLT(encoding=3, lang='eng', desc='', text=lyrics))
                 audio.save(file_path)
-        except Exception:
-            pass
+        except Exception as e:
+            logging.error(f"[!] Erro ao injetar metadados de lyrics: {e}")
