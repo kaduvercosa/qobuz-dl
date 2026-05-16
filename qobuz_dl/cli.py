@@ -133,10 +133,10 @@ def _reset_config(config_file):
         genius_token_input = questionary.text("Genius API Token:").ask()
         if genius_token_input is None: sys.exit(1)
         genius_token = genius_token_input.strip()
-    
-    config["qobuz"]["genius_token"] = genius_token
+
     config["qobuz"]["target_lang"] = target_lang
-    
+    config["qobuz"]["genius_token"] = genius_token
+
     print()
     directory = questionary.text("Download folder:", default="Qobuz Downloads").ask()
     if directory is None: sys.exit(1)
