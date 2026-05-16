@@ -28,12 +28,6 @@ except ImportError as import_error:
 except Exception as unexpected_error:
     TRANSLATOR_IMPORT_ERROR = str(unexpected_error)
 
-# Import langdetect para evitar traduzir músicas que já são em português
-try:
-    from langdetect import detect
-except ImportError:
-    detect = None
-
 # Configurar logging (Mantido no modo debug para não poluir a tela)
 logger = logging.getLogger(__name__)
 
@@ -79,7 +73,7 @@ class LyricsEngine:
     def _is_valid_translation(self, original, translated):
         """
         Filtro de Inteligência: Impede que correções gramaticais de gírias
-        (ex: 'cê' -> 'você') sejam consideradas como traduções válidas.
+        (ex: 'cê' -> 'você') ou linhas já no idioma alvo sejam duplicadas.
         """
         if not translated: 
             return False
@@ -117,16 +111,8 @@ class LyricsEngine:
         if not self.translate:
             return lyrics
 
-        # Verificação Global de Idioma (Evitar Duplicação de PT-BR)
-        if detect:
-            try:
-                texto_limpo = re.sub(r'\[\d+:\d+(?:\.\d+)?\]', '', lyrics).strip()
-                if texto_limpo:
-                    idioma_original = detect(texto_limpo)
-                    if idioma_original == self.target_lang:
-                        return lyrics # Já está no idioma alvo, não traduz
-            except Exception:
-                pass
+        # O bloqueio global do 'langdetect' foi removido daqui para permitir
+        # que músicas com idiomas misturados (Espanhol/PT ou Inglês/PT) passem.
         
         if not DEEP_TRANSLATOR_AVAILABLE or GoogleTranslator is None:
             return lyrics
@@ -203,6 +189,7 @@ class LyricsEngine:
 
         result_lines = []
         trans_idx = 0
+        has_valid_translations = False # Variável para checar se traduziu pelo menos uma linha útil
 
         for item in line_mapping:
             l_type, ts, txt = item
@@ -211,18 +198,18 @@ class LyricsEngine:
                 result_lines.append(f"{ts}{txt}")
                 if trans_idx < len(translated_texts):
                     traducao = translated_texts[trans_idx]
-                    # Usa o novo filtro de inteligência para evitar duplicação
                     if self._is_valid_translation(txt, traducao):
                         result_lines.append(f"{ts}{self.translation_symbol}{traducao}")
+                        has_valid_translations = True
                 trans_idx += 1
                 
             elif l_type == 'text':
                 result_lines.append(txt)
                 if trans_idx < len(translated_texts):
                     traducao = translated_texts[trans_idx]
-                    # Usa o novo filtro de inteligência para evitar duplicação
                     if self._is_valid_translation(txt, traducao):
                         result_lines.append(f"{self.translation_symbol}{traducao}")
+                        has_valid_translations = True
                 trans_idx += 1
                 
             elif l_type == 'empty_synced':
@@ -231,15 +218,13 @@ class LyricsEngine:
             elif l_type in ('raw', 'empty'):
                 result_lines.append(txt)
 
+        # Só retorna o texto final com tradução se pelo menos UMA linha passou no filtro de inteligência
+        if not has_valid_translations:
+            return lyrics
+
         return '\n'.join(result_lines)
 
     async def fetch_and_inject(self, file_path, album_artist, track, album, save_lrc=True, overwrite=False):
-        """
-        Busca e injeta as letras em arquivo de áudio.
-        
-        Retorna:
-            (bool, bool): Tupla contendo (sucesso, tem_traducao)
-        """
         if not overwrite and self._has_lyrics(file_path, check_lrc=True):
             return (False, False)
 
@@ -310,17 +295,15 @@ class LyricsEngine:
         return (False, False)
 
     def _save_lrc_file(self, audio_file_path, synced_lyrics):
-        """Salva as letras em arquivo .lrc com tratamento de erro."""
         try:
             base_name = os.path.splitext(audio_file_path)[0]
             lrc_path = f"{base_name}.lrc"
             with open(lrc_path, 'w', encoding='utf-8') as f:
                 f.write(synced_lyrics)
         except Exception:
-            pass # Silenciado
+            pass 
 
     def _inject_metadata(self, file_path, lyrics):
-        """Injeta as letras nos metadados do arquivo de áudio."""
         if not lyrics:
             return
         ext = os.path.splitext(file_path)[1].lower()
@@ -337,4 +320,4 @@ class LyricsEngine:
                 audio.add(USLT(encoding=3, lang='eng', desc='', text=lyrics))
                 audio.save(file_path)
         except Exception:
-            pass # Silenciado
+            pass
