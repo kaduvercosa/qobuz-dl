@@ -120,8 +120,14 @@ def _reset_config(config_file):
 
     config["qobuz"]["fetch_lyrics"] = "true" if fetch_lyrics == "Yes, download lyrics" else "false"
     
+    target_lang = "pt"
     genius_token = ""
     if config["qobuz"]["fetch_lyrics"] == "true":
+        print()
+        target_lang_input = questionary.text("Target language for translation (e.g. 'pt', 'en', 'es'):", default="pt").ask()
+        if target_lang_input is None: sys.exit(1)
+        target_lang = target_lang_input.strip()
+
         print(f"\n{YELLOW}[!] To use Genius as a fallback, enter your API Token. Leave blank to only use LRCLIB (Free/No API).{OFF}")
         print()
         genius_token_input = questionary.text("Genius API Token:").ask()
