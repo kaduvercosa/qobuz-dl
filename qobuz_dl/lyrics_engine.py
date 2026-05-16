@@ -157,13 +157,17 @@ class LyricsEngine:
 
         translated_texts = []
         try:
-            separator_block = " |&| "
+            separator_block = " @@@ "
             joined_text = separator_block.join(texts_to_translate)
 
             if len(joined_text) < 4500:
                 translated_joined = await asyncio.to_thread(translator.translate, joined_text)
                 if translated_joined:
-                    translated_texts = [t.strip() for t in translated_joined.split(separator_block) if t.strip()]
+                    # O Google Translate pode às vezes engolir os espaços antes/depois do separador,
+                    # mas devemos ter cuidado para não substituir @ legítimos no texto (como @username)
+                    # O replace limpo ou split flexível é mais seguro.
+                    clean_translated = translated_joined.replace("@@@", " @@@ ")
+                    translated_texts = [t.strip() for t in clean_translated.split(' @@@ ') if t.strip()]
             else:
                 translated_texts = []
 
@@ -173,12 +177,15 @@ class LyricsEngine:
 
                 async def trans_line(line):
                     async with sem:
-                        try:
-                            await asyncio.sleep(0.1)
-                            res = await asyncio.to_thread(translator.translate, line)
-                            return res if res else line
-                        except Exception:
-                            return line
+                        for attempt in range(2):
+                            try:
+                                await asyncio.sleep(0.1 * (attempt + 1))
+                                res = await asyncio.to_thread(translator.translate, line)
+                                return res if res else line
+                            except Exception:
+                                if attempt == 1:
+                                    return line
+                        return line
 
                 translated_texts = await asyncio.gather(*(trans_line(line) for line in texts_to_translate))
 
