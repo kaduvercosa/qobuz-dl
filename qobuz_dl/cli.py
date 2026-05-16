@@ -130,6 +130,24 @@ def _reset_config(config_file):
         config["qobuz"]["target_lang"] = target_lang
         config["qobuz"]["genius_token"] = genius_token
 
+        print("\n--- AI Smart Playlists (Optional) ---")
+        print("To generate AI-curated .m3u playlists, you can provide an API key.")
+        print("  1) OpenAI (ChatGPT)")
+        print("  2) Google Gemini")
+        print("  3) Skip")
+        ai_choice = input("Choice (1, 2 or 3) [default: 3]: ")
+
+        config["qobuz"]["ai_provider"] = "openai"
+        config["qobuz"]["openai_api_key"] = ""
+        config["qobuz"]["gemini_api_key"] = ""
+
+        if ai_choice.strip() == "1":
+            config["qobuz"]["ai_provider"] = "openai"
+            config["qobuz"]["openai_api_key"] = input("OpenAI API Key (sk-...): ").strip()
+        elif ai_choice.strip() == "2":
+            config["qobuz"]["ai_provider"] = "gemini"
+            config["qobuz"]["gemini_api_key"] = input("Gemini API Key: ").strip()
+
         print()
         directory = input(f"Download folder [default: Qobuz Downloads]: ")
         if not directory.strip(): directory = "Qobuz Downloads"
