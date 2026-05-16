@@ -167,12 +167,20 @@ class LyricsEngine:
                 traducao = translated_texts[trans_idx]
                 if traducao and txt.strip().lower() != traducao.strip().lower():
                     result_lines.append(f"{ts}{self.translation_symbol}{traducao}")
+                elif traducao and txt.strip().lower() == traducao.strip().lower():
+                    import logging
+                    print(f"\033[93m[!] Aviso: Tradução idêntica ignorada na linha: {txt}\033[0m")
+                    logging.warning(f"Translation identical to original for line: {txt}")
                 trans_idx += 1
             elif l_type == 'text':
                 result_lines.append(txt)
                 traducao = translated_texts[trans_idx]
                 if traducao and txt.strip().lower() != traducao.strip().lower():
                     result_lines.append(f"{self.translation_symbol}{traducao}")
+                elif traducao and txt.strip().lower() == traducao.strip().lower():
+                    import logging
+                    print(f"\033[93m[!] Aviso: Tradução idêntica ignorada na linha: {txt}\033[0m")
+                    logging.warning(f"Translation identical to original for line: {txt}")
                 trans_idx += 1
             elif l_type == 'empty_synced':
                 result_lines.append(f"{ts}")
