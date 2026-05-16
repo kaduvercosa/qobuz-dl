@@ -4,6 +4,7 @@ import sys
 import time
 import getpass
 import asyncio
+import aiohttp
 
 from pathvalidate import sanitize_filename
 
