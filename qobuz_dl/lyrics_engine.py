@@ -125,10 +125,14 @@ class LyricsEngine:
         translated_texts = []
         try:
             # Tenta traduzir tudo em um único bloco se não for muito grande
+            # O separador '\n' causa bugs no deep-translator, vamos usar '|&|'
+            separator_block = " |&| "
+            joined_text = separator_block.join(texts_to_translate)
+
             if len(joined_text) < 4500:
                 translated_joined = await asyncio.to_thread(translator.translate, joined_text)
                 if translated_joined:
-                    translated_texts = [t.strip() for t in translated_joined.split(separator)]
+                    translated_texts = [t.strip() for t in translated_joined.split(separator_block.strip())]
             else:
                 translated_texts = []
 
@@ -137,14 +141,17 @@ class LyricsEngine:
                 import logging
                 logging.warning(f"Batch translation failed or length mismatch. Using sequential fallback.")
                 translated_texts = []
-                for line in texts_to_translate:
+                # Fallback usando asyncio.gather para evitar o tempo extremo de bloco
+                async def trans_line(line):
                     try:
-                        # Executa de forma sequencial para evitar block (Rate Limit 429)
                         res = await asyncio.to_thread(translator.translate, line)
-                        translated_texts.append(res if res else line)
+                        return res if res else line
                     except Exception as fallback_error:
                         logging.error(f"Sequential translation error for line '{line}': {fallback_error}")
-                        translated_texts.append(line)
+                        return line
+
+                translated_texts = await asyncio.gather(*(trans_line(line) for line in texts_to_translate))
+
         except Exception as e:
             # Em vez de passar silenciosamente, registra no terminal a causa raiz
             import logging
@@ -239,8 +246,11 @@ class LyricsEngine:
                         self._save_lrc_file(file_path, final_lyrics)
                     return True
 
-        except Exception:
-            pass # Ignora timeouts e erros de conexão silenciosamente
+        except Exception as e:
+            import logging
+            print(f"\033[91m[!] Erro fatal no fetch_and_inject: {e}\033[0m")
+            logging.error(f"[!] Erro fatal no fetch_and_inject: {e}")
+            pass # Ignora timeouts e erros de conexão
 
         return False
 
