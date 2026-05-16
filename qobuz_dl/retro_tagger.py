@@ -40,6 +40,7 @@ def _process_single_file(file_path_str, engine, overwrite=False, current_idx=0, 
         G = "\033[92m"  # Green
         Y = "\033[93m"  # Yellow
         O = "\033[0m"   # Off/Reset
+        RED_COLOR = "\033[91m"  # Red
 
         # =========================
         # FLAC
@@ -96,25 +97,29 @@ def _process_single_file(file_path_str, engine, overwrite=False, current_idx=0, 
         
         safe_print(f"{C}{progresso} Searching: {search_artist} - {title}{O}")
 
-        # Engine atualizada usando o album_artist como foco principal
-        success = asyncio.run(engine.fetch_and_inject(
+        # BUG FIX: Adiciona save_lrc=True para garantir que as letras sejam salvas em .lrc
+        # Desempacota corretamente a tupla (success, has_translation)
+        success, has_translation = asyncio.run(engine.fetch_and_inject(
             file_path=file_path_str,
             album_artist=search_artist,
             track=title,
             album=album,
+            save_lrc=True,  # BUG FIX: Garante que .lrc será salvo
             overwrite=overwrite
         ))
 
         if success:
-            safe_print(f"{OFF}  [*] Letra Encontrada: {search_artist} - {title}{OFF}")
+            translation_status = " [COM TRADUÇÃO]" if has_translation else ""
+            safe_print(f"{OFF}  [*] Letra Encontrada: {search_artist} - {title}{translation_status}{OFF}")
             return "injected"
         else:
             # Avisa se a letra não for encontrada em nenhum banco de dados
-            safe_print(f"{RED}  [!] Letra Nao Encontrada: {search_artist} - {title}{OFF}")
+            safe_print(f"{RED_COLOR}  [!] Letra Nao Encontrada: {search_artist} - {title}{OFF}")
             return "skipped"
 
     except Exception as e:
         safe_print(f"{RED}[!] Error processing {file_path_str}: {e}{OFF}")
+        logger.error(f"Error in _process_single_file: {e}", exc_info=True)
         return "error"
 
     return "skipped"
@@ -211,7 +216,7 @@ def inject_lyrics_retroactively(
 
             except Exception as e:
                 logger.error(
-                    f"{RED}[!] Thread execution error: {e}{OFF}"
+                    f"[!] Thread execution error: {e}"
                 )
                 errors += 1
 
