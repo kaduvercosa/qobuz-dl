@@ -168,7 +168,7 @@ apk update
 
 apk add nano ffmpeg python3 py3-pip py3-pycryptodome py3-aiohttp
 
-python3.9 pip install --upgrade typing-extensions beautifulsoup4 deep-translator langdetect lyricsgenius mutagen
+python3.9 -m pip install --upgrade typing-extensions beautifulsoup4 deep-translator lyricsgenius mutagen
 
 pip install qobuz-dl-master
 
