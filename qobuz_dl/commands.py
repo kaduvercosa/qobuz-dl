@@ -377,6 +377,26 @@ def add_common_arg(custom_parser, default_folder, default_quality):
     )
 
 
+def smart_mix_args(subparsers):
+    sm = subparsers.add_parser(
+        "smart-mix",
+        aliases=["sm"],
+        description="Generates an AI-curated .m3u playlist based on a concept from your downloaded tracks.",
+        help="Generate an AI-curated .m3u playlist from your downloaded tracks",
+    )
+    sm.add_argument(
+        "concept",
+        type=str,
+        help="The concept or mood for the playlist (e.g. 'relaxing songs for reading', 'high energy rock')",
+    )
+    sm.add_argument(
+        "-n", "--limit",
+        type=int,
+        default=30,
+        help="Maximum number of tracks to include in the playlist (default: 30)",
+    )
+
+
 def qobuz_dl_args(
     default_quality=6, default_limit=20, default_folder="QobuzDownloads"
 ):
@@ -425,6 +445,7 @@ def qobuz_dl_args(
     # Inizializza il nuovo comando
     lyrics_cmd = lyrics_args(subparsers)
     sync_pl_cmd = sync_playlist_args(subparsers)
+    smart_mix_cmd = smart_mix_args(subparsers)
     
     [
         add_common_arg(i, default_folder, default_quality)

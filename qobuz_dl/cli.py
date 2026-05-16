@@ -246,6 +246,14 @@ async def _handle_commands(qobuz, arguments):
                 qobuz.directory,  # <-- MODIFIED: Previously it was arguments.FOLDER
                 auto_confirm=arguments.yes,
             )
+        elif arguments.command in ("smart-mix", "sm"):
+            from qobuz_dl.ai_mixer import generate_smart_mix
+            await generate_smart_mix(
+                qobuz.directory,
+                arguments.concept,
+                arguments.limit,
+                qobuz.settings
+            )
         elif arguments.command == "lucky":
             query = " ".join(arguments.QUERY)
             qobuz.lucky_type = arguments.type
