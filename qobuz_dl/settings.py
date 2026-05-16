@@ -61,6 +61,11 @@ class QobuzDLSettings:
         # user_auth_token
         self.user_auth_token = kwargs.get('user_auth_token', '')
 
+        # AI options for smart playlists
+        self.ai_provider = kwargs.get('ai_provider', 'openai')
+        self.openai_api_key = kwargs.get('openai_api_key', '')
+        self.gemini_api_key = kwargs.get('gemini_api_key', '')
+
     @staticmethod
     def from_arguments_configparser(arguments, config):
         """Creating Configuration Objects from Command Line Parameters and Configuration Files
@@ -131,6 +136,11 @@ class QobuzDLSettings:
             'user_auth_token': config.get(section, "user_auth_token", fallback=""),
         
             'lrc_files': getattr(arguments, 'lrc_files', config.getboolean(section, "lrc_files", fallback=True)),
+
+            # AI options
+            'ai_provider': getattr(arguments, 'ai_provider', config.get(section, "ai_provider", fallback="openai")),
+            'openai_api_key': getattr(arguments, 'openai_api_key', config.get(section, "openai_api_key", fallback="")),
+            'gemini_api_key': getattr(arguments, 'gemini_api_key', config.get(section, "gemini_api_key", fallback="")),
         }
         
         return QobuzDLSettings(**kwargs)
