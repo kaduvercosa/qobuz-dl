@@ -150,7 +150,7 @@ def inject_lyrics_retroactively(
         )
         return
 
-    engine = LyricsEngine(genius_token)
+    engine = LyricsEngine(genius_token=genius_token, translate=True, target_lang='pt')
 
     # =========================
     # FILE DISCOVERY
