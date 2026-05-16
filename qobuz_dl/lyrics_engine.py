@@ -95,21 +95,6 @@ class LyricsEngine:
         if not texts_to_translate:
             return lyrics
 
-        # Verificação de Idioma (Desativada se estiver errando)
-        if detect:
-            try:
-                # Filtrar linhas vazias e remover marcações antes de analisar o texto puro
-                textos_limpos = [t for t in texts_to_translate if len(t.strip()) > 3]
-                amostra = " ".join(textos_limpos[:20])
-                if amostra:
-                    detected_lang = detect(amostra)
-                    if detected_lang == self.target_lang:
-                        import logging
-                        logging.info(f"Letra ignorada. Idioma detectado: {detected_lang}")
-                        return lyrics
-            except Exception:
-                pass 
-
         if not GoogleTranslator:
             import logging
             logging.error("[!] A engine de traducao deep-translator nao esta instalada ou nao foi encontrada.")
@@ -125,7 +110,7 @@ class LyricsEngine:
         translated_texts = []
         try:
             # Tenta traduzir tudo em um único bloco se não for muito grande
-            # O separador '\n' causa bugs no deep-translator, vamos usar '|&|'
+            # O separador '
             separator_block = " |&| "
             joined_text = separator_block.join(texts_to_translate)
 
@@ -136,23 +121,31 @@ class LyricsEngine:
             else:
                 translated_texts = []
 
-            # Se falhou ou a quantidade de linhas descasou, usa fallback sequencial
+            # Se falhou ou a quantidade de linhas descasou (por causa do separador ser engolido pelo tradutor), usa fallback
             if not translated_texts or len(translated_texts) != len(texts_to_translate):
                 import logging
                 logging.warning(f"Batch translation failed or length mismatch. Using sequential fallback.")
                 translated_texts = []
-                # Fallback usando asyncio.gather para evitar o tempo extremo de bloco
+
+                # Para não tomar bloqueio de API por limite de taxa, usamos semáforo no asyncio
+                sem = asyncio.Semaphore(5)
+
                 async def trans_line(line):
-                    try:
-                        res = await asyncio.to_thread(translator.translate, line)
-                        return res if res else line
-                    except Exception as fallback_error:
-                        logging.error(f"Sequential translation error for line '{line}': {fallback_error}")
-                        return line
+                    async with sem:
+                        try:
+                            # Adiciona pequeno delay para evitar 429 too many requests
+                            await asyncio.sleep(0.1)
+                            res = await asyncio.to_thread(translator.translate, line)
+                            return res if res else line
+                        except Exception as fallback_error:
+                            logging.error(f"Sequential translation error for line '{line}': {fallback_error}")
+                            return line
 
                 translated_texts = await asyncio.gather(*(trans_line(line) for line in texts_to_translate))
 
         except Exception as e:
+
+
             # Em vez de passar silenciosamente, registra no terminal a causa raiz
             import logging
             print(f"\n\033[91m[!] Erro fatal no GoogleTranslator ao traduzir: {e}\033[0m")
@@ -175,9 +168,7 @@ class LyricsEngine:
                 if traducao and txt.strip().lower() != traducao.strip().lower():
                     result_lines.append(f"{ts}{self.translation_symbol}{traducao}")
                 elif traducao and txt.strip().lower() == traducao.strip().lower():
-                    import logging
-                    print(f"\033[93m[!] Aviso: Tradução idêntica ignorada na linha: {txt}\033[0m")
-                    logging.warning(f"Translation identical to original for line: {txt}")
+                    pass # Ignora silenciosamente a tradução idêntica
                 trans_idx += 1
             elif l_type == 'text':
                 result_lines.append(txt)
@@ -185,9 +176,7 @@ class LyricsEngine:
                 if traducao and txt.strip().lower() != traducao.strip().lower():
                     result_lines.append(f"{self.translation_symbol}{traducao}")
                 elif traducao and txt.strip().lower() == traducao.strip().lower():
-                    import logging
-                    print(f"\033[93m[!] Aviso: Tradução idêntica ignorada na linha: {txt}\033[0m")
-                    logging.warning(f"Translation identical to original for line: {txt}")
+                    pass # Ignora silenciosamente a tradução idêntica
                 trans_idx += 1
             elif l_type == 'empty_synced':
                 result_lines.append(f"{ts}")
@@ -199,7 +188,7 @@ class LyricsEngine:
     async def fetch_and_inject(self, file_path, album_artist, track, album, save_lrc=True, overwrite=False):
         # Busca as letras de forma totalmente silenciosa. Retorna True ou False
         if not overwrite and self._has_lyrics(file_path, check_lrc=save_lrc):
-            return False
+            return False, False
 
         try:
             lrclib_url = "https://lrclib.net/api/get"
@@ -229,13 +218,13 @@ class LyricsEngine:
                     self._inject_metadata(file_path, final_lyrics)
                     if save_lrc:
                         self._save_lrc_file(file_path, final_lyrics)
-                    return True
+                    return True, (self.translation_symbol in final_lyrics)
                 elif plain_lyrics:
                     final_lyrics = await self._process_translation(plain_lyrics, is_synced=False)
                     self._inject_metadata(file_path, final_lyrics)
                     if save_lrc:
                         self._save_lrc_file(file_path, final_lyrics)
-                    return True
+                    return True, (self.translation_symbol in final_lyrics)
 
             if self.genius:
                 song = await asyncio.to_thread(self.genius.search_song, track, album_artist)
@@ -244,7 +233,7 @@ class LyricsEngine:
                     self._inject_metadata(file_path, final_lyrics)
                     if save_lrc:
                         self._save_lrc_file(file_path, final_lyrics)
-                    return True
+                    return True, (self.translation_symbol in final_lyrics)
 
         except Exception as e:
             import logging
