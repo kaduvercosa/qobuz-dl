@@ -161,7 +161,7 @@ class Download:
         self.fetch_lyrics = fetch_lyrics
         self.no_lrc_files = no_lrc_files
         if self.fetch_lyrics:
-            self.lyrics_engine = LyricsEngine(genius_token)
+            self.lyrics_engine = LyricsEngine(genius_token=genius_token, translate=True, target_lang='pt')
 
         self.settings = settings or QobuzDLSettings()
         self.download_db = download_db
