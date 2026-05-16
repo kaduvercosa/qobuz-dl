@@ -3,6 +3,7 @@ import re
 import asyncio
 import aiohttp
 import logging
+import sys
 from mutagen.flac import FLAC
 from mutagen.id3 import ID3, USLT, ID3NoHeaderError
 
@@ -13,12 +14,25 @@ except ImportError:
     lyricsgenius = None
 
 # Import deep-translator para traduções automáticas
+GoogleTranslator = None
+DEEP_TRANSLATOR_AVAILABLE = False
+TRANSLATOR_IMPORT_ERROR = None
+
 try:
     from deep_translator import GoogleTranslator
     DEEP_TRANSLATOR_AVAILABLE = True
-except ImportError:
-    GoogleTranslator = None
-    DEEP_TRANSLATOR_AVAILABLE = False
+except ImportError as import_error:
+    TRANSLATOR_IMPORT_ERROR = str(import_error)
+    print(f"\n\033[93m[!] AVISO: deep-translator não está instalado!")
+    print(f"    Erro: {TRANSLATOR_IMPORT_ERROR}")
+    print(f"    Instale com: pip install deep-translator\033[0m\n")
+except Exception as unexpected_error:
+    # BUG FIX: Captura QUALQUER erro, não apenas ImportError
+    TRANSLATOR_IMPORT_ERROR = str(unexpected_error)
+    print(f"\n\033[91m[!] ERRO ao importar deep-translator!")
+    print(f"    Erro: {TRANSLATOR_IMPORT_ERROR}")
+    print(f"    Tipo: {type(unexpected_error).__name__}")
+    print(f"    Tente: pip install --upgrade deep-translator beautifulsoup4 typing-extensions\033[0m\n")
 
 # Import langdetect para evitar traduzir músicas que já são em português
 try:
@@ -37,11 +51,12 @@ class LyricsEngine:
         self.target_lang = target_lang
         self.translation_symbol = translation_symbol
         
-        # BUG FIX: Verificar se deep-translator está disponível
+        # BUG FIX: Verificar se deep-translator está disponível E mostrar erro real
         if self.translate and not DEEP_TRANSLATOR_AVAILABLE:
-            print("\n\033[93m[!] AVISO: O pacote 'deep-translator' não está instalado!")
-            print("    Traduções serão desabilitadas.")
-            print("    Instale com: pip install deep-translator\033[0m\n")
+            print("\n\033[93m[!] AVISO: Tradução desabilitada!")
+            if TRANSLATOR_IMPORT_ERROR:
+                print(f"    Motivo: {TRANSLATOR_IMPORT_ERROR}")
+            print(f"    Instale/atualize com: pip install --upgrade deep-translator beautifulsoup4\033[0m\n")
             self.translate = False
         
         if self.genius_token and lyricsgenius:
@@ -78,10 +93,12 @@ class LyricsEngine:
             logger.info("[*] Tradução desabilitada, retornando lyrics original")
             return lyrics
         
-        # BUG FIX: Verificar disponibilidade real do tradutor
+        # BUG FIX: Verificar disponibilidade real do tradutor com mensagem de erro
         if not DEEP_TRANSLATOR_AVAILABLE or GoogleTranslator is None:
-            logger.error("[!] GoogleTranslator não disponível. Instalação necessária: pip install deep-translator")
-            print("\n\033[91m[!] O pacote deep-translator não está instalado! Tradução pulada.\033[0m")
+            error_msg = TRANSLATOR_IMPORT_ERROR or "GoogleTranslator não disponível"
+            logger.error(f"[!] Erro ao usar tradutor: {error_msg}")
+            print(f"\n\033[91m[!] Tradução não disponível: {error_msg}\033[0m")
+            print(f"    Tente: pip install --upgrade deep-translator beautifulsoup4\n")
             return lyrics
 
         lines = lyrics.split('\n')
@@ -118,13 +135,15 @@ class LyricsEngine:
             return lyrics
 
         try:
-            # BUG FIX: Inicializar translator dentro do try-except com mensagens detalhadas
+            # BUG FIX: Inicializar translator com debug melhorado
             translator = GoogleTranslator(source='auto', target=self.target_lang)
-            logger.info(f"[*] Iniciando tradução para {self.target_lang}. Linhas: {len(texts_to_translate)}")
+            logger.info(f"[*] Tradutor inicializado para {self.target_lang}. Linhas: {len(texts_to_translate)}")
 
         except Exception as e:
-            logger.error(f"[!] Erro ao inicializar GoogleTranslator: {e}")
-            print(f"\n\033[91m[!] Erro ao inicializar tradutor: {e}\033[0m")
+            error_msg = f"{type(e).__name__}: {str(e)}"
+            logger.error(f"[!] Erro ao inicializar GoogleTranslator: {error_msg}")
+            print(f"\n\033[91m[!] Erro ao inicializar tradutor: {error_msg}\033[0m")
+            print(f"    Tente: pip install --upgrade deep-translator beautifulsoup4 typing-extensions\n")
             return lyrics
 
         translated_texts = []
@@ -168,8 +187,9 @@ class LyricsEngine:
                 logger.info(f"[*] Tradução sequencial concluída: {len(translated_texts)} linhas")
 
         except Exception as e:
-            logger.error(f"[!] Erro fatal no processo de tradução: {e}")
-            print(f"\n\033[91m[!] Erro fatal ao traduzir: {e}\033[0m")
+            error_msg = f"{type(e).__name__}: {str(e)}"
+            logger.error(f"[!] Erro no processo de tradução: {error_msg}")
+            print(f"\n\033[91m[!] Erro durante tradução: {error_msg}\033[0m\n")
             return lyrics 
 
         # Garante o mesmo tamanho para evitar index out of bounds
@@ -218,7 +238,7 @@ class LyricsEngine:
         Retorna:
             (bool, bool): Tupla contendo (sucesso, tem_traducao)
         """
-        # BUG FIX: Sempre verifica .lrc como parte da detecção (check_lrc=True)
+        # BUG FIX: Sempre verifica .lrc como parte da detecção
         if not overwrite and self._has_lyrics(file_path, check_lrc=True):
             logger.debug(f"[*] Arquivo já possui letras: {file_path}")
             return (False, False)
@@ -282,10 +302,11 @@ class LyricsEngine:
             logger.warning(f"[!] Nenhuma letra encontrada para: {track}")
 
         except Exception as e:
-            print(f"\033[91m[!] Erro fatal no fetch_and_inject: {e}\033[0m")
-            logger.error(f"[!] Erro fatal no fetch_and_inject: {e}", exc_info=True)
+            error_msg = f"{type(e).__name__}: {str(e)}"
+            print(f"\033[91m[!] Erro ao buscar letras: {error_msg}\033[0m")
+            logger.error(f"[!] Erro ao buscar letras: {error_msg}", exc_info=True)
 
-        # BUG FIX: Sempre retorna tupla consistente (bool, bool), não apenas False
+        # BUG FIX: Sempre retorna tupla consistente
         return (False, False)
 
     def _save_lrc_file(self, audio_file_path, synced_lyrics):
