@@ -1063,6 +1063,17 @@ async def tqdm_download(url_or_callable, fname, track_name, is_parallel=False):
                 await safe_print_async(f"{G}  L Completed: {track_name}{O}")
                 return 
 
+        except asyncio.exceptions.CancelledError:
+            return
+        except asyncio.TimeoutError:
+            if attempt < max_retries - 1:
+                delay = backoff_delays[attempt]
+                await safe_print_async(f"{Y}[*] Timeout reached for '{track_name}'. Resuming in {delay}s (Attempt {attempt+2}/{max_retries}){O}")
+                await asyncio.sleep(delay)
+                continue
+            else:
+                if os.path.exists(fname): os.remove(fname)
+                raise Exception(f"Definitive timeout after {max_retries} attempts: Timeout")
         except Exception as e:
             if "404" in str(e):
                 if os.path.exists(fname): os.remove(fname)
