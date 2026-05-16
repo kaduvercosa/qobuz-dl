@@ -97,24 +97,19 @@ def _process_single_file(file_path_str, engine, overwrite=False, current_idx=0, 
         
         safe_print(f"{C}{progresso} Searching: {search_artist} - {title}{O}")
 
-        # BUG FIX: Adiciona save_lrc=True para garantir que as letras sejam salvas em .lrc
-        # Desempacota corretamente a tupla (success, has_translation)
+        # O print do sucesso/falha foi removido daqui pois o lyrics_engine já faz isso perfeitamente
         success, has_translation = asyncio.run(engine.fetch_and_inject(
             file_path=file_path_str,
             album_artist=search_artist,
             track=title,
             album=album,
-            save_lrc=True,  # BUG FIX: Garante que .lrc será salvo
+            save_lrc=True,
             overwrite=overwrite
         ))
 
         if success:
-            translation_status = " [COM TRADUÇÃO]" if has_translation else ""
-            safe_print(f"{OFF}  [*] Letra Encontrada: {search_artist} - {title}{translation_status}{OFF}")
             return "injected"
         else:
-            # Avisa se a letra não for encontrada em nenhum banco de dados
-            safe_print(f"{RED_COLOR}  [!] Letra Nao Encontrada: {search_artist} - {title}{OFF}")
             return "skipped"
 
     except Exception as e:
