@@ -98,10 +98,11 @@ class LyricsEngine:
         if len(o_no_punct) <= 5 and o_no_punct in t_no_punct:
             return False
             
-        # Filtro 2: Similaridade alta (acima de 75%). 
-        # Traduzir "Cê tá pronta" para "Você está pronta" dá ~85% de similaridade, então é bloqueado.
+        # Filtro 2: Similaridade alta.
+        # Ajustado de 0.75 para 0.85 para permitir a tradução de palavras curtas de idiomas parecidos
+        # (ex: espanhol "mi amor" para português "meu amor" dá 0.80)
         ratio = difflib.SequenceMatcher(None, o_no_punct, t_no_punct).ratio()
-        if ratio > 0.75:
+        if ratio > 0.85:
             return False
             
         return True

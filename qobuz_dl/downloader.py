@@ -321,8 +321,8 @@ class Download:
                 if abort_event.is_set():
                     break
 
-                # [FEATURE] Continuous numbering for multi-disc flat folders
-                if is_multiple and self.settings.multiple_disc_one_dir:
+                # [FEATURE] Continuous numbering for multi-disc releases
+                if is_multiple:
                     i["track_number"] = continuous_track_index
                 continuous_track_index += 1
 
@@ -653,9 +653,7 @@ class Download:
                     save_lrc=not self.no_lrc_files
             )
                 
-            if letra_ok:
-                await safe_print_async(f"  [•] Letra Encontrada: {track_title} {OFF}")
-            else:
+            if not letra_ok:
                 await safe_print_async(f"{RED}  [!] Letra Nao Encontrada: {track_title} {OFF}")
 
         delay_time = getattr(self.settings, 'delay', 0)
