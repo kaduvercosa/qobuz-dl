@@ -71,6 +71,7 @@ class QobuzDL:
         settings: QobuzDLSettings = None,
         booklet_only: bool = False,
         blacklist=None,
+        target_lang: str = "pt",
     ):
         self.directory = create_and_return_dir(directory)
         self.quality = quality
@@ -90,6 +91,7 @@ class QobuzDL:
         self.fetch_lyrics = fetch_lyrics
         self.no_lrc_files = no_lrc_files
         self.genius_token = genius_token
+        self.target_lang = target_lang
         self.force_english = force_english
         self.no_credits = no_credits
         self.settings = settings or QobuzDLSettings()
@@ -141,6 +143,7 @@ class QobuzDL:
                 self.fetch_lyrics,
                 self.no_lrc_files,
                 self.genius_token,
+                getattr(self, 'target_lang', 'pt'),
                 self.no_credits, 
                 self.settings,
                 self.downloads_db,
