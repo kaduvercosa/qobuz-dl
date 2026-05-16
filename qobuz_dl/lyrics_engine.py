@@ -95,19 +95,25 @@ class LyricsEngine:
         if not texts_to_translate:
             return lyrics
 
-        # Verificação de Idioma silenciosa (Desativada se estiver errando)
+        # Verificação de Idioma (Desativada se estiver errando)
         if detect:
             try:
-                amostra = " ".join(texts_to_translate[:10])
-                detected_lang = detect(amostra)
-                if detected_lang == self.target_lang:
-                    import logging
-                    logging.info(f"Letra ignorada. Idioma detectado: {detected_lang}")
-                    return lyrics
-            except Exception as e:
+                # Filtrar linhas vazias e remover marcações antes de analisar o texto puro
+                textos_limpos = [t for t in texts_to_translate if len(t.strip()) > 3]
+                amostra = " ".join(textos_limpos[:20])
+                if amostra:
+                    detected_lang = detect(amostra)
+                    if detected_lang == self.target_lang:
+                        import logging
+                        logging.info(f"Letra ignorada. Idioma detectado: {detected_lang}")
+                        return lyrics
+            except Exception:
                 pass 
 
         if not GoogleTranslator:
+            import logging
+            logging.error("[!] A engine de traducao deep-translator nao esta instalada ou nao foi encontrada.")
+            print("\n\033[91m[!] O pacote deep-translator não está instalado! Tradução pulada.\033[0m")
             return lyrics
 
         translator = GoogleTranslator(source='auto', target=self.target_lang)
@@ -128,19 +134,22 @@ class LyricsEngine:
 
             # Se falhou ou a quantidade de linhas descasou, usa fallback sequencial
             if not translated_texts or len(translated_texts) != len(texts_to_translate):
+                import logging
+                logging.warning(f"Batch translation failed or length mismatch. Using sequential fallback.")
                 translated_texts = []
                 for line in texts_to_translate:
                     try:
                         # Executa de forma sequencial para evitar block (Rate Limit 429)
                         res = await asyncio.to_thread(translator.translate, line)
                         translated_texts.append(res if res else line)
-                    except Exception:
+                    except Exception as fallback_error:
+                        logging.error(f"Sequential translation error for line '{line}': {fallback_error}")
                         translated_texts.append(line)
         except Exception as e:
             # Em vez de passar silenciosamente, registra no terminal a causa raiz
             import logging
-            print(f"\n\033[91m[!] Erro no GoogleTranslator ao traduzir: {e}\033[0m")
-            logging.error(f"[!] Erro no GoogleTranslator: {e}")
+            print(f"\n\033[91m[!] Erro fatal no GoogleTranslator ao traduzir: {e}\033[0m")
+            logging.error(f"[!] Erro fatal no GoogleTranslator: {e}")
             return lyrics 
 
         # Garante o mesmo tamanho para evitar index out of bounds
