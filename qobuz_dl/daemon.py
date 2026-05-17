@@ -76,15 +76,21 @@ async def scan_new_releases(qobuz_client, run_once=True, test_mode=False):
         async def fetch_artist_albums(artist):
             async with sem:
                 try:
-                    meta = await qobuz_client.client.api_call("artist/get", artist_id=artist["id"], extra="albums", limit=5)
-                    if "albums" in meta and "items" in meta["albums"]:
-                        for album in meta["albums"]["items"]:
-                            album_id = str(album["id"])
-                            release_date = album.get("release_date_original", "")
+                    # Using extra="albums" filters out Singles and EPs on some endpoints.
+                    # Removing the "extra" parameter altogether forces Qobuz to return all releases (Albums, EPs, Singles)
+                    meta = await qobuz_client.client.api_call("artist/get", artist_id=artist["id"], limit=20)
 
-                            # Only care about recent releases (this year) that haven't been seen yet
-                            if release_date.startswith(current_year) and album_id not in seen_releases:
-                                return album
+                    # Depending on the Qobuz endpoint response for 'artist/get' without 'extra',
+                    # releases might be in meta["albums"] or meta["releases"]
+                    albums_items = meta.get("albums", {}).get("items", []) or meta.get("releases", {}).get("items", [])
+
+                    for album in albums_items:
+                        album_id = str(album["id"])
+                        release_date = album.get("release_date_original", "")
+
+                        # Only care about recent releases (this year) that haven't been seen yet
+                        if release_date.startswith(current_year) and album_id not in seen_releases:
+                            return album
                 except Exception:
                     pass
             return None
