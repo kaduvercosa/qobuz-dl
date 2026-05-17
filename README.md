@@ -135,6 +135,16 @@ Abaixo estão todos os comandos e modos de operação disponíveis no Qobuz-DL M
 * **Exemplo:** `qobuz-dl sp https://play.qobuz.com/playlist/12345`
 * **Confirmação:** Adicione `--yes` ou `-y` para pular o aviso de confirmação antes de deletar arquivos locais.
 
+### `qobuz-dl smart-mix` ou `qobuz-dl sm`
+**O que faz:** Lê a sua biblioteca local de músicas baixadas e utiliza uma IA (OpenAI ou Gemini) para criar playlists `.m3u` personalizadas baseadas em um "conceito" (clima, ritmo, tema).
+* **Exemplo:** `qobuz-dl sm "Músicas relaxantes para ler em dias de chuva"`
+* **Limite:** Adicione `-n 15` para limitar a playlist a 15 faixas.
+* **Atenção:** Você precisa configurar a sua chave de API via Assistente (`qobuz-dl -r`) ou no seu arquivo `config.ini` antes de rodar este comando.
+
+### `qobuz-dl panel` ou `qobuz-dl p`
+**O que faz:** Inicia a **Central de Controle Interativa (TUI)** do Qobuz-DL. Este é um painel minimalista e profissional no próprio terminal que permite acessar todos os recursos do programa através de um menu de fácil navegação com o teclado, em vez de memorizar comandos.
+* **Exemplo:** `qobuz-dl panel`
+
 ### `qobuz-dl stats`
 **O que faz:** Exibe um resumo estatístico da sua biblioteca baseado no banco de dados local (Total de faixas, álbuns, artistas únicos e distribuição por qualidade/resolução).
 * **Exemplo:** `qobuz-dl stats`

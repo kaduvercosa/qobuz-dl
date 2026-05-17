@@ -272,6 +272,9 @@ async def _handle_commands(qobuz, arguments):
                 arguments.limit,
                 qobuz.settings
             )
+        elif arguments.command in ("panel", "p"):
+            from qobuz_dl.tui_panel import run_tui_panel
+            await run_tui_panel(qobuz)
         elif arguments.command == "lucky":
             query = " ".join(arguments.QUERY)
             qobuz.lucky_type = arguments.type
