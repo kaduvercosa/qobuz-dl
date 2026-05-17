@@ -41,15 +41,25 @@ async def scan_new_releases(qobuz_client, run_once=True, test_mode=False):
 
     if test_mode:
         print(f"{YELLOW}[!] Running in TEST MODE. Generating a mock payload to test your Webhook...{OFF}")
-        mock_album = {
+        mock_album_1 = {
             "id": "12345678",
-            "title": "Test Album (Webhook Test)",
+            "title": "Random Access Memories (Test)",
             "artist": {"name": "Daft Punk"},
             "release_date_original": f"{current_year}-01-01",
             "maximum_bit_depth": 24,
+            "release_type": "album",
             "image": {"large": "https://static.qobuz.com/images/covers/12/34/56789.jpg"}
         }
-        new_releases.append(mock_album)
+        mock_album_2 = {
+            "id": "87654321",
+            "title": "Get Lucky (Test Single)",
+            "artist": {"name": "Daft Punk"},
+            "release_date_original": f"{current_year}-01-02",
+            "maximum_bit_depth": 16,
+            "release_type": "single",
+            "image": {"large": "https://static.qobuz.com/images/covers/98/76/54321.jpg"}
+        }
+        new_releases.extend([mock_album_1, mock_album_2])
     else:
         print(f"{CYAN}[*] Fetching your favorite artists from Qobuz...{OFF}")
         try:
@@ -115,13 +125,15 @@ async def scan_new_releases(qobuz_client, run_once=True, test_mode=False):
             album_title = album.get("title", "Unknown Title")
             release_date = album.get("release_date_original", "Unknown")
             hires = "Yes" if album.get("maximum_bit_depth", 16) >= 24 else "No"
+            release_type = album.get("release_type", "album").capitalize()
             cover_url = album.get("image", {}).get("large", "")
-            qobuz_url = f"https://play.qobuz.com/album/{album_id}"
+            qobuz_url = f"https://open.qobuz.com/album/{album_id}"
 
             payload = {
                 "event": "new_release",
                 "artist": artist_name,
                 "title": album_title,
+                "type": release_type,
                 "release_date": release_date,
                 "is_hires": hires,
                 "cover_url": cover_url,
