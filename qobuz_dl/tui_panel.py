@@ -36,18 +36,18 @@ async def run_tui_panel(qobuz_client):
             "5. ❌ Exit"
         ]
 
-        answer = questionary.select(
+        answer = await questionary.select(
             "Select an action:",
             choices=choices,
             style=custom_style
-        ).ask()
+        ).ask_async()
 
         if not answer or answer.startswith("5"):
             print(f"\n{GREEN}Exiting Control Center. Goodbye!{OFF}")
             break
 
         elif answer.startswith("1"):
-            url = questionary.text("🔗 Paste the Qobuz URL:", style=custom_style).ask()
+            url = await questionary.text("🔗 Paste the Qobuz URL:", style=custom_style).ask_async()
             if url:
                 try:
                     await qobuz_client.download_list_of_urls([url.strip()])
@@ -56,7 +56,7 @@ async def run_tui_panel(qobuz_client):
             input(f"\n{YELLOW}Press ENTER to return to the menu...{OFF}")
 
         elif answer.startswith("2"):
-            url = questionary.text("🔗 Paste the Qobuz Playlist URL to sync:", style=custom_style).ask()
+            url = await questionary.text("🔗 Paste the Qobuz Playlist URL to sync:", style=custom_style).ask_async()
             if url:
                 from qobuz_dl.sync_playlist import sync_playlist
                 try:
@@ -67,9 +67,9 @@ async def run_tui_panel(qobuz_client):
             input(f"\n{YELLOW}Press ENTER to return to the menu...{OFF}")
 
         elif answer.startswith("3"):
-            concept = questionary.text("🧠 Enter the concept (e.g., 'Relaxing rock'):", style=custom_style).ask()
+            concept = await questionary.text("🧠 Enter the concept (e.g., 'Relaxing rock'):", style=custom_style).ask_async()
             if concept:
-                limit_str = questionary.text("🔢 Max tracks (default: 30):", default="30", style=custom_style).ask()
+                limit_str = await questionary.text("🔢 Max tracks (default: 30):", default="30", style=custom_style).ask_async()
                 try:
                     limit = int(limit_str)
                 except ValueError:
