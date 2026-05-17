@@ -3,7 +3,7 @@ import sys
 import asyncio
 from pick import pick
 
-from qobuz_dl.color import OFF, GREEN, RED, YELLOW, CYAN, BOLD
+from qobuz_dl.color import OFF, GREEN, RED, YELLOW, CYAN, BG
 
 async def run_tui_panel(qobuz_client):
     import qobuz_dl.cli
@@ -61,7 +61,7 @@ async def run_tui_panel(qobuz_client):
 
         elif index == 1: # DL / URL
             print(f"\n{CYAN}--- Download from URL ---{OFF}")
-            url = input(f"{BOLD}🔗 Paste the Qobuz URL:{OFF} ").strip()
+            url = input(f"{BG}🔗 Paste the Qobuz URL:{OFF} ").strip()
             if url:
                 try:
                     await qobuz_client.download_list_of_urls([url])
@@ -72,7 +72,7 @@ async def run_tui_panel(qobuz_client):
         elif index == 2: # LUCKY
             print(f"\n{CYAN}--- I'm Feeling Lucky ---{OFF}")
             print("Download the first result instantly without navigating.")
-            query = input(f"{BOLD}🔎 Enter Artist, Album or Track name:{OFF} ").strip()
+            query = input(f"{BG}🔎 Enter Artist, Album or Track name:{OFF} ").strip()
             if query:
                 print("\nTypes: 1) Album  2) Track  3) Artist  4) Playlist")
                 type_choice = input(f"Select type (1-4) [default: 1]: ").strip()
@@ -87,7 +87,7 @@ async def run_tui_panel(qobuz_client):
 
         elif index == 3: # SYNC
             print(f"\n{CYAN}--- Sync Local Playlist ---{OFF}")
-            url = input(f"{BOLD}🔗 Paste the Qobuz Playlist URL to sync:{OFF} ").strip()
+            url = input(f"{BG}🔗 Paste the Qobuz Playlist URL to sync:{OFF} ").strip()
             if url:
                 from qobuz_dl.sync_playlist import sync_playlist
                 try:
@@ -99,9 +99,9 @@ async def run_tui_panel(qobuz_client):
 
         elif index == 4: # AI
             print(f"\n{CYAN}--- AI Smart Mix ---{OFF}")
-            concept = input(f"{BOLD}🧠 Enter the concept (e.g., 'Relaxing rock'):{OFF} ").strip()
+            concept = input(f"{BG}🧠 Enter the concept (e.g., 'Relaxing rock'):{OFF} ").strip()
             if concept:
-                limit_str = input(f"{BOLD}🔢 Max tracks (default: 30):{OFF} ").strip()
+                limit_str = input(f"{BG}🔢 Max tracks (default: 30):{OFF} ").strip()
                 try:
                     limit = int(limit_str) if limit_str else 30
                 except ValueError:
@@ -116,7 +116,7 @@ async def run_tui_panel(qobuz_client):
 
         elif index == 5: # LYRICS
             print(f"\n{CYAN}--- Retroactive Lyrics Injection ---{OFF}")
-            folder = input(f"{BOLD}📁 Enter the local directory to scan (or press Enter for default '{qobuz_client.directory}'):{OFF} ").strip()
+            folder = input(f"{BG}📁 Enter the local directory to scan (or press Enter for default '{qobuz_client.directory}'):{OFF} ").strip()
             if not folder:
                 folder = qobuz_client.directory
 
