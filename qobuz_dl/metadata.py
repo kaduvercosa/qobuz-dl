@@ -272,6 +272,24 @@ def _get_tags_to_add(qobuz_album: dict, qobuz_item: dict, settings: QobuzDLSetti
         if rg_peak is not None:
             tags["REPLAYGAIN_TRACK_PEAK"] = str(rg_peak)
 
+    # --- TECHNICAL COMMENT INJECTION ---
+    qobuz_id = qobuz_item.get("id", "")
+    album_id = qobuz_album.get("id", "")
+    album_url = qobuz_album.get("url", "")
+    bit_depth = qobuz_item.get("maximum_bit_depth", "16")
+    sampling_rate = qobuz_item.get("maximum_sampling_rate", "44.1")
+    hires_tag = "Hi-Res " if int(bit_depth) >= 24 else "CD-Quality "
+
+    comments = [
+        f"Source: Qobuz",
+        f"Track ID: {qobuz_id} | Album ID: {album_id}",
+        f"Quality: {hires_tag}{bit_depth}-bit / {sampling_rate} kHz",
+    ]
+    if album_url:
+        comments.append(f"URL: {album_url}")
+
+    tags["COMMENT"] = "\n".join(comments)
+
     work = qobuz_item.get("work")
     if work:
         tags["WORK"] = work
