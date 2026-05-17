@@ -10,7 +10,7 @@ from qobuz_dl.settings import QobuzDLSettings
 
 logger = logging.getLogger(__name__)
 
-async def scan_new_releases(qobuz_client, run_once=True):
+async def scan_new_releases(qobuz_client, run_once=True, test_mode=False):
     print(f"\n{CYAN}=============================================={OFF}")
     print(f"{CYAN}       QOBUZ-DL AUTONOMOUS WATCHER DAEMON    {OFF}")
     print(f"{CYAN}=============================================={OFF}\n")
@@ -69,6 +69,9 @@ async def scan_new_releases(qobuz_client, run_once=True):
                     for album in meta["albums"]["items"]:
                         album_id = str(album["id"])
                         release_date = album.get("release_date_original", "")
+
+                        if test_mode:
+                            return album
 
                         # Only care about recent releases (this year) that haven't been seen yet
                         if release_date.startswith(current_year) and album_id not in seen_releases:

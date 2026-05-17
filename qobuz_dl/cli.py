@@ -148,6 +148,11 @@ def _reset_config(config_file):
             config["qobuz"]["ai_provider"] = "gemini"
             config["qobuz"]["gemini_api_key"] = input("Gemini API Key: ").strip()
 
+        print("\n--- Autonomous Watcher / Webhooks (Optional) ---")
+        print("To receive real-time notifications about new releases from your favorite artists.")
+        webhook_url = input("Enter your n8n / Make.com Webhook URL (Leave blank to skip): ").strip()
+        config["qobuz"]["webhook_url"] = webhook_url
+
         print()
         directory = input(f"Download folder [default: Qobuz Downloads]: ")
         if not directory.strip(): directory = "Qobuz Downloads"
@@ -277,7 +282,7 @@ async def _handle_commands(qobuz, arguments):
             await run_tui_panel(qobuz)
         elif arguments.command in ("daemon", "watch"):
             from qobuz_dl.daemon import scan_new_releases
-            await scan_new_releases(qobuz)
+            await scan_new_releases(qobuz, test_mode=getattr(arguments, 'test', False))
         elif arguments.command == "lucky":
             query = " ".join(arguments.QUERY)
             qobuz.lucky_type = arguments.type
