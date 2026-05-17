@@ -524,8 +524,8 @@ async def amain():
     # Execute the Pre-flight Config Check
     # --- PRE-FLIGHT CONFIG CHECK ---
     formats_to_validate = {
-        "folder_format": arguments.folder_format or folder_format,
-        "track_format": arguments.track_format or track_format,
+        "folder_format": getattr(arguments, 'folder_format', None) or folder_format,
+        "track_format": getattr(arguments, 'track_format', None) or track_format,
         "fallback_folder_format": config.get(section, "fallback_folder_format", fallback="{artist} - {album}"),
         "multiple_disc_track_format": config.get(section, "multiple_disc_track_format", fallback="{disc_number}.{track_number} - {track_title}")
     }
@@ -534,17 +534,17 @@ async def amain():
 
     qobuz = QobuzDL(
         directory_to_use,
-        arguments.quality,
-        arguments.embed_art or embed_art,
-        ignore_singles_eps=arguments.albums_only or albums_only,
-        no_m3u_for_playlists=arguments.no_m3u or no_m3u,
-        quality_fallback=not arguments.no_fallback or not no_fallback,
-        cover_og_quality=arguments.og_cover or og_cover,
-        no_cover=arguments.no_cover or no_cover,
-        downloads_db=None if no_database or arguments.no_db else QOBUZ_DB,
-        folder_format=arguments.folder_format or folder_format,
-        track_format=arguments.track_format or track_format,
-        smart_discography=arguments.smart_discography or smart_discography,
+        getattr(arguments, 'quality', None),
+        getattr(arguments, 'embed_art', False) or embed_art,
+        ignore_singles_eps=getattr(arguments, 'albums_only', False) or albums_only,
+        no_m3u_for_playlists=getattr(arguments, 'no_m3u', False) or no_m3u,
+        quality_fallback=not getattr(arguments, 'no_fallback', False) or not no_fallback,
+        cover_og_quality=getattr(arguments, 'og_cover', False) or og_cover,
+        no_cover=getattr(arguments, 'no_cover', False) or no_cover,
+        downloads_db=None if no_database or getattr(arguments, 'no_db', False) else QOBUZ_DB,
+        folder_format=getattr(arguments, 'folder_format', None) or folder_format,
+        track_format=getattr(arguments, 'track_format', None) or track_format,
+        smart_discography=getattr(arguments, 'smart_discography', False) or smart_discography,
         fetch_lyrics=fetch_lyrics,
         no_lrc_files=("--no-lrc-files" in sys.argv) or no_lrc_files_config,
         genius_token=genius_token,
