@@ -113,7 +113,7 @@ async def run_telegram_bot(qobuz_client):
                 title = track.get("title", "Unknown")
                 artist = track.get("performer", {}).get("name", "Unknown")
                 track_id = track.get("id")
-                buttons.append([InlineKeyboardButton(text=f"🎵 {artist} - {title}", callback_data=f"dl_{track_id}")])
+                buttons.append([InlineKeyboardButton(text=f"🎵 {artist} - {title}", callback_data=f"dl_track_{track_id}")])
 
             buttons.append([InlineKeyboardButton(text="🔙 Back", callback_data="fav_menu")])
             keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -137,7 +137,7 @@ async def run_telegram_bot(qobuz_client):
             for plist in items:
                 title = plist.get("name", "Unknown")
                 p_id = plist.get("id")
-                buttons.append([InlineKeyboardButton(text=f"📝 {title}", callback_data=f"dl_{p_id}")])
+                buttons.append([InlineKeyboardButton(text=f"📝 {title}", callback_data=f"dl_playlist_{p_id}")])
 
             buttons.append([InlineKeyboardButton(text="🔙 Back", callback_data="fav_menu")])
             keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -162,7 +162,7 @@ async def run_telegram_bot(qobuz_client):
                 title = album.get("title", "Unknown")
                 artist = album.get("artist", {}).get("name", "Unknown")
                 alb_id = album.get("id")
-                buttons.append([InlineKeyboardButton(text=f"💿 {artist} - {title}", callback_data=f"dl_{alb_id}")])
+                buttons.append([InlineKeyboardButton(text=f"💿 {artist} - {title}", callback_data=f"dl_album_{alb_id}")])
 
             buttons.append([InlineKeyboardButton(text="🔙 Back", callback_data="fav_menu")])
             keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -188,11 +188,11 @@ async def run_telegram_bot(qobuz_client):
                 title = alb.get("title", "Unknown")
                 alb_id = alb.get("id")
                 # Using ⬇️ icon to represent download action
-                buttons.append([InlineKeyboardButton(text=f"⬇️ {title}", callback_data=f"dl_{alb_id}")])
+                buttons.append([InlineKeyboardButton(text=f"⬇️ {title}", callback_data=f"dl_album_{alb_id}")])
 
             buttons.append([InlineKeyboardButton(text="🔙 Back", callback_data="fav_artists")])
             keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
-            await callback.message.edit_text("Select an album to Download to your Telegram chat:", reply_markup=keyboard)
+            await callback.message.edit_text("Select an album to Download:", reply_markup=keyboard)
         except Exception as e:
             await callback.message.edit_text(f"❌ Error fetching discography: {e}")
         await callback.answer()
@@ -221,7 +221,7 @@ async def run_telegram_bot(qobuz_client):
                 title = alb.get("title", "Unknown")
                 artist = alb.get("artist", {}).get("name", "Unknown")
                 alb_id = alb.get("id")
-                buttons.append([InlineKeyboardButton(text=f"⬇️ {artist} - {title}", callback_data=f"dl_{alb_id}")])
+                buttons.append([InlineKeyboardButton(text=f"⬇️ {artist} - {title}", callback_data=f"dl_album_{alb_id}")])
 
             keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
             await message.reply("Select an album to Download:", reply_markup=keyboard)
@@ -232,19 +232,97 @@ async def run_telegram_bot(qobuz_client):
     # Global lock to prevent concurrent downloads messing with local directories/cache
     dl_lock = asyncio.Lock()
 
-    @dp.callback_query(F.data.startswith("dl_"))
-    async def cb_execute_download(callback: CallbackQuery):
-        album_id = callback.data.split("_")[1]
-        await callback.message.edit_text(f"⏳ Downloading Album ID {album_id} to Local Server...\nPlease wait.")
+    async def upload_folder_to_telegram(message, folder_path):
+        import mutagen
+        from mutagen.flac import FLAC
+        from mutagen.id3 import ID3
 
-        url = f"https://open.qobuz.com/album/{album_id}"
+        found_audio = []
+        for root, dirs, files in os.walk(folder_path):
+            for file in sorted(files):
+                if file.lower().endswith(('.flac', '.mp3')):
+                    found_audio.append(os.path.join(root, file))
+
+        if not found_audio:
+            await message.reply("Download completed, but no audio files found to upload.")
+            return
+
+        await message.reply(f"🚀 Uploading {len(found_audio)} tracks to Telegram...")
+
+        for audio_file in found_audio:
+            ext = os.path.splitext(audio_file)[1].lower()
+            title = os.path.basename(audio_file)
+            artist = "Unknown"
+
+            try:
+                if ext == '.flac':
+                    audio = FLAC(audio_file)
+                    if audio.get('TITLE'): title = audio.get('TITLE')[0]
+                    if audio.get('ARTIST'): artist = audio.get('ARTIST')[0]
+                elif ext == '.mp3':
+                    audio = ID3(audio_file)
+                    if audio.get('TIT2'): title = audio.get('TIT2').text[0]
+                    if audio.get('TPE1'): artist = audio.get('TPE1').text[0]
+            except Exception:
+                pass
+
+            input_file = FSInputFile(audio_file)
+            try:
+                await message.answer_audio(
+                    audio=input_file,
+                    title=title,
+                    performer=artist
+                )
+            except Exception as e:
+                await message.reply(f"⚠️ Failed to upload {title}. Reason: {e}\n(Tip: Telegram bots have a 50MB limit for files).")
+
+        await message.reply("✅ Uploads completed!")
+
+    @dp.callback_query(F.data.startswith("dl_"))
+    async def cb_download_prompt(callback: CallbackQuery):
+        parts = callback.data.split("_", 2)
+        item_type = parts[1]
+        item_id = parts[2]
+
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="💾 Save to Local Server Only", callback_data=f"execdl_local_{item_type}_{item_id}")],
+            [InlineKeyboardButton(text="📤 Upload to this Chat", callback_data=f"execdl_chat_{item_type}_{item_id}")],
+            [InlineKeyboardButton(text="🔙 Cancel", callback_data="fav_menu")]
+        ])
+        await callback.message.edit_text(f"How would you like to process this {item_type} download?", reply_markup=keyboard)
+        await callback.answer()
+
+    @dp.callback_query(F.data.startswith("execdl_"))
+    async def cb_execute_download(callback: CallbackQuery):
+        parts = callback.data.split("_", 3)
+        mode = parts[1] # 'local' or 'chat'
+        item_type = parts[2] # 'album', 'track', 'playlist'
+        item_id = parts[3]
+
+        await callback.message.edit_text(f"⏳ Downloading {item_type.capitalize()} ID {item_id}...\nPlease wait.")
+
+        url = f"https://open.qobuz.com/{item_type}/{item_id}"
+        original_dir = qobuz_client.directory
+        target_dir = original_dir
+
+        if mode == "chat":
+            target_dir = os.path.join(original_dir, "telegram_temp")
+            os.makedirs(target_dir, exist_ok=True)
+            qobuz_client.directory = target_dir
 
         async with dl_lock:
             try:
                 await qobuz_client.download_list_of_urls([url])
-                await callback.message.answer(f"✅ Download successfully saved to your server at:\n`{qobuz_client.directory}`", parse_mode="Markdown")
+                if mode == "chat":
+                    await upload_folder_to_telegram(callback.message, target_dir)
+                else:
+                    await callback.message.answer(f"✅ Download successfully saved to your server at:\n`{original_dir}`", parse_mode="Markdown")
             except Exception as e:
                 await callback.message.answer(f"❌ Download Error: {e}")
+            finally:
+                qobuz_client.directory = original_dir
+                if mode == "chat" and os.path.exists(target_dir):
+                    shutil.rmtree(target_dir)
         await callback.answer()
 
     @dp.message(Command("lucky"))
@@ -278,14 +356,52 @@ async def run_telegram_bot(qobuz_client):
             return
 
         url = args[1].strip()
-        await message.reply(f"📥 Processing download request to Local Server...", parse_mode="Markdown")
+
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="💾 Save to Local Server Only", callback_data=f"cmddl_local")],
+            [InlineKeyboardButton(text="📤 Upload to this Chat", callback_data=f"cmddl_chat")]
+        ])
+
+        # Store the URL in the message state to avoid hitting the 64-byte callback_data limit of Telegram
+        await message.reply(f"How would you like to process this URL download?\n\nURL: `{url}`", reply_markup=keyboard, parse_mode="Markdown")
+
+    @dp.callback_query(F.data.startswith("cmddl_"))
+    async def cb_cmd_dl_execute(callback: CallbackQuery):
+        mode = callback.data.split("_")[1]
+
+        # Extract the URL from the message text we saved earlier
+        msg_text = callback.message.text
+        try:
+            url = msg_text.split("URL: ")[1].strip()
+        except IndexError:
+            await callback.message.edit_text("❌ Error: Could not extract URL from message.")
+            await callback.answer()
+            return
+
+        await callback.message.edit_text(f"📥 Processing download request...")
+
+        original_dir = qobuz_client.directory
+        target_dir = original_dir
+
+        if mode == "chat":
+            target_dir = os.path.join(original_dir, "telegram_temp")
+            os.makedirs(target_dir, exist_ok=True)
+            qobuz_client.directory = target_dir
 
         async with dl_lock:
             try:
                 await qobuz_client.download_list_of_urls([url])
-                await message.reply(f"✅ Download successfully saved to your server at:\n`{qobuz_client.directory}`", parse_mode="Markdown")
+                if mode == "chat":
+                    await upload_folder_to_telegram(callback.message, target_dir)
+                else:
+                    await callback.message.answer(f"✅ Download successfully saved to your server at:\n`{original_dir}`", parse_mode="Markdown")
             except Exception as e:
-                await message.reply(f"❌ Error: {e}")
+                await callback.message.answer(f"❌ Error: {e}")
+            finally:
+                qobuz_client.directory = original_dir
+                if mode == "chat" and os.path.exists(target_dir):
+                    shutil.rmtree(target_dir)
+        await callback.answer()
 
     @dp.message(Command("mix"))
     async def cmd_mix(message: types.Message):
