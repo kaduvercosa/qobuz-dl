@@ -11,11 +11,21 @@ async def run_tui_panel(qobuz_client):
     while True:
         os.system('cls' if os.name == 'nt' else 'clear')
 
+        import shutil
+        terminal_width = shutil.get_terminal_size().columns
+        box_width = 46
+
+        # Calculate padding to center the title box based on the terminal width
+        if terminal_width > box_width:
+            padding = " " * ((terminal_width - box_width) // 2)
+        else:
+            padding = ""
+
         title = (
-            "==============================================\n"
-            "          QOBUZ-DL CONTROL CENTER           \n"
-            "==============================================\n\n"
-            "Use ARROW KEYS to navigate and ENTER to select:"
+            f"{padding}==============================================\n"
+            f"{padding}          QOBUZ-DL CONTROL CENTER           \n"
+            f"{padding}==============================================\n\n"
+            f"Use ARROW KEYS to navigate and ENTER to select:"
         )
 
         choices = [
