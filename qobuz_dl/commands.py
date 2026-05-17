@@ -377,6 +377,15 @@ def add_common_arg(custom_parser, default_folder, default_quality):
     )
 
 
+def daemon_args(subparsers):
+    daemon = subparsers.add_parser(
+        "daemon",
+        aliases=["watch"],
+        description="Run the background watcher to check followed artists for new releases and trigger n8n webhooks.",
+        help="Run the background autonomous release watcher",
+    )
+
+
 def panel_args(subparsers):
     panel = subparsers.add_parser(
         "panel",
@@ -456,6 +465,7 @@ def qobuz_dl_args(
     sync_pl_cmd = sync_playlist_args(subparsers)
     smart_mix_cmd = smart_mix_args(subparsers)
     panel_cmd = panel_args(subparsers)
+    daemon_cmd = daemon_args(subparsers)
     
     [
         add_common_arg(i, default_folder, default_quality)
