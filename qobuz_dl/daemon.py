@@ -39,71 +39,94 @@ async def scan_new_releases(qobuz_client, run_once=True, test_mode=False):
     new_releases = []
     current_year = str(datetime.now(timezone.utc).year)
 
-    print(f"{CYAN}[*] Fetching your favorite artists from Qobuz...{OFF}")
-    try:
-        fav_response = await qobuz_client.client.get_favorites(fav_type="artists", limit=200)
-    except Exception as e:
-        print(f"{RED}[!] Error fetching favorite artists: {e}{OFF}")
-        return
-
-    artists = []
-    if "favorites" in fav_response and "artists" in fav_response["favorites"]:
-        artists = fav_response["favorites"]["artists"].get("items", [])
-    elif "artists" in fav_response:
-        artists = fav_response["artists"].get("items", [])
-
-    if not artists:
-        print(f"{YELLOW}[!] No favorite artists found in your Qobuz account.{OFF}")
-        return
-
-    print(f"{GREEN}[+] Found {len(artists)} favorite artists. Scanning for new releases...{OFF}")
-
-    # Process concurrent requests but limit batching to avoid rate limits
-    sem = asyncio.Semaphore(5)
-
-    async def fetch_artist_albums(artist):
-        async with sem:
-            try:
-                # Using extra="albums" filters out Singles and EPs on some endpoints.
-                # Removing the "extra" parameter altogether forces Qobuz to return all releases (Albums, EPs, Singles)
-                meta = await qobuz_client.client.api_call("artist/get", artist_id=artist["id"], limit=20)
-
-                # Depending on the Qobuz endpoint response for 'artist/get' without 'extra',
-                # releases might be in meta["albums"] or meta["releases"]
-                albums_items = meta.get("albums", {}).get("items", []) or meta.get("releases", {}).get("items", [])
-
-                for album in albums_items:
-                    album_id = str(album["id"])
-                    release_date = album.get("release_date_original", "")
-
-                    if test_mode:
-                        print(f"{YELLOW}[!] Running in TEST MODE. Bypassing date restrictions and using real Qobuz data...{OFF}")
-                        return album
-
-                    # Only care about recent releases (this year) that haven't been seen yet
-                    if release_date.startswith(current_year) and album_id not in seen_releases:
-                        return album
-            except Exception:
-                pass
-        return None
-
     if test_mode:
-        # Just grab the latest releases from the first 2 artists to avoid spamming the webhook
-        tasks = [fetch_artist_albums(artist) for artist in artists[:2]]
+        print(f"{YELLOW}[!] Running in TEST MODE. Generating a mock payload to test your Webhook...{OFF}")
+        mock_album_1 = {
+            "id": "12345678",
+            "title": "Random Access Memories (Test)",
+            "artist": {"name": "Daft Punk"},
+            "release_date_original": f"{current_year}-01-01",
+            "maximum_bit_depth": 24,
+            "maximum_sampling_rate": 88.2,
+            "release_type": "album",
+            "label": {"name": "Columbia"},
+            "tracks_count": 13,
+            "genres_list": ["Electronic", "Dance"],
+            "parental_warning": False,
+            "image": {"large": "https://static.qobuz.com/images/covers/12/34/56789.jpg"}
+        }
+        mock_album_2 = {
+            "id": "87654321",
+            "title": "Get Lucky (Test Single)",
+            "artist": {"name": "Daft Punk"},
+            "release_date_original": f"{current_year}-01-02",
+            "maximum_bit_depth": 16,
+            "maximum_sampling_rate": 44.1,
+            "release_type": "single",
+            "label": {"name": "Columbia"},
+            "tracks_count": 1,
+            "genres_list": ["Pop"],
+            "parental_warning": False,
+            "image": {"large": "https://static.qobuz.com/images/covers/98/76/54321.jpg"}
+        }
+        new_releases.extend([mock_album_1, mock_album_2])
     else:
+        print(f"{CYAN}[*] Fetching your favorite artists from Qobuz...{OFF}")
+        try:
+            fav_response = await qobuz_client.client.get_favorites(fav_type="artists", limit=200)
+        except Exception as e:
+            print(f"{RED}[!] Error fetching favorite artists: {e}{OFF}")
+            return
+
+        artists = []
+        if "favorites" in fav_response and "artists" in fav_response["favorites"]:
+            artists = fav_response["favorites"]["artists"].get("items", [])
+        elif "artists" in fav_response:
+            artists = fav_response["artists"].get("items", [])
+
+        if not artists:
+            print(f"{YELLOW}[!] No favorite artists found in your Qobuz account.{OFF}")
+            return
+
+        print(f"{GREEN}[+] Found {len(artists)} favorite artists. Scanning for new releases...{OFF}")
+
+        # Process concurrent requests but limit batching to avoid rate limits
+        sem = asyncio.Semaphore(5)
+
+        async def fetch_artist_albums(artist):
+            async with sem:
+                try:
+                    # Using extra="albums" filters out Singles and EPs on some endpoints.
+                    # Removing the "extra" parameter altogether forces Qobuz to return all releases (Albums, EPs, Singles)
+                    meta = await qobuz_client.client.api_call("artist/get", artist_id=artist["id"], limit=20)
+
+                    # Depending on the Qobuz endpoint response for 'artist/get' without 'extra',
+                    # releases might be in meta["albums"] or meta["releases"]
+                    albums_items = meta.get("albums", {}).get("items", []) or meta.get("releases", {}).get("items", [])
+
+                    for album in albums_items:
+                        album_id = str(album["id"])
+                        release_date = album.get("release_date_original", "")
+
+                        # Only care about recent releases (this year) that haven't been seen yet
+                        if release_date.startswith(current_year) and album_id not in seen_releases:
+                            return album
+                except Exception:
+                    pass
+            return None
+
         tasks = [fetch_artist_albums(artist) for artist in artists]
+        results = await asyncio.gather(*tasks)
 
-    results = await asyncio.gather(*tasks)
+        for album in results:
+            if album:
+                new_releases.append(album)
 
-    for album in results:
-        if album:
-            new_releases.append(album)
+        if not new_releases:
+            print(f"{GREEN}[+] No new releases detected. You are completely up to date!{OFF}")
+            return
 
-    if not new_releases:
-        print(f"{GREEN}[+] No new releases detected. You are completely up to date!{OFF}")
-        return
-
-    print(f"\n{YELLOW}[!] Found {len(new_releases)} NEW releases! Dispatching Webhooks to n8n...{OFF}")
+    print(f"\n{YELLOW}[!] Found {len(new_releases)} NEW releases! Dispatching Webhooks to n8n/Make...{OFF}")
 
     async with aiohttp.ClientSession() as session:
         for album in new_releases:
