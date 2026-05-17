@@ -534,7 +534,7 @@ async def amain():
 
     qobuz = QobuzDL(
         directory_to_use,
-        getattr(arguments, 'quality', None),
+        getattr(arguments, 'quality', None) or default_quality,
         getattr(arguments, 'embed_art', False) or embed_art,
         ignore_singles_eps=getattr(arguments, 'albums_only', False) or albums_only,
         no_m3u_for_playlists=getattr(arguments, 'no_m3u', False) or no_m3u,
