@@ -153,6 +153,16 @@ def _reset_config(config_file):
         webhook_url = input("Enter your n8n / Make.com Webhook URL (Leave blank to skip): ").strip()
         config["qobuz"]["webhook_url"] = webhook_url
 
+        print("\n--- Telegram Bot Integration (Optional) ---")
+        print("If you want to run qobuz-dl as a Telegram Bot (e.g., on Google Colab).")
+        telegram_token = input("Enter your Telegram Bot Token (Leave blank to skip): ").strip()
+        config["qobuz"]["telegram_bot_token"] = telegram_token
+        if telegram_token:
+            telegram_chat = input("Enter your Telegram Chat ID (so only you can use it): ").strip()
+            config["qobuz"]["telegram_chat_id"] = telegram_chat
+        else:
+            config["qobuz"]["telegram_chat_id"] = ""
+
         print()
         directory = input(f"Download folder [default: Qobuz Downloads]: ")
         if not directory.strip(): directory = "Qobuz Downloads"
@@ -283,6 +293,9 @@ async def _handle_commands(qobuz, arguments):
         elif arguments.command in ("daemon", "watch"):
             from qobuz_dl.daemon import scan_new_releases
             await scan_new_releases(qobuz, test_mode=getattr(arguments, 'test', False))
+        elif arguments.command in ("bot", "telegram"):
+            from qobuz_dl.telegram_bot import run_telegram_bot
+            await run_telegram_bot(qobuz)
         elif arguments.command == "lucky":
             query = " ".join(arguments.QUERY)
             qobuz.lucky_type = arguments.type
