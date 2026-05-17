@@ -69,6 +69,10 @@ class QobuzDLSettings:
         # Webhook / Daemon
         self.webhook_url = kwargs.get('webhook_url', '')
 
+        # Telegram Bot
+        self.telegram_bot_token = kwargs.get('telegram_bot_token', '')
+        self.telegram_chat_id = kwargs.get('telegram_chat_id', '')
+
     @staticmethod
     def from_arguments_configparser(arguments, config):
         """Creating Configuration Objects from Command Line Parameters and Configuration Files
@@ -147,6 +151,10 @@ class QobuzDLSettings:
 
             # Webhook
             'webhook_url': getattr(arguments, 'webhook_url', config.get(section, "webhook_url", fallback="")),
+
+            # Telegram
+            'telegram_bot_token': getattr(arguments, 'telegram_bot_token', config.get(section, "telegram_bot_token", fallback="")),
+            'telegram_chat_id': getattr(arguments, 'telegram_chat_id', config.get(section, "telegram_chat_id", fallback="")),
         }
         
         return QobuzDLSettings(**kwargs)
