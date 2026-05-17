@@ -66,6 +66,9 @@ class QobuzDLSettings:
         self.openai_api_key = kwargs.get('openai_api_key', '')
         self.gemini_api_key = kwargs.get('gemini_api_key', '')
 
+        # Webhook / Daemon
+        self.webhook_url = kwargs.get('webhook_url', '')
+
     @staticmethod
     def from_arguments_configparser(arguments, config):
         """Creating Configuration Objects from Command Line Parameters and Configuration Files
@@ -141,6 +144,9 @@ class QobuzDLSettings:
             'ai_provider': getattr(arguments, 'ai_provider', config.get(section, "ai_provider", fallback="openai")),
             'openai_api_key': getattr(arguments, 'openai_api_key', config.get(section, "openai_api_key", fallback="")),
             'gemini_api_key': getattr(arguments, 'gemini_api_key', config.get(section, "gemini_api_key", fallback="")),
+
+            # Webhook
+            'webhook_url': getattr(arguments, 'webhook_url', config.get(section, "webhook_url", fallback="")),
         }
         
         return QobuzDLSettings(**kwargs)

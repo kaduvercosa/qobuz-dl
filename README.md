@@ -96,6 +96,18 @@ Nunca perca um novo lançamento dos artistas que você acompanha. O novo comando
 * **Correspondência Difusa no Qobuz:** Consulta o banco de dados do Qobuz para encontrar as correspondências exatas em alta resolução para os seus novos lançamentos diários.
 * **Interface de Caixa de Seleção Interativa:** Apresenta um menu de terminal interativo e limpo onde você pode selecionar várias opções (`Barra de Espaço`) dos novos lançamentos e injetá-los instantaneamente em seus Favoritos do Qobuz (`Enter`), prontos para serem baixados mais tarde por meio do modo `fun`.
 
+### 👁️ Daemon Autônomo com Integração n8n (WhatsApp / Telegram)
+Transforme o `qobuz-dl` em um robô proativo que gerencia suas novidades musicais em segundo plano e te alerta em tempo real.
+O comando `daemon` ou `watch` escaneia silenciosamente todos os artistas que você segue (favoritou) no seu Qobuz, detecta novos lançamentos no mesmo dia, e dispara alertas (Webhooks) para ferramentas de automação (como n8n, Make ou Zapier).
+
+**Como criar seu Alerta no WhatsApp usando o n8n:**
+1. No seu arquivo `config.ini`, adicione a URL do seu Webhook do n8n: `webhook_url = http://localhost:5678/webhook/qobuz`
+2. No seu n8n, crie um fluxo iniciando com o nó **"Webhook"** (Método `POST`).
+3. O `qobuz-dl` enviará um JSON limpo contendo as variáveis: `artist`, `title`, `release_date`, `is_hires`, `cover_url`, e `url`.
+4. Conecte o Webhook do n8n ao nó do seu mensageiro preferido (Evolution API para WhatsApp, ou o nó nativo do Telegram/Discord).
+5. Escreva sua mensagem personalizada no n8n. *Ex: "🚨 Novo lançamento de {{ $json.artist }}: {{ $json.title }} já está disponível!"*
+6. Rode o comando `qobuz-dl daemon` (ou execute-o diariamente via Cronjob).
+
 ### 🛡️ Gerenciamento de Pastas À Prova de Falhas e Retomada Inteligente
 Diga adeus a bibliotecas bagunçadas e downloads corrompidos. O baixador agora apresenta um sistema de estado de pastas dinâmico de 3 estágios para manter sua biblioteca de músicas perfeitamente organizada:
 * **`[IN PROGRESS]`**: As pastas são marcadas assim enquanto o download está ativamente em execução.

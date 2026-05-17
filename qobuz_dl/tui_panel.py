@@ -36,6 +36,7 @@ async def run_tui_panel(qobuz_client):
             "🧠  [AI] Smart Mix (Generate .m3u Playlist)",
             "📜  [LYRICS] Retroactively Inject Lyrics to Local Files",
             "📡  [RADAR] Scan MusicButler RSS for New Releases",
+            "👁️   [DAEMON] Run Autonomous Watcher (n8n Webhook)",
             "⚙️   Settings / Configuration Wizard",
             "❌  Exit"
         ]
@@ -46,7 +47,7 @@ async def run_tui_panel(qobuz_client):
         except KeyboardInterrupt:
             break
 
-        if index == 8: # Exit
+        if index == 9: # Exit
             print(f"\n{GREEN}Exiting Control Center. Goodbye!{OFF}")
             break
 
@@ -148,7 +149,16 @@ async def run_tui_panel(qobuz_client):
                 print(f"\n{RED}[!] Radar error: {e}{OFF}")
             input(f"\n{YELLOW}Press ENTER to return to the menu...{OFF}")
 
-        elif index == 7: # SETTINGS
+        elif index == 7: # DAEMON
+            print(f"\n{CYAN}--- Autonomous Watcher Daemon ---{OFF}")
+            from qobuz_dl.daemon import scan_new_releases
+            try:
+                await scan_new_releases(qobuz_client)
+            except Exception as e:
+                print(f"\n{RED}[!] Daemon error: {e}{OFF}")
+            input(f"\n{YELLOW}Press ENTER to return to the menu...{OFF}")
+
+        elif index == 8: # SETTINGS
             print(f"\n{CYAN}[*] Launching Configuration Wizard...{OFF}")
             try:
                 qobuz_dl.cli._reset_config(qobuz_dl.cli.CONFIG_FILE)
