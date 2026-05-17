@@ -1,22 +1,9 @@
 import os
 import sys
 import asyncio
-import questionary
-from prompt_toolkit.styles import Style
+from pick import pick
 
-from qobuz_dl.color import OFF, GREEN, RED, YELLOW, CYAN
-
-custom_style = Style([
-    ('qmark', 'fg:#00FF00 bold'),
-    ('question', 'bold'),
-    ('answer', 'fg:#00FFFF bold'),
-    ('pointer', 'fg:#00FF00 bold'),
-    ('highlighted', 'fg:#00FF00 bold'),
-    ('selected', 'fg:#00FF00'),
-    ('separator', 'fg:#555555'),
-    ('instruction', 'fg:#888888'),
-    ('text', ''),
-])
+from qobuz_dl.color import OFF, GREEN, RED, YELLOW, CYAN, BOLD
 
 async def run_tui_panel(qobuz_client):
     import qobuz_dl.cli
@@ -24,65 +11,144 @@ async def run_tui_panel(qobuz_client):
     while True:
         os.system('cls' if os.name == 'nt' else 'clear')
 
-        print(f"\n{CYAN}=============================================={OFF}")
-        print(f"{CYAN}          QOBUZ-DL CONTROL CENTER           {OFF}")
-        print(f"{CYAN}=============================================={OFF}\n")
+        import shutil
+        terminal_width = shutil.get_terminal_size().columns
+        box_width = 46
+
+        # Calculate padding to center the title box based on the terminal width
+        if terminal_width > box_width:
+            padding = " " * ((terminal_width - box_width) // 2)
+        else:
+            padding = ""
+
+        title = (
+            f"{padding}==============================================\n"
+            f"{padding}          QOBUZ-DL CONTROL CENTER           \n"
+            f"{padding}==============================================\n\n"
+            f"Use ARROW KEYS to navigate and ENTER to select:"
+        )
 
         choices = [
-            "1. 📥 Download Music (Album/Track/Playlist)",
-            "2. 🔄 Sync Local Playlist with Qobuz",
-            "3. 🧠 AI Smart Mix (Generate .m3u Playlist)",
-            "4. ⚙️  Settings / Configuration Wizard",
-            "5. ❌ Exit"
+            "📥  [FUN] Interactive Mode (Browse Qobuz & Download)",
+            "🔗  [DL] Download from URL",
+            "🎲  [LUCKY] I'm Feeling Lucky (Instant Download by Search)",
+            "🔄  [SYNC] Sync Local Playlist with Qobuz",
+            "🧠  [AI] Smart Mix (Generate .m3u Playlist)",
+            "📜  [LYRICS] Retroactively Inject Lyrics to Local Files",
+            "📡  [RADAR] Scan MusicButler RSS for New Releases",
+            "⚙️   Settings / Configuration Wizard",
+            "❌  Exit"
         ]
 
-        answer = await questionary.select(
-            "Select an action:",
-            choices=choices,
-            style=custom_style
-        ).ask_async()
+        try:
+            # pick is safe and perfectly integrated with Python's basic terminal
+            option, index = pick(choices, title, indicator="=>", default_index=0)
+        except KeyboardInterrupt:
+            break
 
-        if not answer or answer.startswith("5"):
+        if index == 8: # Exit
             print(f"\n{GREEN}Exiting Control Center. Goodbye!{OFF}")
             break
 
-        elif answer.startswith("1"):
-            url = await questionary.text("🔗 Paste the Qobuz URL:", style=custom_style).ask_async()
+        elif index == 0: # FUN / Interactive
+            try:
+                # Force interactive limit from config if available, else 20
+                qobuz_client.interactive_limit = getattr(qobuz_client.settings, 'default_limit', 20)
+                await qobuz_client.interactive()
+            except Exception as e:
+                print(f"\n{RED}[!] Interactive Mode error: {e}{OFF}")
+            input(f"\n{YELLOW}Press ENTER to return to the menu...{OFF}")
+
+        elif index == 1: # DL / URL
+            print(f"\n{CYAN}--- Download from URL ---{OFF}")
+            url = input(f"{BOLD}🔗 Paste the Qobuz URL:{OFF} ").strip()
             if url:
                 try:
-                    await qobuz_client.download_list_of_urls([url.strip()])
+                    await qobuz_client.download_list_of_urls([url])
                 except Exception as e:
                     print(f"\n{RED}[!] Download error: {e}{OFF}")
             input(f"\n{YELLOW}Press ENTER to return to the menu...{OFF}")
 
-        elif answer.startswith("2"):
-            url = await questionary.text("🔗 Paste the Qobuz Playlist URL to sync:", style=custom_style).ask_async()
+        elif index == 2: # LUCKY
+            print(f"\n{CYAN}--- I'm Feeling Lucky ---{OFF}")
+            print("Download the first result instantly without navigating.")
+            query = input(f"{BOLD}🔎 Enter Artist, Album or Track name:{OFF} ").strip()
+            if query:
+                print("\nTypes: 1) Album  2) Track  3) Artist  4) Playlist")
+                type_choice = input(f"Select type (1-4) [default: 1]: ").strip()
+                type_map = {"1": "album", "2": "track", "3": "artist", "4": "playlist"}
+                qobuz_client.lucky_type = type_map.get(type_choice, "album")
+                qobuz_client.lucky_limit = 1
+                try:
+                    await qobuz_client.lucky_mode(query)
+                except Exception as e:
+                    print(f"\n{RED}[!] Lucky Mode error: {e}{OFF}")
+            input(f"\n{YELLOW}Press ENTER to return to the menu...{OFF}")
+
+        elif index == 3: # SYNC
+            print(f"\n{CYAN}--- Sync Local Playlist ---{OFF}")
+            url = input(f"{BOLD}🔗 Paste the Qobuz Playlist URL to sync:{OFF} ").strip()
             if url:
                 from qobuz_dl.sync_playlist import sync_playlist
                 try:
                     print(f"\n{CYAN}[*] Starting Sync Process...{OFF}")
-                    sync_playlist(qobuz_client, url.strip(), qobuz_client.directory, auto_confirm=False)
+                    sync_playlist(qobuz_client, url, qobuz_client.directory, auto_confirm=False)
                 except Exception as e:
                     print(f"\n{RED}[!] Sync error: {e}{OFF}")
             input(f"\n{YELLOW}Press ENTER to return to the menu...{OFF}")
 
-        elif answer.startswith("3"):
-            concept = await questionary.text("🧠 Enter the concept (e.g., 'Relaxing rock'):", style=custom_style).ask_async()
+        elif index == 4: # AI
+            print(f"\n{CYAN}--- AI Smart Mix ---{OFF}")
+            concept = input(f"{BOLD}🧠 Enter the concept (e.g., 'Relaxing rock'):{OFF} ").strip()
             if concept:
-                limit_str = await questionary.text("🔢 Max tracks (default: 30):", default="30", style=custom_style).ask_async()
+                limit_str = input(f"{BOLD}🔢 Max tracks (default: 30):{OFF} ").strip()
                 try:
-                    limit = int(limit_str)
+                    limit = int(limit_str) if limit_str else 30
                 except ValueError:
                     limit = 30
 
                 from qobuz_dl.ai_mixer import generate_smart_mix
                 try:
-                    await generate_smart_mix(qobuz_client.directory, concept.strip(), limit, qobuz_client.settings)
+                    await generate_smart_mix(qobuz_client.directory, concept, limit, qobuz_client.settings)
                 except Exception as e:
                     print(f"\n{RED}[!] AI Mix error: {e}{OFF}")
             input(f"\n{YELLOW}Press ENTER to return to the menu...{OFF}")
 
-        elif answer.startswith("4"):
+        elif index == 5: # LYRICS
+            print(f"\n{CYAN}--- Retroactive Lyrics Injection ---{OFF}")
+            folder = input(f"{BOLD}📁 Enter the local directory to scan (or press Enter for default '{qobuz_client.directory}'):{OFF} ").strip()
+            if not folder:
+                folder = qobuz_client.directory
+
+            print("Force overwrite existing lyrics?")
+            print(" 1) No (Skip files that already have lyrics)")
+            print(" 2) Yes (Re-translate and overwrite everything)")
+            overwrite = input("Choice (1 or 2) [default: 1]: ").strip() == "2"
+
+            from qobuz_dl.retro_tagger import inject_lyrics_retroactively
+            try:
+                await inject_lyrics_retroactively(
+                    target_dir=folder,
+                    genius_token=getattr(qobuz_client.settings, 'genius_token', None),
+                    translate=True,
+                    target_lang=getattr(qobuz_client.settings, 'target_lang', 'pt'),
+                    save_lrc=getattr(qobuz_client.settings, 'lrc_files', True),
+                    overwrite=overwrite
+                )
+            except Exception as e:
+                print(f"\n{RED}[!] Lyrics error: {e}{OFF}")
+            input(f"\n{YELLOW}Press ENTER to return to the menu...{OFF}")
+
+        elif index == 6: # RADAR
+            print(f"\n{CYAN}--- MusicButler RSS Radar ---{OFF}")
+            from qobuz_dl.radar import run_radar
+            try:
+                run_radar()
+            except Exception as e:
+                print(f"\n{RED}[!] Radar error: {e}{OFF}")
+            input(f"\n{YELLOW}Press ENTER to return to the menu...{OFF}")
+
+        elif index == 7: # SETTINGS
             print(f"\n{CYAN}[*] Launching Configuration Wizard...{OFF}")
             try:
                 qobuz_dl.cli._reset_config(qobuz_dl.cli.CONFIG_FILE)
