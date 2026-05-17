@@ -384,6 +384,11 @@ def daemon_args(subparsers):
         description="Run the background watcher to check followed artists for new releases and trigger n8n webhooks.",
         help="Run the background autonomous release watcher",
     )
+    daemon.add_argument(
+        "--test",
+        action="store_true",
+        help="Run in test mode (bypasses date restrictions and sends a test payload)",
+    )
 
 
 def panel_args(subparsers):
