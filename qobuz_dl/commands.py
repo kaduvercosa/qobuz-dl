@@ -377,6 +377,15 @@ def add_common_arg(custom_parser, default_folder, default_quality):
     )
 
 
+def panel_args(subparsers):
+    panel = subparsers.add_parser(
+        "panel",
+        aliases=["p"],
+        description="Launch the interactive TUI Control Center.",
+        help="Interactive Control Center",
+    )
+
+
 def smart_mix_args(subparsers):
     sm = subparsers.add_parser(
         "smart-mix",
@@ -446,6 +455,7 @@ def qobuz_dl_args(
     lyrics_cmd = lyrics_args(subparsers)
     sync_pl_cmd = sync_playlist_args(subparsers)
     smart_mix_cmd = smart_mix_args(subparsers)
+    panel_cmd = panel_args(subparsers)
     
     [
         add_common_arg(i, default_folder, default_quality)
