@@ -103,9 +103,9 @@ O comando `daemon` ou `watch` escaneia silenciosamente todos os artistas que voc
 **Como criar seu Alerta Automático (n8n ou Make):**
 1. No Make.com, crie um módulo **Webhooks > Custom Webhook** e copie o link. (No n8n, use o nó Webhook).
 2. Cole a URL no seu arquivo `config.ini`: `webhook_url = https://hook.eu2.make.com/SUA_URL_AQUI`
-3. O `qobuz-dl` enviará via POST um pacote de dados JSON limpo com as variáveis: `artist`, `title`, `release_date`, `is_hires`, `cover_url`, e `url`.
+3. O `qobuz-dl` enviará via POST um pacote de dados JSON limpo com as variáveis: `artist`, `title`, `type`, `release_date`, `is_hires`, `cover_url`, e `url`.
 4. No seu n8n ou Make, conecte o Webhook ao módulo de saída (WhatsApp, Telegram Bot, Slack).
-5. Mapeie os campos visuais no Make/n8n. *Ex: "🚨 Novo lançamento de `1.artist`: `1.title` em Hi-Res (`1.is_hires`) já está disponível!"*
+5. Mapeie os campos visuais no Make/n8n. *Ex: "🚨 Novo lançamento de `1.artist`: `1.title` (`1.type`) em Hi-Res (`1.is_hires`) já está disponível!"*
 6. Rode o comando `qobuz-dl daemon` ou agende-o (cronjob) para rodar silenciosamente todos os dias!
 
 ### 🛡️ Gerenciamento de Pastas À Prova de Falhas e Retomada Inteligente
