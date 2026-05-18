@@ -107,6 +107,35 @@ class LyricsEngine:
             
         return True
 
+
+    def _clean_syllable_sync(self, lrc_text):
+        """
+        Cleans Syllable-Sync (Word-by-Word) LRC lines to standard Line-by-Line.
+        Example: [00:15.30] <00:15.50> pa <00:15.80> la -> [00:15.30] pa la
+        """
+        if not lrc_text:
+            return lrc_text
+
+        cleaned_lines = []
+        for line in lrc_text.splitlines():
+            match = re.match(r'^(\[\d{2}:\d{2}\.\d{2,3}\])(.*)', line)
+            if match:
+                timestamp = match.group(1)
+                content = match.group(2)
+
+                # Remove <mm:ss.xx> tags (Apple Music / Spotify Syllable sync)
+                content = re.sub(r'<\d{2}:\d{2}\.\d{2,3}>', '', content)
+
+                # Remove extra [mm:ss.xx] tags inside the line
+                content = re.sub(r'\[\d{2}:\d{2}\.\d{2,3}\]', '', content)
+
+                content = ' '.join(content.split())
+                cleaned_lines.append(f"{timestamp} {content}".strip())
+            else:
+                cleaned_lines.append(line)
+
+        return "\n".join(cleaned_lines)
+
     async def _process_translation(self, lyrics, is_synced=True):
         """Traduz a letra mantendo o idioma original e duplicando os timestamps."""
         if not self.translate:
@@ -232,6 +261,35 @@ class LyricsEngine:
 
         return '\n'.join(result_lines)
 
+
+    async def _fetch_netease_lyrics(self, artist, track):
+        import json
+        url = "https://music.163.com/api/search/get/web?csrf_token="
+        params = {"s": f"{artist} {track}", "type": 1, "offset": 0, "total": "true", "limit": 1}
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+            "Referer": "https://music.163.com/",
+        }
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, data=params, headers=headers, timeout=15) as resp:
+                    if resp.status == 200:
+                        text = await resp.text()
+                        data = json.loads(text)
+                        if data.get('code') == 200 and 'result' in data and 'songs' in data['result']:
+                            song_id = data['result']['songs'][0]['id']
+                            lyr_url = "https://music.163.com/api/song/lyric"
+                            lyr_params = {"id": song_id, "lv": 1, "kv": 1, "tv": -1}
+                            async with session.get(lyr_url, params=lyr_params, headers=headers, timeout=15) as lyr_resp:
+                                if lyr_resp.status == 200:
+                                    text_lyr = await lyr_resp.text()
+                                    lyr_data = json.loads(text_lyr)
+                                    if 'lrc' in lyr_data and 'lyric' in lyr_data['lrc']:
+                                        return lyr_data['lrc']['lyric']
+        except Exception:
+            pass
+        return None
+
     async def fetch_and_inject(self, file_path, album_artist, track, album, save_lrc=True, overwrite=False):
         if not overwrite and self._has_lyrics(file_path, check_lrc=True):
             return (False, False)
@@ -260,6 +318,8 @@ class LyricsEngine:
                 plain_lyrics = data.get("plainLyrics")
                 
                 if synced_lyrics:
+                    # Clean the Apple Music/Spotify Syllable-sync tags for Neutron Player compatibility
+                    synced_lyrics = self._clean_syllable_sync(synced_lyrics)
                     final_lyrics = await self._process_translation(synced_lyrics, is_synced=True)
                     self._inject_metadata(file_path, final_lyrics)
                     if save_lrc:
@@ -281,6 +341,21 @@ class LyricsEngine:
                     print(f"  [*] Letra Encontrada: {album_artist} - {track} | Sincronizada: Não | Traduzida: {trad_status}")
                     return (True, has_translation)
 
+
+            # Fallback 1: Netease (often has synced lyrics when LRCLIB fails)
+            netease_lyric = await self._fetch_netease_lyrics(album_artist, track)
+            if netease_lyric:
+                netease_lyric = self._clean_syllable_sync(netease_lyric)
+                final_lyrics = await self._process_translation(netease_lyric, is_synced=True)
+                self._inject_metadata(file_path, final_lyrics)
+                if save_lrc:
+                    self._save_lrc_file(file_path, final_lyrics)
+                has_translation = (self.translation_symbol in final_lyrics)
+                trad_status = "Sim" if has_translation else "Não"
+                print(f"  [*] Letra Encontrada: {album_artist} - {track} (via Netease) | Sincronizada: Sim | Traduzida: {trad_status}")
+                return (True, has_translation)
+
+            # Fallback 2: Genius (Unsynced)
             if self.genius:
                 song = await asyncio.to_thread(self.genius.search_song, track, album_artist)
                 if song and song.lyrics:
