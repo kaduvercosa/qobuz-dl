@@ -15,7 +15,10 @@ import concurrent.futures
 import aiohttp
 import aiofiles
 import asyncio
-from Cryptodome.Cipher import AES
+try:
+    from Cryptodome.Cipher import AES
+except ImportError:
+    from Crypto.Cipher import AES
 from pathvalidate import sanitize_filename, sanitize_filepath
 from tqdm import tqdm
 
