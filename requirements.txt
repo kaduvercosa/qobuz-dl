@@ -9,5 +9,5 @@ colorama
 pycryptodome
 questionary
 lyricsgenius
-langdetect==1.0.9
+langdetect>=1.0.9
 deep-translator
