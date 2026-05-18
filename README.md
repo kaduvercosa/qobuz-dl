@@ -189,7 +189,7 @@ A instalação padrão falhará pela falta de compiladores. Instale os pré-requ
 apk update
 apk add nano ffmpeg python3 py3-pip py3-pycryptodome py3-aiohttp gcc g++ make
 
-python3 -m pip install --upgrade "typing-extensions>=4.0.0" beautifulsoup4 deepl langdetect lyricsgenius mutagen
+python3 -m pip install --upgrade "typing-extensions>=4.0.0" beautifulsoup4 langdetect lyricsgenius mutagen
 
 # Force break system packages if running a newer Alpine version
 pip install qobuz-dl-master --break-system-packages

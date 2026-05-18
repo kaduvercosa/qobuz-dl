@@ -20,7 +20,6 @@ DEEPL_AVAILABLE = False
 TRANSLATOR_IMPORT_ERROR = None
 
 try:
-    import deepl
     from langdetect import detect, DetectorFactory
     DetectorFactory.seed = 0 # Torna a detecção determinística
     DEEPL_AVAILABLE = True
@@ -44,17 +43,12 @@ class LyricsEngine:
         
         if self.translate:
             if not DEEPL_AVAILABLE:
-                print(f"\n\033[93m[!] AVISO: Módulo deepl/langdetect ausente. Tradução desabilitada! (Erro: {TRANSLATOR_IMPORT_ERROR})\033[0m")
+                print(f"\n\033[93m[!] AVISO: Módulo langdetect ausente. Tradução desabilitada! (Erro: {TRANSLATOR_IMPORT_ERROR})\033[0m")
                 self.translate = False
             elif not self.deepl_api_key:
                 print(f"\n\033[93m[!] AVISO: Nenhuma API Key do DeepL fornecida no config.ini. Tradução desabilitada!\033[0m")
                 self.translate = False
-            else:
-                try:
-                    self.translator = deepl.Translator(self.deepl_api_key)
-                except Exception as e:
-                    print(f"\n\033[91m[!] Erro ao inicializar o DeepL: {e}. Tradução desabilitada!\033[0m")
-                    self.translate = False
+            # O Translator oficial foi retirado para fazermos requisições nativas limpas (aiohttp)
         
         if self.genius_token and lyricsgenius:
             self.genius = lyricsgenius.Genius(self.genius_token, verbose=False, remove_section_headers=True)
@@ -167,9 +161,9 @@ class LyricsEngine:
         return "\n".join(cleaned_lines)
 
     async def _process_translation(self, lyrics, is_synced=True):
-        """Traduz a letra usando DeepL (se configurado), pulando músicas/linhas em português para economizar cota."""
-        if not self.translate or not DEEPL_AVAILABLE or not self.translator:
-            return lyrics
+        """Traduz a letra usando a API do DeepL via aiohttp nativo para esconder logs barulhentos."""
+        if not self.translate or not DEEPL_AVAILABLE or not self.deepl_api_key:
+            return lyrics, None
 
         lines = lyrics.split('\n')
         texts_to_translate = []
@@ -202,29 +196,25 @@ class LyricsEngine:
                     line_mapping.append(('empty', None, ''))
 
         if not texts_to_translate:
-            return lyrics
+            return lyrics, None
 
         # 1. MACRO DETECÇÃO (ECONOMIA GLOBAL):
-        # Lê a música inteira. Se o idioma predominante for Português (pt), aborta a tradução e economiza a cota.
         full_text = " ".join(texts_to_translate)
         try:
             dominant_lang = detect(full_text)
-            # Se o idioma dominante já é o mesmo idioma alvo, não traduzimos nada.
-            # Convertendo target_lang "PT-BR" para "pt" para comparação.
             if dominant_lang.lower() == self.target_lang.split('-')[0].lower():
-                return lyrics
+                return lyrics, None
         except Exception:
-            # Se langdetect falhar em detectar, continua e tenta traduzir
             pass
 
-        # 2. MICRO DETECÇÃO (FILTRA LINHAS MISTAS E GÍRIAS CURTAS):
+        # 2. MICRO DETECÇÃO: Envia tudo, menos as linhas que o langdetect tiver CERTEZA ABSOLUTA de que já estão em PT-BR
+        # Removemos o filtro de tamanho (len) conforme solicitado, para traduzir qualquer palavra isolada.
         lines_to_deepl = []
         indices_to_translate = [] # Mapeia quais índices do 'texts_to_translate' realmente enviamos
 
         for i, txt in enumerate(texts_to_translate):
             txt_clean = txt.strip()
-            # Ignora linhas curtas (< 15 chars) ou de poucas palavras (< 4 palavras). Ex: "Oh yeah"
-            if len(txt_clean) < 15 or len(txt_clean.split()) < 4:
+            if not txt_clean:
                 continue
 
             try:
@@ -238,16 +228,41 @@ class LyricsEngine:
             indices_to_translate.append(i)
 
         if not lines_to_deepl:
-            return lyrics
+            return lyrics, None
 
-        # 3. TRADUÇÃO EM LOTE COM DEEPL (ECONÔMICO E RÁPIDO):
+        # 3. TRADUÇÃO EM LOTE COM DEEPL (REQUISIÇÃO AIOHTTP LIMPA E SILENCIOSA)
+        translated_results = []
+        deepl_status_code = None
         try:
-            # Envia tudo em um único batch para o DeepL
-            results = await asyncio.to_thread(self.translator.translate_text, lines_to_deepl, target_lang=self.target_lang)
-            translated_results = [res.text for res in results]
+            import json
+            # Determina se é a API Free ou Pro baseado na chave
+            domain = "api-free.deepl.com" if self.deepl_api_key.endswith(":fx") else "api.deepl.com"
+            url = f"https://{domain}/v2/translate"
+
+            headers = {
+                "Authorization": f"DeepL-Auth-Key {self.deepl_api_key}",
+                "Content-Type": "application/json"
+            }
+            payload = {
+                "text": lines_to_deepl,
+                "target_lang": self.target_lang
+            }
+
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, headers=headers, json=payload) as resp:
+                    deepl_status_code = resp.status
+                    if resp.status == 200:
+                        data = await resp.json()
+                        translated_results = [item['text'] for item in data.get('translations', [])]
+                    else:
+                        logger.error(f"[!] DeepL retornou erro HTTP {resp.status}")
+                        return lyrics, deepl_status_code
         except Exception as e:
-            logger.error(f"[!] Erro na API do DeepL: {e}")
-            return lyrics
+            logger.error(f"[!] Erro na conexão do DeepL: {e}")
+            return lyrics, deepl_status_code
+
+        if not translated_results or len(translated_results) != len(lines_to_deepl):
+            return lyrics, deepl_status_code
 
         # 4. REMONTAR AS LINHAS (MAPEAR TRADUÇÕES DE VOLTA)
         translated_texts = [""] * len(texts_to_translate)
@@ -287,9 +302,9 @@ class LyricsEngine:
 
         # Só retorna o texto final com tradução se pelo menos UMA linha passou no filtro de inteligência
         if not has_valid_translations:
-            return lyrics
+            return lyrics, deepl_status_code
 
-        return '\n'.join(result_lines)
+        return '\n'.join(result_lines), deepl_status_code
 
 
 
@@ -377,7 +392,7 @@ class LyricsEngine:
             lyrics_plus = await self._fetch_lyrics_plus(album_artist, track)
             if lyrics_plus:
                 lyrics_plus = self._clean_syllable_sync(lyrics_plus)
-                final_lyrics = await self._process_translation(lyrics_plus, is_synced=True)
+                final_lyrics, deepl_status = await self._process_translation(lyrics_plus, is_synced=True)
                 self._inject_metadata(file_path, final_lyrics)
                 if save_lrc:
                     self._save_lrc_file(file_path, final_lyrics)
@@ -386,7 +401,8 @@ class LyricsEngine:
                 # Check for completely vs partially translated
                 trad_status = self._get_translation_status(final_lyrics, has_translation)
 
-                _log(f"  [*] Letra Encontrada: {album_artist} - {track} (via Apple/Spotify) | Sincronizada: Sim | Tradução: {trad_status}")
+                status_msg = f" | Status Code: {deepl_status}" if deepl_status else ""
+                _log(f"  [*] Letra Encontrada: {album_artist} - {track} (via Apple/Spotify) | Sincronizada: Sim | Tradução: {trad_status}{status_msg}")
                 return (True, has_translation, messages) if return_message else (True, has_translation)
 
             # Fallback 1: LRCLIB
@@ -410,25 +426,27 @@ class LyricsEngine:
                 if synced_lyrics:
                     # Clean the Apple Music/Spotify Syllable-sync tags for Neutron Player compatibility
                     synced_lyrics = self._clean_syllable_sync(synced_lyrics)
-                    final_lyrics = await self._process_translation(synced_lyrics, is_synced=True)
+                    final_lyrics, deepl_status = await self._process_translation(synced_lyrics, is_synced=True)
                     self._inject_metadata(file_path, final_lyrics)
                     if save_lrc:
                         self._save_lrc_file(file_path, final_lyrics)
                     has_translation = (self.translation_symbol in final_lyrics)
 
                     trad_status = self._get_translation_status(final_lyrics, has_translation)
-                    _log(f"  [*] Letra Encontrada: {album_artist} - {track} (via LRCLIB) | Sincronizada: Sim | Tradução: {trad_status}")
+                    status_msg = f" | Status Code: {deepl_status}" if deepl_status else ""
+                    _log(f"  [*] Letra Encontrada: {album_artist} - {track} (via LRCLIB) | Sincronizada: Sim | Tradução: {trad_status}{status_msg}")
                     return (True, has_translation, messages) if return_message else (True, has_translation)
 
                 elif plain_lyrics:
-                    final_lyrics = await self._process_translation(plain_lyrics, is_synced=False)
+                    final_lyrics, deepl_status = await self._process_translation(plain_lyrics, is_synced=False)
                     self._inject_metadata(file_path, final_lyrics)
                     if save_lrc:
                         self._save_lrc_file(file_path, final_lyrics)
                     has_translation = (self.translation_symbol in final_lyrics)
 
                     trad_status = self._get_translation_status(final_lyrics, has_translation)
-                    _log(f"  [*] Letra Encontrada: {album_artist} - {track} (via LRCLIB) | Sincronizada: Não | Tradução: {trad_status}")
+                    status_msg = f" | Status Code: {deepl_status}" if deepl_status else ""
+                    _log(f"  [*] Letra Encontrada: {album_artist} - {track} (via LRCLIB) | Sincronizada: Não | Tradução: {trad_status}{status_msg}")
                     return (True, has_translation, messages) if return_message else (True, has_translation)
 
 
@@ -436,27 +454,29 @@ class LyricsEngine:
             netease_lyric = await self._fetch_netease_lyrics(album_artist, track)
             if netease_lyric:
                 netease_lyric = self._clean_syllable_sync(netease_lyric)
-                final_lyrics = await self._process_translation(netease_lyric, is_synced=True)
+                final_lyrics, deepl_status = await self._process_translation(netease_lyric, is_synced=True)
                 self._inject_metadata(file_path, final_lyrics)
                 if save_lrc:
                     self._save_lrc_file(file_path, final_lyrics)
                 has_translation = (self.translation_symbol in final_lyrics)
                 trad_status = self._get_translation_status(final_lyrics, has_translation)
-                _log(f"  [*] Letra Encontrada: {album_artist} - {track} (via Netease) | Sincronizada: Sim | Tradução: {trad_status}")
+                status_msg = f" | Status Code: {deepl_status}" if deepl_status else ""
+                _log(f"  [*] Letra Encontrada: {album_artist} - {track} (via Netease) | Sincronizada: Sim | Tradução: {trad_status}{status_msg}")
                 return (True, has_translation, messages) if return_message else (True, has_translation)
 
             # Fallback 2: Genius (Unsynced)
             if self.genius:
                 song = await asyncio.to_thread(self.genius.search_song, track, album_artist)
                 if song and song.lyrics:
-                    final_lyrics = await self._process_translation(song.lyrics, is_synced=False)
+                    final_lyrics, deepl_status = await self._process_translation(song.lyrics, is_synced=False)
                     self._inject_metadata(file_path, final_lyrics)
                     if save_lrc:
                         self._save_lrc_file(file_path, final_lyrics)
                     has_translation = (self.translation_symbol in final_lyrics)
 
                     trad_status = self._get_translation_status(final_lyrics, has_translation)
-                    _log(f"  [*] Letra Encontrada: {album_artist} - {track} (via Genius) | Sincronizada: Não | Tradução: {trad_status}")
+                    status_msg = f" | Status Code: {deepl_status}" if deepl_status else ""
+                    _log(f"  [*] Letra Encontrada: {album_artist} - {track} (via Genius) | Sincronizada: Não | Tradução: {trad_status}{status_msg}")
                     return (True, has_translation, messages) if return_message else (True, has_translation)
 
             _log(f"  [-] Letra não encontrada: {track}")

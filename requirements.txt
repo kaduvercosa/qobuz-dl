@@ -9,5 +9,4 @@ colorama
 pycryptodome
 questionary
 lyricsgenius
-deepl
 langdetect
