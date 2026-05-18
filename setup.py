@@ -29,12 +29,11 @@ requirements = [
     "pick==1.6.0",
     "beautifulsoup4",
     "colorama",
-    # NOTE: cryptography was replaced with pycryptodome for better portability (e.g. ish-shell/IOS)
     "pycryptodome",
     "questionary",
     "lyricsgenius",
-    "deep-translator=1.11.4",
-    "langdetect==1.0.9"
+    "deep-translator",
+    "langdetect>=1.0.9"
 ]
 
 setup(
