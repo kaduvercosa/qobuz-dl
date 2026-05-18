@@ -391,15 +391,6 @@ def daemon_args(subparsers):
     )
 
 
-def telegram_bot_args(subparsers):
-    bot = subparsers.add_parser(
-        "bot",
-        aliases=["telegram"],
-        description="Launch the Telegram Bot Server.",
-        help="Run qobuz-dl as a Telegram Bot",
-    )
-
-
 def panel_args(subparsers):
     panel = subparsers.add_parser(
         "panel",
@@ -480,7 +471,6 @@ def qobuz_dl_args(
     smart_mix_cmd = smart_mix_args(subparsers)
     panel_cmd = panel_args(subparsers)
     daemon_cmd = daemon_args(subparsers)
-    bot_cmd = telegram_bot_args(subparsers)
     
     [
         add_common_arg(i, default_folder, default_quality)
