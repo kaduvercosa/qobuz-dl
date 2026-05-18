@@ -184,41 +184,30 @@ class LyricsEngine:
         except Exception:
             return lyrics
 
-        translated_texts = []
         try:
-            separator_block = " @@@ "
-            joined_text = separator_block.join(texts_to_translate)
+            sem = asyncio.Semaphore(15)  # Aumentado para 15 para maior velocidade
 
-            if len(joined_text) < 4500:
-                translated_joined = await asyncio.to_thread(translator.translate, joined_text)
-                if translated_joined:
-                    clean_translated = translated_joined.replace("@@@", " @@@ ")
-                    translated_texts = [t.strip() for t in clean_translated.split(' @@@ ') if t.strip()]
+            async def trans_line(line):
+                # Se for muito curto ou pontuação pura, não traduz para economizar requests
+                if len(line.strip()) < 2:
+                    return line
 
-                    # BUG FIX: Google Translate batch fails if first line is the same as target language.
-                    # Check if the entire block was returned untranslated (meaning Google gave up due to mixed languages)
-                    if translated_texts == texts_to_translate:
-                        translated_texts = []  # Force fallback to line-by-line translation
-            else:
-                translated_texts = []
+                async with sem:
+                    for attempt in range(3):
+                        try:
+                            # Pequeno atraso progressivo para evitar Rate Limit
+                            if attempt > 0:
+                                await asyncio.sleep(0.5 * attempt)
+                            res = await asyncio.to_thread(translator.translate, line)
+                            return res if res else line
+                        except Exception:
+                            if attempt == 2:
+                                return line
+                    return line
 
-            if not translated_texts or len(translated_texts) != len(texts_to_translate):
-                translated_texts = []
-                sem = asyncio.Semaphore(5)
-
-                async def trans_line(line):
-                    async with sem:
-                        for attempt in range(2):
-                            try:
-                                await asyncio.sleep(0.1 * (attempt + 1))
-                                res = await asyncio.to_thread(translator.translate, line)
-                                return res if res else line
-                            except Exception:
-                                if attempt == 1:
-                                    return line
-                        return line
-
-                translated_texts = await asyncio.gather(*(trans_line(line) for line in texts_to_translate))
+            # Traduz linha por linha individualmente para garantir que nunca haja dessincronização
+            # (Shift bug) do Google Translate.
+            translated_texts = await asyncio.gather(*(trans_line(line) for line in texts_to_translate))
 
         except Exception:
             return lyrics 
