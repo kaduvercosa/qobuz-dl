@@ -1,6 +1,6 @@
 # Qobuz-DL Master Edition
 
-[![PyPI version](https://img.shields.io/pypi/v/qobuz-dl-master)](https://pypi.org/project/qobuz-dl-master/)
+[![PyPI version](https://img.shields.io/pypi/v/qobuz-dl-master?cacheSeconds=3600)](https://pypi.org/project/qobuz-dl-master/)
 [![PyPI Downloads](https://static.pepy.tech/personalized-badge/qobuz-dl-master?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=GREEN&left_text=downloads)](https://pepy.tech/projects/qobuz-dl-master)
 
 Pesquise, explore e baixe músicas Lossless e Hi-Res do [Qobuz](https://www.qobuz.com/).
@@ -200,7 +200,9 @@ A instalação padrão falhará pela falta de compiladores. Instale os pré-requ
 ```bash
 apk update
 apk add nano ffmpeg python3 py3-pip py3-pycryptodome py3-aiohttp
-python3.9 -m pip install --upgrade typing-extensions beautifulsoup4 deep-translator lyricsgenius mutagen
+
+python3 -m pip install --upgrade "typing-extensions>=4.0.0" beautifulsoup4 deep-translator lyricsgenius mutagen
+
 pip install qobuz-dl-master
 ```
 
