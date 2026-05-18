@@ -105,6 +105,23 @@ class LyricsEngine:
         if ratio > 0.85:
             return False
             
+        # Filtro 3: Detecta paráfase em português (quando o original já está em pt mas a API reescreveu)
+        # Por exemplo: "eu te amo" virou "eu amo você", ou "cê tá bem" virou "você está bem"
+        # Nós verificamos se ambas as strings usam um vocabulário quase idêntico de palavras.
+        orig_words = set(o_no_punct.split())
+        trad_words = set(t_no_punct.split())
+        if orig_words and trad_words:
+            # Intersection of words
+            common_words = orig_words.intersection(trad_words)
+            # If the translation didn't change the meaning / is essentially the same words reordered
+            # or if it only added standard connector words to the original string.
+            if len(common_words) / max(len(orig_words), len(trad_words)) >= 0.5:
+                return False
+
+        # Filtro 4: Regras gramaticais explícitas (português re-escrito no Google Translate)
+        if "eu te amo" in o_no_punct and "eu amo você" in t_no_punct:
+            return False
+
         return True
 
 
@@ -317,9 +334,16 @@ class LyricsEngine:
             pass
         return None
 
-    async def fetch_and_inject(self, file_path, album_artist, track, album, save_lrc=True, overwrite=False):
+    async def fetch_and_inject(self, file_path, album_artist, track, album, save_lrc=True, overwrite=False, return_message=False):
+        messages = []
+        def _log(msg):
+            if return_message:
+                messages.append(msg)
+            else:
+                print(msg)
+
         if not overwrite and self._has_lyrics(file_path, check_lrc=True):
-            return (False, False)
+            return (False, False, messages) if return_message else (False, False)
 
         try:
             lrclib_url = "https://lrclib.net/api/get"
@@ -336,9 +360,12 @@ class LyricsEngine:
                 if save_lrc:
                     self._save_lrc_file(file_path, final_lyrics)
                 has_translation = (self.translation_symbol in final_lyrics)
-                trad_status = "Sim" if has_translation else "Não"
-                print(f"  [*] Letra Encontrada: {album_artist} - {track} (via Apple/Spotify) | Sincronizada: Sim | Traduzida: {trad_status}")
-                return (True, has_translation)
+
+                # Check for completely vs partially translated
+                trad_status = self._get_translation_status(final_lyrics, has_translation)
+
+                _log(f"  [*] Letra Encontrada: {album_artist} - {track} (via Apple/Spotify) | Sincronizada: Sim | Tradução: {trad_status}")
+                return (True, has_translation, messages) if return_message else (True, has_translation)
 
             # Fallback 1: LRCLIB
             async with aiohttp.ClientSession() as session:
@@ -367,9 +394,9 @@ class LyricsEngine:
                         self._save_lrc_file(file_path, final_lyrics)
                     has_translation = (self.translation_symbol in final_lyrics)
                     
-                    trad_status = "Sim" if has_translation else "Não"
-                    print(f"  [*] Letra Encontrada: {album_artist} - {track} (via LRCLIB) | Sincronizada: Sim | Traduzida: {trad_status}")
-                    return (True, has_translation)
+                    trad_status = self._get_translation_status(final_lyrics, has_translation)
+                    _log(f"  [*] Letra Encontrada: {album_artist} - {track} (via LRCLIB) | Sincronizada: Sim | Tradução: {trad_status}")
+                    return (True, has_translation, messages) if return_message else (True, has_translation)
                     
                 elif plain_lyrics:
                     final_lyrics = await self._process_translation(plain_lyrics, is_synced=False)
@@ -378,9 +405,9 @@ class LyricsEngine:
                         self._save_lrc_file(file_path, final_lyrics)
                     has_translation = (self.translation_symbol in final_lyrics)
                     
-                    trad_status = "Sim" if has_translation else "Não"
-                    print(f"  [*] Letra Encontrada: {album_artist} - {track} (via LRCLIB) | Sincronizada: Não | Traduzida: {trad_status}")
-                    return (True, has_translation)
+                    trad_status = self._get_translation_status(final_lyrics, has_translation)
+                    _log(f"  [*] Letra Encontrada: {album_artist} - {track} (via LRCLIB) | Sincronizada: Não | Tradução: {trad_status}")
+                    return (True, has_translation, messages) if return_message else (True, has_translation)
 
 
             # Fallback 2: Netease (often has synced lyrics when LRCLIB fails)
@@ -392,9 +419,9 @@ class LyricsEngine:
                 if save_lrc:
                     self._save_lrc_file(file_path, final_lyrics)
                 has_translation = (self.translation_symbol in final_lyrics)
-                trad_status = "Sim" if has_translation else "Não"
-                print(f"  [*] Letra Encontrada: {album_artist} - {track} (via Netease) | Sincronizada: Sim | Traduzida: {trad_status}")
-                return (True, has_translation)
+                trad_status = self._get_translation_status(final_lyrics, has_translation)
+                _log(f"  [*] Letra Encontrada: {album_artist} - {track} (via Netease) | Sincronizada: Sim | Tradução: {trad_status}")
+                return (True, has_translation, messages) if return_message else (True, has_translation)
 
             # Fallback 2: Genius (Unsynced)
             if self.genius:
@@ -406,17 +433,53 @@ class LyricsEngine:
                         self._save_lrc_file(file_path, final_lyrics)
                     has_translation = (self.translation_symbol in final_lyrics)
                     
-                    trad_status = "Sim" if has_translation else "Não"
-                    print(f"  [*] Letra Encontrada: {album_artist} - {track} (via Genius) | Sincronizada: Não | Traduzida: {trad_status}")
-                    return (True, has_translation)
+                    trad_status = self._get_translation_status(final_lyrics, has_translation)
+                    _log(f"  [*] Letra Encontrada: {album_artist} - {track} (via Genius) | Sincronizada: Não | Tradução: {trad_status}")
+                    return (True, has_translation, messages) if return_message else (True, has_translation)
 
-            print(f"  [-] Letra não encontrada: {track}")
+            _log(f"  [-] Letra não encontrada: {track}")
 
         except Exception as e:
             error_msg = f"{type(e).__name__}: {str(e)}"
-            print(f"  [!] Falha ao buscar letra de {track} ({error_msg})")
+            _log(f"  [!] Falha ao buscar letra de {track} ({error_msg})")
 
-        return (False, False)
+        return (False, False, messages) if return_message else (False, False)
+
+    def _get_translation_status(self, final_lyrics, has_translation):
+        if not has_translation:
+            return "Não"
+
+        # Count lines with translations vs total valid text lines
+        total_text_lines = 0
+        translated_lines = 0
+
+        for line in final_lyrics.split('\n'):
+            line = line.strip()
+            # Remove timestamp if present
+            line_no_ts = re.sub(r'^(\[\d+:\d+(?:\.\d+)?\]\s*)+', '', line).strip()
+
+            if line_no_ts:
+                # Need to strip spaces from translation_symbol as `line_no_ts` is stripped
+                if self.translation_symbol.strip() in line_no_ts:
+                    translated_lines += 1
+                else:
+                    # If this line doesn't have the translation symbol, count it as an original text line
+                    total_text_lines += 1
+
+        # In our line-by-line format:
+        # A fully translated song will have roughly equal translated_lines and total_text_lines
+        # A partially translated song will have total_text_lines significantly larger than translated_lines
+        # (Since total_text_lines counts every single line without a translation symbol)
+
+        from qobuz_dl.color import GREEN, YELLOW, OFF
+
+        if translated_lines == 0:
+            return "Não"
+
+        if total_text_lines > translated_lines * 1.5:
+            return f"{YELLOW}Parcial{OFF}"
+
+        return f"{GREEN}Completa{OFF}"
 
     def _save_lrc_file(self, audio_file_path, synced_lyrics):
         try:
