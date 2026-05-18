@@ -128,8 +128,9 @@ def _process_single_file(file_path_str, engine, overwrite=False, current_idx=0, 
 def inject_lyrics_retroactively(
     directory_path,
     genius_token=None,
+    deepl_api_key=None,
     overwrite=False,
-    target_lang="pt"
+    target_lang="PT-BR"
 ):
 
     safe_print(
@@ -152,7 +153,7 @@ def inject_lyrics_retroactively(
         )
         return
 
-    engine = LyricsEngine(genius_token=genius_token, translate=True, target_lang=target_lang)
+    engine = LyricsEngine(genius_token=genius_token, deepl_api_key=deepl_api_key, translate=True, target_lang=target_lang)
 
     # =========================
     # FILE DISCOVERY

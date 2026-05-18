@@ -15,14 +15,15 @@ try:
 except ImportError:
     lyricsgenius = None
 
-# Import deep-translator para traduções automáticas
-GoogleTranslator = None
-DEEP_TRANSLATOR_AVAILABLE = False
+# Import deepl e langdetect para traduções automatizadas com IA
+DEEPL_AVAILABLE = False
 TRANSLATOR_IMPORT_ERROR = None
 
 try:
-    from deep_translator import GoogleTranslator
-    DEEP_TRANSLATOR_AVAILABLE = True
+    import deepl
+    from langdetect import detect, DetectorFactory
+    DetectorFactory.seed = 0 # Torna a detecção determinística
+    DEEPL_AVAILABLE = True
 except ImportError as import_error:
     TRANSLATOR_IMPORT_ERROR = str(import_error)
 except Exception as unexpected_error:
@@ -32,16 +33,28 @@ except Exception as unexpected_error:
 logger = logging.getLogger(__name__)
 
 class LyricsEngine:
-    def __init__(self, genius_token=None, translate=True, target_lang='pt', translation_symbol=" ¬ "):
+    def __init__(self, genius_token=None, deepl_api_key=None, translate=True, target_lang='PT-BR', translation_symbol=" ¬ "):
         self.genius_token = genius_token
         self.genius = None
         self.translate = translate
         self.target_lang = target_lang
         self.translation_symbol = translation_symbol
+        self.deepl_api_key = deepl_api_key
+        self.translator = None
         
-        if self.translate and not DEEP_TRANSLATOR_AVAILABLE:
-            print(f"\n\033[93m[!] AVISO: Tradução desabilitada! (Erro: {TRANSLATOR_IMPORT_ERROR})\033[0m")
-            self.translate = False
+        if self.translate:
+            if not DEEPL_AVAILABLE:
+                print(f"\n\033[93m[!] AVISO: Módulo deepl/langdetect ausente. Tradução desabilitada! (Erro: {TRANSLATOR_IMPORT_ERROR})\033[0m")
+                self.translate = False
+            elif not self.deepl_api_key:
+                print(f"\n\033[93m[!] AVISO: Nenhuma API Key do DeepL fornecida no config.ini. Tradução desabilitada!\033[0m")
+                self.translate = False
+            else:
+                try:
+                    self.translator = deepl.Translator(self.deepl_api_key)
+                except Exception as e:
+                    print(f"\n\033[91m[!] Erro ao inicializar o DeepL: {e}. Tradução desabilitada!\033[0m")
+                    self.translate = False
         
         if self.genius_token and lyricsgenius:
             self.genius = lyricsgenius.Genius(self.genius_token, verbose=False, remove_section_headers=True)
@@ -154,20 +167,15 @@ class LyricsEngine:
         return "\n".join(cleaned_lines)
 
     async def _process_translation(self, lyrics, is_synced=True):
-        """Traduz a letra mantendo o idioma original e duplicando os timestamps."""
-        if not self.translate:
-            return lyrics
-
-        # O bloqueio global do 'langdetect' foi removido daqui para permitir
-        # que músicas com idiomas misturados (Espanhol/PT ou Inglês/PT) passem.
-        
-        if not DEEP_TRANSLATOR_AVAILABLE or GoogleTranslator is None:
+        """Traduz a letra usando DeepL (se configurado), pulando músicas/linhas em português para economizar cota."""
+        if not self.translate or not DEEPL_AVAILABLE or not self.translator:
             return lyrics
 
         lines = lyrics.split('\n')
         texts_to_translate = []
         line_mapping = []
 
+        # Extrai todas as linhas com texto real
         for line in lines:
             if not line.strip():
                 line_mapping.append(('empty', None, ''))
@@ -196,41 +204,55 @@ class LyricsEngine:
         if not texts_to_translate:
             return lyrics
 
+        # 1. MACRO DETECÇÃO (ECONOMIA GLOBAL):
+        # Lê a música inteira. Se o idioma predominante for Português (pt), aborta a tradução e economiza a cota.
+        full_text = " ".join(texts_to_translate)
         try:
-            translator = GoogleTranslator(source='auto', target=self.target_lang)
+            dominant_lang = detect(full_text)
+            # Se o idioma dominante já é o mesmo idioma alvo, não traduzimos nada.
+            # Convertendo target_lang "PT-BR" para "pt" para comparação.
+            if dominant_lang.lower() == self.target_lang.split('-')[0].lower():
+                return lyrics
         except Exception:
+            # Se langdetect falhar em detectar, continua e tenta traduzir
+            pass
+
+        # 2. MICRO DETECÇÃO (FILTRA LINHAS MISTAS E GÍRIAS CURTAS):
+        lines_to_deepl = []
+        indices_to_translate = [] # Mapeia quais índices do 'texts_to_translate' realmente enviamos
+
+        for i, txt in enumerate(texts_to_translate):
+            txt_clean = txt.strip()
+            # Ignora linhas curtas (< 15 chars) ou de poucas palavras (< 4 palavras). Ex: "Oh yeah"
+            if len(txt_clean) < 15 or len(txt_clean.split()) < 4:
+                continue
+
+            try:
+                line_lang = detect(txt_clean)
+                if line_lang.lower() == self.target_lang.split('-')[0].lower():
+                    continue # Já está no idioma alvo
+            except Exception:
+                pass
+
+            lines_to_deepl.append(txt_clean)
+            indices_to_translate.append(i)
+
+        if not lines_to_deepl:
             return lyrics
 
+        # 3. TRADUÇÃO EM LOTE COM DEEPL (ECONÔMICO E RÁPIDO):
         try:
-            sem = asyncio.Semaphore(15)  # Aumentado para 15 para maior velocidade
+            # Envia tudo em um único batch para o DeepL
+            results = await asyncio.to_thread(self.translator.translate_text, lines_to_deepl, target_lang=self.target_lang)
+            translated_results = [res.text for res in results]
+        except Exception as e:
+            logger.error(f"[!] Erro na API do DeepL: {e}")
+            return lyrics
 
-            async def trans_line(line):
-                # Se for muito curto ou pontuação pura, não traduz para economizar requests
-                if len(line.strip()) < 2:
-                    return line
-
-                async with sem:
-                    for attempt in range(3):
-                        try:
-                            # Pequeno atraso progressivo para evitar Rate Limit
-                            if attempt > 0:
-                                await asyncio.sleep(0.5 * attempt)
-                            res = await asyncio.to_thread(translator.translate, line)
-                            return res if res else line
-                        except Exception:
-                            if attempt == 2:
-                                return line
-                    return line
-
-            # Traduz linha por linha individualmente para garantir que nunca haja dessincronização
-            # (Shift bug) do Google Translate.
-            translated_texts = await asyncio.gather(*(trans_line(line) for line in texts_to_translate))
-
-        except Exception:
-            return lyrics 
-
-        if len(translated_texts) < len(texts_to_translate):
-            translated_texts.extend([""] * (len(texts_to_translate) - len(translated_texts)))
+        # 4. REMONTAR AS LINHAS (MAPEAR TRADUÇÕES DE VOLTA)
+        translated_texts = [""] * len(texts_to_translate)
+        for original_idx, translated_text in zip(indices_to_translate, translated_results):
+            translated_texts[original_idx] = translated_text
 
         result_lines = []
         trans_idx = 0

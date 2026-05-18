@@ -67,13 +67,15 @@ class QobuzDL:
         fetch_lyrics=False,
         no_lrc_files=False,
         genius_token=None,
+        deepl_api_key=None,
         force_english=True,
         no_credits=False,
         settings: QobuzDLSettings = None,
         booklet_only: bool = False,
         blacklist=None,
-        target_lang: str = "pt",
+        target_lang: str = "PT-BR",
     ):
+        self.deepl_api_key = deepl_api_key
         self.directory = create_and_return_dir(directory)
         self.quality = quality
         self.embed_art = embed_art # Agora sempre será True, ignorando o config
@@ -144,7 +146,8 @@ class QobuzDL:
                 fetch_lyrics=self.fetch_lyrics,
                 no_lrc_files=self.no_lrc_files,
                 genius_token=self.genius_token,
-                target_lang=getattr(self, 'target_lang', 'pt'),
+                deepl_api_key=self.deepl_api_key,
+                target_lang=getattr(self, 'target_lang', 'PT-BR'),
                 no_credits=self.no_credits,
                 settings=self.settings,
                 download_db=self.downloads_db,
