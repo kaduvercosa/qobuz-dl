@@ -10,4 +10,4 @@ pycryptodome
 questionary
 lyricsgenius
 langdetect==1.0.9
-deep-translator==1.11.4
+deep-translator
