@@ -184,12 +184,20 @@ pip install qobuz-dl-master
 ### 🍏 2. Instalação no iSH Shell (iOS / iPadOS)
 
 A instalação padrão falhará pela falta de compiladores. Instale os pré-requisitos Alpine antes:
+
 ```bash
 apk update
+```
+
+```bash
 apk add nano ffmpeg python3 py3-pip py3-pycryptodome py3-aiohttp
+```
 
+```bash
 python3 -m pip install --upgrade "typing-extensions>=4.0.0" beautifulsoup4 deep-translator lyricsgenius mutagen
+```
 
+```bash
 pip install qobuz-dl-master
 ```
 
@@ -198,6 +206,12 @@ O Termux possui um ambiente Linux restrito. Portanto, você deve compilar os hea
 
 ```bash
 pkg update
+```
+
+```bash
 pkg install python build-essential libffi libxml2 libxslt
+```
+
+```bash
 pip install qobuz-dl-master
 ```
