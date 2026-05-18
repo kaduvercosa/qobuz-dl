@@ -29,7 +29,6 @@ requirements = [
     "pick==1.6.0",
     "beautifulsoup4",
     "colorama",
-    # NOTE: cryptography was replaced with pycryptodome for better portability (e.g. ish-shell/IOS)
     "pycryptodome",
     "questionary",
     "lyricsgenius",
