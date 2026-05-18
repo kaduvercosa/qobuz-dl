@@ -84,6 +84,28 @@ def lyrics_args(subparsers):
     )
     return lyrics
 
+
+def dup_args(subparsers):
+    dup = subparsers.add_parser(
+        "duplicates",
+        aliases=["dup"],
+        description="Scan local library for duplicate albums/tracks and provide management suggestions.",
+        help="Scan and manage duplicate files",
+    )
+    dup.add_argument(
+        "DIR",
+        metavar="DIRECTORY",
+        nargs="?",
+        default=None,
+        help="The local directory containing the music files to be scanned (defaults to your download folder)",
+    )
+    dup.add_argument(
+        "--export",
+        choices=["json", "csv"],
+        help="Export the duplicate report to JSON or CSV in the current root folder",
+    )
+    return dup
+
 def sync_playlist_args(subparsers):
     sync_pl = subparsers.add_parser(
         "sync-playlist",
@@ -467,6 +489,7 @@ def qobuz_dl_args(
     
     # Inizializza il nuovo comando
     lyrics_cmd = lyrics_args(subparsers)
+    dup_cmd = dup_args(subparsers)
     sync_pl_cmd = sync_playlist_args(subparsers)
     smart_mix_cmd = smart_mix_args(subparsers)
     panel_cmd = panel_args(subparsers)

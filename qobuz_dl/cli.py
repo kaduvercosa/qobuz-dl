@@ -269,6 +269,24 @@ async def _handle_commands(qobuz, arguments):
                 qobuz.directory,  # <-- MODIFIED: Previously it was arguments.FOLDER
                 auto_confirm=arguments.yes,
             )
+        elif arguments.command in ("duplicates", "dup"):
+            from qobuz_dl.duplicate_checker import DuplicateChecker
+            target_dir = arguments.DIR if arguments.DIR else qobuz.directory
+
+            # Make sure the directory exists
+            if not os.path.exists(target_dir):
+                print(f"\n\033[91m[!] Directory not found: {target_dir}\033[0m")
+                return
+
+            checker = DuplicateChecker(target_dir)
+            report = checker.scan_library()
+            checker.display_report(report)
+
+            if arguments.export:
+                # Save report in the current working directory (root folder)
+                export_path = os.path.join(os.getcwd(), f"duplicates_report.{arguments.export}")
+                checker.export_report(report, output_format=arguments.export, output_path=export_path)
+
         elif arguments.command in ("smart-mix", "sm"):
             from qobuz_dl.ai_mixer import generate_smart_mix
             await generate_smart_mix(
@@ -488,7 +506,7 @@ async def amain():
         
         if os.name == "nt":
             sync_dir = os.path.abspath(sync_dir)
-            if not sync_dir.startswith("\\\\?\\")
+            if not sync_dir.startswith("\\\\?\\"):
                 sync_dir = "\\\\?\\" + sync_dir
                 
         sync_database(sync_dir, QOBUZ_DB, sync_client)
@@ -503,7 +521,7 @@ async def amain():
         target_dir = arguments.DIR
         if os.name == "nt":
             target_dir = os.path.abspath(target_dir)
-            if not target_dir.startswith("\\\\?\\")
+            if not target_dir.startswith("\\\\?\\"):
                 target_dir = "\\\\?\\" + target_dir
                 
         try:
@@ -522,7 +540,7 @@ async def amain():
     # --- WINDOWS LONG PATH BYPASS ---
     if os.name == "nt":
         directory_to_use = os.path.abspath(directory_to_use)
-        if not directory_to_use.startswith("\\\\?\\")
+        if not directory_to_use.startswith("\\\\?\\"):
             directory_to_use = "\\\\?\\" + directory_to_use
     # --------------------------------
 

@@ -181,21 +181,8 @@ A maneira mais fácil e oficial de instalar a Ultimate Edition. O `pip` cuida de
 pip install qobuz-dl-master
 ```
 
-### 🍏 2. Instalação no a-Shell / iSH Shell (iOS / iPadOS)
+### 🍏 2. Instalação no iSH Shell (iOS / iPadOS)
 
-**Para usuários do a-Shell (Recomendado):**
-O a-Shell é mais rápido, mas bloqueia compilações C da biblioteca de criptografia. Siga estes 3 passos:
-1. Abra o a-Shell e instale as dependências forçando bibliotecas pré-compiladas puras:
-```bash
-AIOHTTP_NO_EXTENSIONS=1 pip install qobuz-dl-master
-```
-2. Digite o comando de permissão nativo do a-Shell para autorizar o acesso à sua pasta de músicas e selecione uma pasta no app "Arquivos":
-```bash
-pickFolder
-```
-3. No Qobuz-DL, defina a sua pasta de download como `~/Documents/NOME_DA_SUA_PASTA`.
-
-**Para usuários do iSH Shell:**
 A instalação padrão falhará pela falta de compiladores. Instale os pré-requisitos Alpine antes:
 ```bash
 apk update
