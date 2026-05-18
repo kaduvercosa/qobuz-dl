@@ -253,6 +253,42 @@ class LyricsEngine:
         return '\n'.join(result_lines)
 
 
+
+    async def _fetch_lyrics_plus(self, artist, track):
+        # Fetch highly synchronized lyrics directly from the LyricsPlus (Apple Music/Spotify backend)
+        import json
+        from urllib import parse
+
+        # We try multiple mirrors since some may be down
+        endpoints = [
+            "https://lyricsplus.binimum.org",
+            "https://lyricsplus-seven.vercel.app",
+            "https://lyricsplus.prjktla.workers.dev"
+        ]
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                for base_url in endpoints:
+                    url = f"{base_url}/v2/lyrics/get?title={parse.quote(track)}&artist={parse.quote(artist)}"
+                    try:
+                        async with session.get(url, timeout=10) as resp:
+                            if resp.status == 200:
+                                data = await resp.json()
+                                if 'lyrics' in data and data['lyrics']:
+                                    lines = []
+                                    for lyric in data['lyrics']:
+                                        time_ms = lyric.get('time', 0)
+                                        minutes = int(time_ms / 60000)
+                                        seconds = (time_ms % 60000) / 1000
+                                        timestamp = f"[{minutes:02d}:{seconds:05.2f}]"
+                                        lines.append(f"{timestamp} {lyric.get('text', '')}")
+                                    return '\n'.join(lines)
+                    except Exception:
+                        continue
+        except Exception:
+            pass
+        return None
+
     async def _fetch_netease_lyrics(self, artist, track):
         import json
         url = "https://music.163.com/api/search/get/web?csrf_token="
@@ -291,6 +327,20 @@ class LyricsEngine:
             
             params = {"artist_name": album_artist, "track_name": track, "album_name": album}
             
+            # Primário: LyricsPlus (Apple Music/Spotify backend via am-lyrics)
+            lyrics_plus = await self._fetch_lyrics_plus(album_artist, track)
+            if lyrics_plus:
+                lyrics_plus = self._clean_syllable_sync(lyrics_plus)
+                final_lyrics = await self._process_translation(lyrics_plus, is_synced=True)
+                self._inject_metadata(file_path, final_lyrics)
+                if save_lrc:
+                    self._save_lrc_file(file_path, final_lyrics)
+                has_translation = (self.translation_symbol in final_lyrics)
+                trad_status = "Sim" if has_translation else "Não"
+                print(f"  [*] Letra Encontrada: {album_artist} - {track} (via Apple/Spotify) | Sincronizada: Sim | Traduzida: {trad_status}")
+                return (True, has_translation)
+
+            # Fallback 1: LRCLIB
             async with aiohttp.ClientSession() as session:
                 async with session.get(lrclib_url, params=params, headers=headers, timeout=45) as response:
                     status = response.status
@@ -318,7 +368,7 @@ class LyricsEngine:
                     has_translation = (self.translation_symbol in final_lyrics)
                     
                     trad_status = "Sim" if has_translation else "Não"
-                    print(f"  [*] Letra Encontrada: {album_artist} - {track} | Sincronizada: Sim | Traduzida: {trad_status}")
+                    print(f"  [*] Letra Encontrada: {album_artist} - {track} (via LRCLIB) | Sincronizada: Sim | Traduzida: {trad_status}")
                     return (True, has_translation)
                     
                 elif plain_lyrics:
@@ -329,11 +379,11 @@ class LyricsEngine:
                     has_translation = (self.translation_symbol in final_lyrics)
                     
                     trad_status = "Sim" if has_translation else "Não"
-                    print(f"  [*] Letra Encontrada: {album_artist} - {track} | Sincronizada: Não | Traduzida: {trad_status}")
+                    print(f"  [*] Letra Encontrada: {album_artist} - {track} (via LRCLIB) | Sincronizada: Não | Traduzida: {trad_status}")
                     return (True, has_translation)
 
 
-            # Fallback 1: Netease (often has synced lyrics when LRCLIB fails)
+            # Fallback 2: Netease (often has synced lyrics when LRCLIB fails)
             netease_lyric = await self._fetch_netease_lyrics(album_artist, track)
             if netease_lyric:
                 netease_lyric = self._clean_syllable_sync(netease_lyric)
