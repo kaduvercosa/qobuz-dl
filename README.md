@@ -195,7 +195,7 @@ apk add nano ffmpeg python3 py3-pip py3-pycryptodome py3-aiohttp gcc g++ make
 ```
 
 ```bash
-python3 -m pip install --upgrade "typing-extensions>=4.0.0" beautifulsoup4 deepl langdetect lyricsgenius mutagen
+python3 -m pip install --upgrade "typing-extensions>=4.0.0" beautifulsoup4 langdetect lyricsgenius mutagen
 ```
 
 ```bash
