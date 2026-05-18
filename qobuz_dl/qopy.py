@@ -9,10 +9,10 @@ import aiohttp
 import asyncio
 
 
-from Crypto.Protocol.KDF import HKDF
-from Crypto.Hash import SHA256
-from Crypto.Cipher import AES
-from Crypto.Util.Padding import unpad
+from Cryptodome.Protocol.KDF import HKDF
+from Cryptodome.Hash import SHA256
+from Cryptodome.Cipher import AES
+from Cryptodome.Util.Padding import unpad
 
 from qobuz_dl.exceptions import (
     AuthenticationError,
