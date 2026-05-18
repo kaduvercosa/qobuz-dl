@@ -33,7 +33,8 @@ requirements = [
     "pycryptodome",
     "questionary",
     "lyricsgenius",
-    "deep-translator"
+    "deep-translator=1.11.4",
+    "langdetect==1.0.9"
 ]
 
 setup(
