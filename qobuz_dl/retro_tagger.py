@@ -4,7 +4,7 @@ from pathlib import Path
 from mutagen.flac import FLAC
 import mutagen.id3 as id3
 from mutagen.id3 import ID3NoHeaderError
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
 
 from qobuz_dl.lyrics_engine import LyricsEngine
@@ -166,9 +166,6 @@ def inject_lyrics_retroactively(
 
     # Remove duplicados
     all_files = list(set(all_files))
-    
-    # --- NOVO: SORT POR PATH PARA MANTER ORDEM ALFABÉTICA ---
-    all_files.sort()
 
     processed = len(all_files)
     injected = 0
@@ -181,16 +178,15 @@ def inject_lyrics_retroactively(
     )
 
     # =========================
-    # SEQUENTIAL PROCESSING (COM FUTURES PARA ORDEM)
+    # PARALLEL PROCESSING
     # =========================
 
-    # --- MUDANÇA: Usar max_workers=1 para garantir ordem de processamento ---
-    # Isso é importante para o iSH/iPad e para evitar confusão no terminal
-    max_workers = 1
+    # Ideal para iSH/iPad: rápido sem bagunçar o terminal
+    max_workers = 3
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
 
-        futures = []
+        futures = {}
         
         # Mantém a ordem original dos arquivos para impressão sequencial
         for idx, path in enumerate(all_files, 1):
