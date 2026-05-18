@@ -192,11 +192,13 @@ class LyricsEngine:
             if len(joined_text) < 4500:
                 translated_joined = await asyncio.to_thread(translator.translate, joined_text)
                 if translated_joined:
-                    # O Google Translate pode às vezes engolir os espaços antes/depois do separador,
-                    # mas devemos ter cuidado para não substituir @ legítimos no texto (como @username)
-                    # O replace limpo ou split flexível é mais seguro.
                     clean_translated = translated_joined.replace("@@@", " @@@ ")
                     translated_texts = [t.strip() for t in clean_translated.split(' @@@ ') if t.strip()]
+
+                    # BUG FIX: Google Translate batch fails if first line is the same as target language.
+                    # Check if the entire block was returned untranslated (meaning Google gave up due to mixed languages)
+                    if translated_texts == texts_to_translate:
+                        translated_texts = []  # Force fallback to line-by-line translation
             else:
                 translated_texts = []
 
