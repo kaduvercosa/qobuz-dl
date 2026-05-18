@@ -269,38 +269,6 @@ async def _handle_commands(qobuz, arguments):
                 qobuz.directory,  # <-- MODIFIED: Previously it was arguments.FOLDER
                 auto_confirm=arguments.yes,
             )
-        elif arguments.command in ("duplicates", "dup"):
-            from qobuz_dl.duplicate_checker import DuplicateChecker
-            target_dir = arguments.DIR if arguments.DIR else qobuz.directory
-
-            # Make sure the directory exists
-            if not os.path.exists(target_dir):
-                print(f"\n\033[91m[!] Directory not found: {target_dir}\033[0m")
-                return
-
-            checker = DuplicateChecker(target_dir)
-            report = checker.scan_library()
-            checker.display_report(report)
-
-            if arguments.export:
-                # Save report in the current working directory (root folder)
-                export_path = os.path.join(os.getcwd(), f"duplicates_report.{arguments.export}")
-                checker.export_report(report, output_format=arguments.export, output_path=export_path)
-
-        elif arguments.command in ("smart-mix", "sm"):
-            from qobuz_dl.ai_mixer import generate_smart_mix
-            await generate_smart_mix(
-                qobuz.directory,
-                arguments.concept,
-                arguments.limit,
-                qobuz.settings
-            )
-        elif arguments.command in ("panel", "p"):
-            from qobuz_dl.tui_panel import run_tui_panel
-            await run_tui_panel(qobuz)
-        elif arguments.command in ("daemon", "watch"):
-            from qobuz_dl.daemon import scan_new_releases
-            await scan_new_releases(qobuz, test_mode=getattr(arguments, 'test', False))
         elif arguments.command == "lucky":
             query = " ".join(arguments.QUERY)
             qobuz.lucky_type = arguments.type
