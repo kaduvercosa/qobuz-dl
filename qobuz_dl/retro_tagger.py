@@ -94,30 +94,31 @@ def _process_single_file(file_path_str, engine, overwrite=False, current_idx=0, 
         # =========================
         # SEARCH & INJECT
         # =========================
-        
-        safe_print(f"{C}{progresso} Searching: {search_artist} - {title}{O}")
 
-        # O print do sucesso/falha foi removido daqui pois o lyrics_engine já faz isso perfeitamente
-        success, has_translation = asyncio.run(engine.fetch_and_inject(
+        # Instead of printing inside the thread, return the results to print sequentially
+        res_tuple = asyncio.run(engine.fetch_and_inject(
             file_path=file_path_str,
             album_artist=search_artist,
             track=title,
             album=album,
             save_lrc=True,
-            overwrite=overwrite
+            overwrite=overwrite,
+            return_message=True
         ))
 
-        if success:
-            return "injected"
-        else:
-            return "skipped"
+        # Unpack, robustly handling old and new returns
+        success = res_tuple[0]
+        has_translation = res_tuple[1]
+        messages = res_tuple[2] if len(res_tuple) > 2 else []
+
+        status_result = "injected" if success else "skipped"
+        return {"status": status_result, "artist": search_artist, "title": title, "messages": messages}
 
     except Exception as e:
-        safe_print(f"{RED}[!] Error processing {file_path_str}: {e}{OFF}")
         logger.error(f"Error in _process_single_file: {e}", exc_info=True)
-        return "error"
+        return {"status": "error", "artist": "Unknown", "title": "Unknown", "messages": [f"{RED}[!] Error processing {file_path_str}: {e}{OFF}"]}
 
-    return "skipped"
+    return {"status": "skipped", "artist": search_artist, "title": title, "messages": []}
 
 
 # =========================
@@ -191,7 +192,7 @@ def inject_lyrics_retroactively(
 
         futures = []
         
-        # --- NOVO: Submeter em ordem e manter track da ordem ---
+        # Mantém a ordem original dos arquivos para impressão sequencial
         for idx, path in enumerate(all_files, 1):
             future = executor.submit(
                 _process_single_file,
@@ -201,25 +202,54 @@ def inject_lyrics_retroactively(
                 idx,
                 processed
             )
-            futures.append((idx, future))
+            # Armazena o index original com o future
+            futures[future] = (idx, path)
 
-        # --- NOVO: Processar futures em ordem de chegada (FIFO) ---
-        for expected_idx, future in futures:
+        # Para imprimir na ordem exata de chegada (ex: [1/20], [2/20]),
+        # armazenamos os resultados assim que terminam, e processamos em ordem.
+        results_by_idx = {}
+        next_to_print = 1
+
+        for future in as_completed(futures):
+            idx, path = futures[future]
             try:
-                result = future.result()
+                result_data = future.result()
+            except Exception as e:
+                logger.error(f"[!] Thread execution error: {e}")
+                result_data = {"status": "error", "artist": "Unknown", "title": "Unknown", "messages": []}
 
-                if result == "injected":
+            # Salva o resultado no dict
+            if isinstance(result_data, str):
+                 results_by_idx[idx] = {"status": result_data, "messages": []}
+            else:
+                 results_by_idx[idx] = result_data
+
+            # Imprime tudo que já está pronto e na ordem correta
+            while next_to_print in results_by_idx:
+                data = results_by_idx[next_to_print]
+                status = data.get("status")
+                artist = data.get("artist", "Unknown")
+                title = data.get("title", "Unknown")
+                messages = data.get("messages", [])
+
+                # Imprime o início da busca
+                progresso = f"[{next_to_print}/{processed}]"
+                safe_print(f"{CYAN}{progresso} Searching: {artist} - {title}{OFF}")
+
+                # Imprime as mensagens retornadas
+                for msg in messages:
+                    safe_print(msg)
+
+                if status == "injected":
                     injected += 1
-                elif result == "skipped":
+                elif status == "skipped":
                     skipped += 1
-                elif result == "error":
+                elif status == "error":
                     errors += 1
 
-            except Exception as e:
-                logger.error(
-                    f"[!] Thread execution error: {e}"
-                )
-                errors += 1
+                # Deleta para poupar memória e avança o contador
+                del results_by_idx[next_to_print]
+                next_to_print += 1
 
     # =========================
     # FINAL SUMMARY
