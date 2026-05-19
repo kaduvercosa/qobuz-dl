@@ -259,14 +259,14 @@ class LyricsEngine:
             # --- PROTEÇÃO CONTRA TIMEOUT E ERROS DE REDE DA API LRCLIB ---
             try:
                 async with aiohttp.ClientSession() as session:
-                    async with session.get(lrclib_url, params=params, headers=headers, timeout=12) as response:
+                    async with session.get(lrclib_url, params=params, headers=headers, timeout=30) as response:
                         status = response.status
                         if status == 200:
                             data = await response.json()
 
                     if status != 200:
                         params = {"artist_name": album_artist, "track_name": track}
-                        async with session.get(lrclib_url, params=params, headers=headers, timeout=12) as response:
+                        async with session.get(lrclib_url, params=params, headers=headers, timeout=30) as response:
                             status = response.status
                             if status == 200:
                                 data = await response.json()
