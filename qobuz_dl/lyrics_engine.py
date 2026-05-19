@@ -554,3 +554,24 @@ class LyricsEngine:
                 audio.save(file_path)
         except Exception:
             pass
+
+    async def inject_manual_lyrics(self, file_path, raw_lyrics, is_synced=True, save_lrc=True):
+        """Used by the fix-lyrics interactive tool to manually inject a chosen string."""
+        if not raw_lyrics:
+            return False
+
+        try:
+            if is_synced:
+                raw_lyrics = self._clean_syllable_sync(raw_lyrics)
+                final_lyrics, deepl_status = await self._process_translation(raw_lyrics, is_synced=True)
+            else:
+                final_lyrics, deepl_status = await self._process_translation(raw_lyrics, is_synced=False)
+
+            self._inject_metadata(file_path, final_lyrics)
+            if save_lrc:
+                self._save_lrc_file(file_path, final_lyrics)
+
+            return True
+        except Exception as e:
+            logger.error(f"Failed to inject manual lyrics: {e}")
+            return False

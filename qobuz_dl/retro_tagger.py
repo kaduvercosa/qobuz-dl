@@ -261,3 +261,178 @@ def inject_lyrics_retroactively(
         safe_print(f"{RED}  - Errors encountered: {errors}{OFF}")
 
     safe_print("\n")
+
+# =========================
+# INTERACTIVE FIX LYRICS
+# =========================
+
+async def interactive_fix_lyrics(
+    directory_path,
+    genius_token=None,
+    deepl_api_key=None,
+    target_lang="PT-BR"
+):
+    from pick import pick
+    import aiohttp
+    import time
+
+    target_dir = Path(directory_path)
+
+    if not target_dir.is_dir():
+        print(f"{RED}[!] Error: The directory '{directory_path}' does not exist.{OFF}")
+        return
+
+    engine = LyricsEngine(genius_token=genius_token, deepl_api_key=deepl_api_key, translate=True, target_lang=target_lang)
+
+    # 1. SCAN DIRECTORY
+    all_files = []
+    for ext in [".flac", ".mp3"]:
+        all_files.extend(list(target_dir.rglob(f"*{ext}")))
+        all_files.extend(list(target_dir.rglob(f"*{ext.upper()}")))
+
+    all_files = list(set(all_files))
+    all_files.sort()
+
+    if not all_files:
+        print(f"{RED}[!] No compatible audio files found in '{directory_path}'.{OFF}")
+        return
+
+    # Extract metadata for display
+    file_options = []
+    file_mapping = {}
+
+    print(f"{CYAN}[*] Scanning {len(all_files)} files to build the interactive menu...{OFF}")
+
+    for path in all_files:
+        path_str = str(path)
+        path_lower = path_str.lower()
+        title, artist = "", ""
+        duration = 0
+
+        try:
+            if path_lower.endswith(".flac"):
+                audio = FLAC(path_str)
+                title = audio.get("TITLE", [""])[0]
+                artist = audio.get("ARTIST", [""])[0]
+                duration = audio.info.length
+            elif path_lower.endswith(".mp3"):
+                audio = id3.ID3(path_str)
+                title = audio.get("TIT2").text[0] if audio.get("TIT2") else ""
+                artist = audio.get("TPE1").text[0] if audio.get("TPE1") else ""
+                duration = audio.info.length
+        except Exception:
+            continue
+
+        if title and artist:
+            minutes = int(duration // 60)
+            seconds = int(duration % 60)
+            display_str = f"[{minutes:02d}:{seconds:02d}] {artist} - {title} ({path.name})"
+            file_options.append(display_str)
+            file_mapping[display_str] = {
+                "path": path_str,
+                "title": title,
+                "artist": artist,
+                "duration": duration,
+                "album": audio.get("ALBUM", [""])[0] if path_lower.endswith(".flac") else (audio.get("TALB").text[0] if audio.get("TALB") else ""),
+                "album_artist": audio.get("ALBUMARTIST", [""])[0] if path_lower.endswith(".flac") else (audio.get("TPE2").text[0] if audio.get("TPE2") else "")
+            }
+
+    if not file_options:
+        print(f"{RED}[!] Failed to extract metadata from files in '{directory_path}'.{OFF}")
+        return
+
+    file_options.append(">> Exit")
+
+    while True:
+        title_text = "Select a track to fix its lyrics:"
+        selected_option, index = pick(file_options, title_text, indicator="=>")
+
+        if selected_option == ">> Exit":
+            break
+
+        track_info = file_mapping[selected_option]
+        await _handle_manual_lyric_search(track_info, engine)
+
+async def _handle_manual_lyric_search(track_info, engine):
+    from pick import pick
+    import aiohttp
+
+    search_artist = track_info["album_artist"] if track_info["album_artist"] and track_info["album_artist"].lower() != "various artists" else track_info["artist"]
+    track_title = track_info["title"]
+    real_duration = track_info.get("duration", 0)
+    real_mins = int(real_duration // 60)
+    real_secs = int(real_duration % 60)
+
+    print(f"\n{CYAN}[*] Searching alternatives for: {search_artist} - {track_title}...{OFF}")
+
+    # Query LRCLIB search endpoint
+    lrclib_url = "https://lrclib.net/api/search"
+    headers = {"User-Agent": "qobuz-dl-master/2.5 (https://github.com/kaduvercosa/qobuz-dl)"}
+    params = {"track_name": track_title, "artist_name": search_artist}
+
+    async def fetch_alternatives():
+        async with aiohttp.ClientSession() as session:
+            async with session.get(lrclib_url, params=params, headers=headers, timeout=15) as resp:
+                if resp.status == 200:
+                    return await resp.json()
+        return []
+
+    try:
+        results = await fetch_alternatives()
+    except Exception as e:
+        print(f"{RED}[!] Search failed: {e}{OFF}")
+        return
+
+    if not results:
+        print(f"{YELLOW}[!] No alternative lyrics found for this track on LRCLIB.{OFF}")
+        time.sleep(2)
+        return
+
+    # Format options for pick
+    options = []
+    option_mapping = {}
+
+    # Sort results by how close they are to the real duration
+    valid_results = [r for r in results if r.get("duration")]
+    valid_results.sort(key=lambda r: abs(r.get("duration", 0) - real_duration))
+
+    for res in valid_results:
+        duration_sec = res.get("duration", 0)
+        minutes = int(duration_sec // 60)
+        seconds = int(duration_sec % 60)
+        duration_str = f"[{minutes:02d}:{seconds:02d}]"
+
+        diff = abs(duration_sec - real_duration)
+        diff_str = f"(Match! {diff:.0f}s dif)" if diff <= 2 else f"({diff:.0f}s dif)"
+
+        sync_status = "[Synced]" if res.get("syncedLyrics") else "[Unsynced]"
+
+        display = f"{duration_str} {diff_str} {res.get('artistName')} - {res.get('trackName')} {sync_status} (Album: {res.get('albumName')})"
+        options.append(display)
+        option_mapping[display] = res
+
+    options.append(">> Cancel / Back to Track List")
+
+    title_prompt = f"Target Duration: [{real_mins:02d}:{real_secs:02d}] | File: {track_title}\nChoose the alternative lyric:"
+    selected_option, index = pick(options, title_prompt, indicator="=>")
+
+    if selected_option == ">> Cancel / Back to Track List":
+        return
+
+    chosen_lyric_data = option_mapping[selected_option]
+
+    # Proceed to inject manually
+    print(f"\n{GREEN}[+] Downloading and injecting chosen lyrics...{OFF}")
+
+    success = await engine.inject_manual_lyrics(
+        file_path=track_info["path"],
+        raw_lyrics=chosen_lyric_data.get("syncedLyrics") or chosen_lyric_data.get("plainLyrics"),
+        is_synced=bool(chosen_lyric_data.get("syncedLyrics"))
+    )
+
+    if success:
+        print(f"{GREEN}[+] Lyrics successfully replaced!{OFF}")
+    else:
+        print(f"{RED}[!] Failed to inject lyrics.{OFF}")
+
+    time.sleep(2)

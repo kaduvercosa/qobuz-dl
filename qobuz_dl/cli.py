@@ -508,6 +508,22 @@ async def amain():
             print("\n\n\033[91m[!] Operation manually interrupted by the user (CTRL+C).\033[0m")
             print("\033[93mAlready processed files are safe. Exiting...\033[0m")
         sys.exit(0)
+
+    elif arguments.command in ("fix-lyrics", "fl"):
+        from qobuz_dl.retro_tagger import interactive_fix_lyrics
+
+        target_dir = arguments.DIR
+        if os.name == "nt":
+            target_dir = os.path.abspath(target_dir)
+            if not target_dir.startswith("\\\\?\\"):
+                target_dir = "\\\\?\\" + target_dir
+
+        try:
+            import asyncio
+            asyncio.run(interactive_fix_lyrics(target_dir, genius_token=genius_token, deepl_api_key=deepl_api_key, target_lang=target_lang))
+        except KeyboardInterrupt:
+            print("\n\n\033[91m[!] Operation manually interrupted by the user (CTRL+C).\033[0m")
+        sys.exit(0)
     # ----------------------------------------------
 
     directory_to_use = arguments.directory if hasattr(arguments, 'directory') and arguments.directory else default_folder
