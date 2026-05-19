@@ -131,10 +131,9 @@ def tag_flac(filename, root_dir, final_name, d: dict, album, istrack=True, em_im
     if not settings.no_disc_total_tag:
         tags["DISCTOTAL"] = str(qobuz_album.get("media_count", "1"))
 
-    for k, v in tags.items():
-        if v:
-            audio[k] = v
-            
+    # Retrieve the tech comments previously generated
+    tech_comment = tags.get("COMMENT", "")
+
     if em_image:
         _embed_flac_img(root_dir, audio)
         
@@ -148,8 +147,15 @@ def tag_flac(filename, root_dir, final_name, d: dict, album, istrack=True, em_im
                 logger.warning(f"Não foi possível ler o tamanho da capa: {e}")
                 cover_info = "Cover Quality: _org"
             
-            audio["comment"] = cover_info
+            if tech_comment:
+                tags["COMMENT"] = f"{tech_comment}\n{cover_info}"
+            else:
+                tags["COMMENT"] = cover_info
         # -------------------------------------------------------------------
+
+    for k, v in tags.items():
+        if v:
+            audio[k] = v
 
     audio.save()
     os.rename(filename, final_name)
@@ -168,17 +174,8 @@ def tag_mp3(filename, root_dir, final_name, d, album, istrack=True, em_image=Fal
 
     tags = _get_tags_to_add(qobuz_album, qobuz_item, settings=settings)
 
-    for k, v in tags.items():
-        if v:
-            id3tag = ID3_LEGEND.get(k.lower()) or ID3_LEGEND.get(k)
-            if id3tag:
-                if id3tag == id3.TXXX:
-                    audio.add(id3tag(encoding=3, desc=k, text=v))
-                else:
-                    audio[id3tag.__name__] = id3tag(encoding=3, text=v)
-
-    audio["TRCK"] = id3.TRCK(encoding=3, text=f'{str(qobuz_item.get("track_number", "1"))}/{str(qobuz_album.get("tracks_count", "1"))}')
-    audio["TPOS"] = id3.TPOS(encoding=3, text=f'{str(qobuz_item.get("media_number", "1"))}/{str(qobuz_album.get("media_count", "1"))}')
+    # Retrieve the tech comments previously generated
+    tech_comment = tags.get("COMMENT", "")
     
     if em_image:
         _embed_id3_img(root_dir, audio)
@@ -193,9 +190,26 @@ def tag_mp3(filename, root_dir, final_name, d, album, istrack=True, em_image=Fal
                 logger.warning(f"Não foi possível ler o tamanho da capa: {e}")
                 cover_info = "Cover Quality: _org"
             
-            # Adiciona o comentário específico para MP3 (ID3v2 COMM tag)
-            audio.add(id3.COMM(encoding=3, lang='eng', desc='CoverInfo', text=[cover_info]))
+            # Merge cover info with tech comments to ensure Neutron Player reads everything
+            if tech_comment:
+                tags["COMMENT"] = f"{tech_comment}\n{cover_info}"
+            else:
+                tags["COMMENT"] = cover_info
         # -------------------------------------------------------------------
+
+    for k, v in tags.items():
+        if v:
+            id3tag = ID3_LEGEND.get(k.lower()) or ID3_LEGEND.get(k)
+            if id3tag:
+                if id3tag == id3.TXXX:
+                    audio.add(id3tag(encoding=3, desc=k, text=v))
+                elif id3tag == id3.COMM:
+                    audio.add(id3tag(encoding=3, lang='eng', desc='', text=[v]))
+                else:
+                    audio[id3tag.__name__] = id3tag(encoding=3, text=v)
+
+    audio["TRCK"] = id3.TRCK(encoding=3, text=f'{str(qobuz_item.get("track_number", "1"))}/{str(qobuz_album.get("tracks_count", "1"))}')
+    audio["TPOS"] = id3.TPOS(encoding=3, text=f'{str(qobuz_item.get("media_number", "1"))}/{str(qobuz_album.get("media_count", "1"))}')
         
     audio.save(filename, v2_version=3)
     os.rename(filename, final_name)
