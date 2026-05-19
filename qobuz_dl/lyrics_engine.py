@@ -26,7 +26,12 @@ try:
 except ImportError:
     detect = None
 
-# Configurar logging
+# Configurar logging e silenciar as bibliotecas ruidosas de rede
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("urllib3").setLevel(logging.WARNING)
+logging.getLogger("deepl").setLevel(logging.WARNING)
+
 logger = logging.getLogger(__name__)
 
 class LyricsEngine:
@@ -50,7 +55,7 @@ class LyricsEngine:
             else:
                 try:
                     self.deepl_translator = deepl.Translator(deepl_api_key)
-                    logger.info(f"[*] DeepL Translator inicializado para idioma alvo: {target_lang}")
+                    logger.debug(f"[*] DeepL Translator inicializado para idioma alvo: {target_lang}")
                 except Exception as e:
                     logger.error(f"[!] Erro ao inicializar DeepL Translator: {e}")
                     print(f"\n\033[91m[!] Erro ao inicializar DeepL: {e}\033[0m")
@@ -60,7 +65,7 @@ class LyricsEngine:
         if self.genius_token and lyricsgenius:
             try:
                 self.genius = lyricsgenius.Genius(self.genius_token, verbose=False, remove_section_headers=True)
-                logger.info("[*] Genius API inicializado como fallback")
+                logger.debug("[*] Genius API inicializado como fallback")
             except Exception as e:
                 logger.error(f"[!] Erro ao inicializar Genius: {e}")
                 self.genius = None
@@ -130,7 +135,7 @@ class LyricsEngine:
 
         # Retornar original se tradução desabilitada ou sem API key
         if not self.translate or not self.deepl_api_key or not self.deepl_translator:
-            logger.info("[*] Tradução desabilitada ou DeepL não configurado, retornando lyrics original")
+            logger.debug("[*] Tradução desabilitada ou DeepL não configurado, retornando lyrics original")
             return lyrics, 0, total_lines
 
         if not texts_to_translate:
@@ -144,10 +149,10 @@ class LyricsEngine:
                 dominant_lang = detect(full_text)
                 target_lang_code = self.target_lang.split('-')[0].lower()
                 if dominant_lang.lower() == target_lang_code:
-                    logger.info(f"[*] Texto já está em {self.target_lang}, pulando tradução")
+                    logger.debug(f"[*] Texto já está em {self.target_lang}, pulando tradução")
                     return lyrics, 0, total_lines
         except Exception as e:
-            logger.warning(f"[*] Erro na detecção de idioma: {e}, continuando com tradução")
+            logger.debug(f"[*] Erro na detecção de idioma: {e}, continuando com tradução")
 
         # 2. FILTRO POR LINHA (micro-detecção para linhas longas)
         lines_to_translate = []
@@ -173,13 +178,13 @@ class LyricsEngine:
             indices_to_translate.append(i)
 
         if not lines_to_translate:
-            logger.info("[*] Nenhuma linha para traduzir após filtro de idioma")
+            logger.debug("[*] Nenhuma linha para traduzir após filtro de idioma")
             return lyrics, 0, total_lines
 
         # 3. TRADUÇÃO EM LOTE COM DEEPL
         translated_texts = [""] * len(texts_to_translate)
         try:
-            logger.info(f"[*] Iniciando tradução DeepL para {len(lines_to_translate)} linhas (idioma alvo: {self.target_lang})")
+            logger.debug(f"[*] Iniciando tradução DeepL para {len(lines_to_translate)} linhas (idioma alvo: {self.target_lang})")
             
             # Executa tradução de forma assíncrona
             translated_results = await asyncio.to_thread(
@@ -196,7 +201,7 @@ class LyricsEngine:
             for original_idx, translated_text in zip(indices_to_translate, translated_results):
                 translated_texts[original_idx] = translated_text.text if hasattr(translated_text, 'text') else str(translated_text)
 
-            logger.info(f"[*] Tradução concluída: {len([t for t in translated_texts if t])} linhas traduzidas")
+            logger.debug(f"[*] Tradução concluída: {len([t for t in translated_texts if t])} linhas traduzidas")
 
         except Exception as e:
             logger.error(f"[!] Erro fatal na tradução DeepL: {e}")
@@ -235,7 +240,7 @@ class LyricsEngine:
             elif l_type in ('raw', 'empty'):
                 result_lines.append(txt)
 
-        logger.info(f"[*] Tradução processada: {translation_count} linhas com tradução válida")
+        logger.debug(f"[*] Tradução processada: {translation_count} linhas com tradução válida")
         return '\n'.join(result_lines), translation_count, total_lines
 
     async def fetch_and_inject(self, file_path, album_artist, track, album, save_lrc=True, overwrite=False):
@@ -259,14 +264,14 @@ class LyricsEngine:
             # --- PROTEÇÃO CONTRA TIMEOUT E ERROS DE REDE DA API LRCLIB ---
             try:
                 async with aiohttp.ClientSession() as session:
-                    async with session.get(lrclib_url, params=params, headers=headers, timeout=30) as response:
+                    async with session.get(lrclib_url, params=params, headers=headers, timeout=12) as response:
                         status = response.status
                         if status == 200:
                             data = await response.json()
 
                     if status != 200:
                         params = {"artist_name": album_artist, "track_name": track}
-                        async with session.get(lrclib_url, params=params, headers=headers, timeout=30) as response:
+                        async with session.get(lrclib_url, params=params, headers=headers, timeout=12) as response:
                             status = response.status
                             if status == 200:
                                 data = await response.json()
@@ -283,7 +288,7 @@ class LyricsEngine:
                 plain_lyrics = data.get("plainLyrics")
                 
                 if synced_lyrics:
-                    logger.info(f"[*] Letras sincronizadas encontradas para: {track}")
+                    logger.debug(f"[*] Letras sincronizadas encontradas para: {track}")
                     final_lyrics, trans_count, total_lines = await self._process_translation(synced_lyrics, is_synced=True)
                     self._inject_metadata(file_path, final_lyrics)
                     if save_lrc:
@@ -291,7 +296,7 @@ class LyricsEngine:
                     return (True, trans_count, total_lines, status)
                     
                 elif plain_lyrics:
-                    logger.info(f"[*] Letras simples encontradas para: {track}")
+                    logger.debug(f"[*] Letras simples encontradas para: {track}")
                     final_lyrics, trans_count, total_lines = await self._process_translation(plain_lyrics, is_synced=False)
                     self._inject_metadata(file_path, final_lyrics)
                     if save_lrc:
@@ -300,20 +305,19 @@ class LyricsEngine:
 
             # --- FALLBACK DO GENIUS ---
             if self.genius:
-                logger.info(f"[*] Tentando Genius API para: {track}")
+                logger.debug(f"[*] Tentando Genius API para: {track}")
                 song = await asyncio.to_thread(self.genius.search_song, track, album_artist)
                 if song and song.lyrics:
-                    logger.info(f"[*] Letra encontrada via Genius para: {track}")
+                    logger.debug(f"[*] Letra encontrada via Genius para: {track}")
                     final_lyrics, trans_count, total_lines = await self._process_translation(song.lyrics, is_synced=False)
                     self._inject_metadata(file_path, final_lyrics)
                     if save_lrc:
                         self._save_lrc_file(file_path, final_lyrics)
                     return (True, trans_count, total_lines, 200)
 
-            logger.warning(f"[!] Nenhuma letra encontrada para: {track}")
+            logger.debug(f"[!] Nenhuma letra encontrada para: {track}")
 
         except Exception as e:
-            # Pegando erros internos reais para não deixar o texto da string vazio.
             error_msg = str(e) if str(e) else type(e).__name__
             print(f"\033[91m[!] Erro interno ao processar letras: {error_msg}\033[0m")
             logger.error(f"[!] Erro interno no fetch_and_inject: {error_msg}", exc_info=True)
@@ -327,7 +331,7 @@ class LyricsEngine:
             lrc_path = f"{base_name}.lrc"
             with open(lrc_path, 'w', encoding='utf-8') as f:
                 f.write(synced_lyrics)
-            logger.info(f"[*] Arquivo .lrc salvo: {lrc_path}")
+            logger.debug(f"[*] Arquivo .lrc salvo: {lrc_path}")
         except Exception as e:
             logger.error(f"[!] Erro ao salvar arquivo .lrc: {e}")
 
@@ -341,7 +345,7 @@ class LyricsEngine:
                 audio = FLAC(file_path)
                 audio['LYRICS'] = lyrics
                 audio.save()
-                logger.info(f"[*] Metadados FLAC injetados: {file_path}")
+                logger.debug(f"[*] Metadados FLAC injetados: {file_path}")
             elif ext == '.mp3':
                 try:
                     audio = ID3(file_path)
@@ -349,6 +353,6 @@ class LyricsEngine:
                     audio = ID3()
                 audio.add(USLT(encoding=3, lang='eng', desc='', text=lyrics))
                 audio.save(file_path)
-                logger.info(f"[*] Metadados ID3 injetados: {file_path}")
+                logger.debug(f"[*] Metadados ID3 injetados: {file_path}")
         except Exception as e:
             logger.error(f"[!] Erro ao injetar metadados de lyrics: {e}")
