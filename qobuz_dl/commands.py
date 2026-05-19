@@ -84,6 +84,22 @@ def lyrics_args(subparsers):
     )
     return lyrics
 
+def fix_lyrics_args(subparsers):
+    fix_lyrics = subparsers.add_parser(
+        "fix-lyrics",
+        aliases=["fl"],
+        description="Launch an interactive explorer to manually select and fix desynchronized or wrong lyrics for a specific file in a directory.",
+        help="interactive lyrics fixer mode",
+    )
+    fix_lyrics.add_argument(
+        "DIR",
+        metavar="DIRECTORY",
+        nargs="?",
+        default=".",
+        help="The local directory containing the music files (default: current directory)",
+    )
+    return fix_lyrics
+
 def sync_playlist_args(subparsers):
     sync_pl = subparsers.add_parser(
         "sync-playlist",
@@ -424,6 +440,7 @@ def qobuz_dl_args(
     
     # Inizializza il nuovo comando
     lyrics_cmd = lyrics_args(subparsers)
+    fix_lyrics_cmd = fix_lyrics_args(subparsers)
     sync_pl_cmd = sync_playlist_args(subparsers)
     
     [
