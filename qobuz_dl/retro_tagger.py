@@ -330,9 +330,8 @@ async def interactive_fix_lyrics(
             continue
 
         if title and artist:
-            minutes = int(duration // 60)
-            seconds = int(duration % 60)
-            display_str = f"[{minutes:02d}:{seconds:02d}] {artist} - {title} ({path.name})"
+            # Sort as Title - Artist.flac
+            display_str = f"{title} - {artist}{path.suffix}"
             file_options.append(display_str)
             file_mapping[display_str] = {
                 "path": path_str,
@@ -347,21 +346,30 @@ async def interactive_fix_lyrics(
         print(f"{RED}[!] Failed to extract metadata from files in '{directory_path}'.{OFF}")
         return
 
-    file_options.append(">> Exit")
+    file_options.sort() # Ensure pure alphabetical order
 
-    while True:
-        title_text = "Select a track to fix its lyrics:"
-        selected_option, index = pick(file_options, title_text, indicator="=>")
+    title_text = "Select one or more tracks to fix their lyrics (Press SPACE to select, ENTER to continue):"
 
-        if selected_option == ">> Exit":
-            break
+    # Enable multiselect
+    selected = pick(file_options, title_text, multiselect=True, min_selection_count=1)
 
+    if not selected:
+        return
+
+    print(f"\n{CYAN}[*] You selected {len(selected)} tracks to fix.{OFF}")
+
+    for item in selected:
+        # pick with multiselect returns a list of tuples: (option_string, index)
+        selected_option = item[0]
         track_info = file_mapping[selected_option]
         await _handle_manual_lyric_search(track_info, engine)
+
+    print(f"\n{GREEN}[+] Batch fix completed!{OFF}")
 
 async def _handle_manual_lyric_search(track_info, engine):
     from pick import pick
     import aiohttp
+    import asyncio
 
     search_artist = track_info["album_artist"] if track_info["album_artist"] and track_info["album_artist"].lower() != "various artists" else track_info["artist"]
     track_title = track_info["title"]
@@ -391,7 +399,7 @@ async def _handle_manual_lyric_search(track_info, engine):
 
     if not results:
         print(f"{YELLOW}[!] No alternative lyrics found for this track on LRCLIB.{OFF}")
-        time.sleep(2)
+        await asyncio.sleep(2)
         return
 
     # Format options for pick
@@ -441,4 +449,4 @@ async def _handle_manual_lyric_search(track_info, engine):
     else:
         print(f"{RED}[!] Failed to inject lyrics.{OFF}")
 
-    time.sleep(2)
+    await asyncio.sleep(2)
