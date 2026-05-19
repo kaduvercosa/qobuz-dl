@@ -193,7 +193,7 @@ def sync_playlist(qobuz_dl, url, folder, auto_confirm=False):
     for tid in to_download_ids:
         playlist_idx = position_map.get(tid, 0)
         try:
-            qobuz_dl.download_from_id(
+            await qobuz_dl.download_from_id(
                 tid,
                 album=False,
                 alt_path=target_folder,
