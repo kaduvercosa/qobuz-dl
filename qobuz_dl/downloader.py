@@ -698,7 +698,7 @@ class Download:
             "track_title_base": track_metadata.get("title"),
             "version": track_metadata.get("version"),
             "year": track_metadata.get("release_date_original", "").split("-")[0],
-            "disc_number": f'{track_metadata.get("media_number"):02}',
+            "disc_number": f'{track_metadata.get("media_number") or 1:02}',
             "release_date": track_metadata.get("release_date_original"),
             "ExplicitFlag": "[E]" if track_metadata.get("parental_warning") else "",
             "explicit": "[E]" if track_metadata.get("parental_warning") else "",
@@ -817,7 +817,7 @@ class Download:
 
             return ("FLAC", quality_met, new_track_dict["bit_depth"], new_track_dict["sampling_rate"])
             
-        except (KeyError, requests.exceptions.HTTPError, Exception):
+        except (KeyError, Exception):
             # In caso di errore (geoblocco, traccia non disponibile, ecc.), restituiamo i valori None
             # in modo che il downloader "salti" la traccia senza mandare in crash l'intero loop.
             return ("Unknown", quality_met, None, None)
@@ -1065,7 +1065,7 @@ async def tqdm_download(url_or_callable, fname, track_name, is_parallel=False):
                 await safe_print_async(f"{G}  L Completed: {track_name}{O}")
                 return 
 
-        except asyncio.exceptions.CancelledError:
+        except asyncio.CancelledError:
             return
         except asyncio.TimeoutError:
             if attempt < max_retries - 1:
