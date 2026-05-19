@@ -97,11 +97,6 @@ class LyricsEngine:
 
     async def _process_translation(self, lyrics, is_synced=True):
         """Traduz a letra usando DeepL mantendo o idioma original e duplicando os timestamps."""
-        # BUG FIX: Retornar original se tradução desabilitada ou sem API key
-        if not self.translate or not self.deepl_api_key or not self.deepl_translator:
-            logger.info("[*] Tradução desabilitada ou DeepL não configurado, retornando lyrics original")
-            return lyrics
-
         lines = lyrics.split('\n')
         texts_to_translate = []
         line_mapping = []
@@ -131,9 +126,16 @@ class LyricsEngine:
                 else:
                     line_mapping.append(('empty', None, ''))
 
+        total_lines = len(texts_to_translate)
+
+        # Retornar original se tradução desabilitada ou sem API key
+        if not self.translate or not self.deepl_api_key or not self.deepl_translator:
+            logger.info("[*] Tradução desabilitada ou DeepL não configurado, retornando lyrics original")
+            return lyrics, 0, total_lines
+
         if not texts_to_translate:
             logger.debug("[*] Sem linhas para traduzir, retornando original")
-            return lyrics
+            return lyrics, 0, total_lines
 
         # 1. DETECÇÃO GLOBAL DE IDIOMA (economia de quota)
         full_text = " ".join(texts_to_translate)
@@ -143,7 +145,7 @@ class LyricsEngine:
                 target_lang_code = self.target_lang.split('-')[0].lower()
                 if dominant_lang.lower() == target_lang_code:
                     logger.info(f"[*] Texto já está em {self.target_lang}, pulando tradução")
-                    return lyrics
+                    return lyrics, 0, total_lines
         except Exception as e:
             logger.warning(f"[*] Erro na detecção de idioma: {e}, continuando com tradução")
 
@@ -172,7 +174,7 @@ class LyricsEngine:
 
         if not lines_to_translate:
             logger.info("[*] Nenhuma linha para traduzir após filtro de idioma")
-            return lyrics
+            return lyrics, 0, total_lines
 
         # 3. TRADUÇÃO EM LOTE COM DEEPL
         translated_texts = [""] * len(texts_to_translate)
@@ -199,7 +201,7 @@ class LyricsEngine:
         except Exception as e:
             logger.error(f"[!] Erro fatal na tradução DeepL: {e}")
             print(f"\n\033[91m[!] Erro ao traduzir com DeepL: {e}\033[0m")
-            return lyrics
+            return lyrics, 0, total_lines
 
         # 4. REMONTAR AS LINHAS COM TRADUÇÃO
         result_lines = []
@@ -234,20 +236,20 @@ class LyricsEngine:
                 result_lines.append(txt)
 
         logger.info(f"[*] Tradução processada: {translation_count} linhas com tradução válida")
-        return '\n'.join(result_lines)
+        return '\n'.join(result_lines), translation_count, total_lines
 
     async def fetch_and_inject(self, file_path, album_artist, track, album, save_lrc=True, overwrite=False):
         """
         Busca e injeta as letras em arquivo de áudio.
         
         Retorna:
-            (bool, bool): Tupla contendo (sucesso, tem_traducao)
+            (bool, int, int, str|int): (sucesso, linhas_traduzidas, total_linhas, status_code)
         """
-        # BUG FIX: Sempre verifica .lrc como parte da detecção
         if not overwrite and self._has_lyrics(file_path, check_lrc=True):
             logger.debug(f"[*] Arquivo já possui letras: {file_path}")
-            return (False, False)
+            return (True, 0, 0, "Local")
 
+        status = None
         try:
             lrclib_url = "https://lrclib.net/api/get"
             headers = {"User-Agent": "qobuz-dl-master/2.5 (https://github.com/kaduvercosa/qobuz-dl)"}
@@ -273,36 +275,30 @@ class LyricsEngine:
                 
                 if synced_lyrics:
                     logger.info(f"[*] Letras sincronizadas encontradas para: {track}")
-                    final_lyrics = await self._process_translation(synced_lyrics, is_synced=True)
+                    final_lyrics, trans_count, total_lines = await self._process_translation(synced_lyrics, is_synced=True)
                     self._inject_metadata(file_path, final_lyrics)
                     if save_lrc:
                         self._save_lrc_file(file_path, final_lyrics)
-                    has_translation = (self.translation_symbol in final_lyrics)
-                    logger.info(f"[*] Injeção concluída. Tem tradução: {has_translation}")
-                    return (True, has_translation)
+                    return (True, trans_count, total_lines, status)
                     
                 elif plain_lyrics:
                     logger.info(f"[*] Letras simples encontradas para: {track}")
-                    final_lyrics = await self._process_translation(plain_lyrics, is_synced=False)
+                    final_lyrics, trans_count, total_lines = await self._process_translation(plain_lyrics, is_synced=False)
                     self._inject_metadata(file_path, final_lyrics)
                     if save_lrc:
                         self._save_lrc_file(file_path, final_lyrics)
-                    has_translation = (self.translation_symbol in final_lyrics)
-                    logger.info(f"[*] Injeção concluída. Tem tradução: {has_translation}")
-                    return (True, has_translation)
+                    return (True, trans_count, total_lines, status)
 
             if self.genius:
                 logger.info(f"[*] Tentando Genius API para: {track}")
                 song = await asyncio.to_thread(self.genius.search_song, track, album_artist)
                 if song and song.lyrics:
                     logger.info(f"[*] Letra encontrada via Genius para: {track}")
-                    final_lyrics = await self._process_translation(song.lyrics, is_synced=False)
+                    final_lyrics, trans_count, total_lines = await self._process_translation(song.lyrics, is_synced=False)
                     self._inject_metadata(file_path, final_lyrics)
                     if save_lrc:
                         self._save_lrc_file(file_path, final_lyrics)
-                    has_translation = (self.translation_symbol in final_lyrics)
-                    logger.info(f"[*] Injeção concluída. Tem tradução: {has_translation}")
-                    return (True, has_translation)
+                    return (True, trans_count, total_lines, 200)
 
             logger.warning(f"[!] Nenhuma letra encontrada para: {track}")
 
@@ -310,8 +306,7 @@ class LyricsEngine:
             print(f"\033[91m[!] Erro fatal no fetch_and_inject: {e}\033[0m")
             logger.error(f"[!] Erro fatal no fetch_and_inject: {e}", exc_info=True)
 
-        # BUG FIX: Sempre retorna tupla consistente (bool, bool)
-        return (False, False)
+        return (False, 0, 0, status if status else "Não")
 
     def _save_lrc_file(self, audio_file_path, synced_lyrics):
         """Salva as letras em arquivo .lrc com tratamento de erro."""
