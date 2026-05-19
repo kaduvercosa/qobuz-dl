@@ -161,7 +161,7 @@ class Client:
             master=bytes.fromhex(self.sec),
             key_len=16,
             salt=self._b64url_decode(salt),
-            hasmod=SHA256,
+            hashmod=SHA256,
             context=self._b64url_decode(info)
         )
 
