@@ -256,18 +256,27 @@ class LyricsEngine:
             
             params = {"artist_name": album_artist, "track_name": track, "album_name": album}
             
-            async with aiohttp.ClientSession() as session:
-                async with session.get(lrclib_url, params=params, headers=headers, timeout=12) as response:
-                    status = response.status
-                    if status == 200:
-                        data = await response.json()
-
-                if status != 200:
-                    params = {"artist_name": album_artist, "track_name": track}
+            # --- PROTEÇÃO CONTRA TIMEOUT E ERROS DE REDE DA API LRCLIB ---
+            try:
+                async with aiohttp.ClientSession() as session:
                     async with session.get(lrclib_url, params=params, headers=headers, timeout=12) as response:
                         status = response.status
                         if status == 200:
                             data = await response.json()
+
+                    if status != 200:
+                        params = {"artist_name": album_artist, "track_name": track}
+                        async with session.get(lrclib_url, params=params, headers=headers, timeout=12) as response:
+                            status = response.status
+                            if status == 200:
+                                data = await response.json()
+            except asyncio.TimeoutError:
+                logger.debug(f"[*] LRCLIB demorou muito a responder (Timeout) para: {track}")
+                status = "Timeout"
+            except aiohttp.ClientError as e:
+                logger.debug(f"[*] Erro de rede ao contatar LRCLIB para {track}: {e}")
+                status = "Erro_Rede"
+            # -------------------------------------------------------------
 
             if status == 200:
                 synced_lyrics = data.get("syncedLyrics")
@@ -289,6 +298,7 @@ class LyricsEngine:
                         self._save_lrc_file(file_path, final_lyrics)
                     return (True, trans_count, total_lines, status)
 
+            # --- FALLBACK DO GENIUS ---
             if self.genius:
                 logger.info(f"[*] Tentando Genius API para: {track}")
                 song = await asyncio.to_thread(self.genius.search_song, track, album_artist)
@@ -303,8 +313,10 @@ class LyricsEngine:
             logger.warning(f"[!] Nenhuma letra encontrada para: {track}")
 
         except Exception as e:
-            print(f"\033[91m[!] Erro fatal no fetch_and_inject: {e}\033[0m")
-            logger.error(f"[!] Erro fatal no fetch_and_inject: {e}", exc_info=True)
+            # Pegando erros internos reais para não deixar o texto da string vazio.
+            error_msg = str(e) if str(e) else type(e).__name__
+            print(f"\033[91m[!] Erro interno ao processar letras: {error_msg}\033[0m")
+            logger.error(f"[!] Erro interno no fetch_and_inject: {error_msg}", exc_info=True)
 
         return (False, 0, 0, status if status else "Não")
 
