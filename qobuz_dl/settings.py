@@ -10,7 +10,7 @@ class QobuzDLSettings:
         self.default_limit = kwargs.get('default_limit', 20)
         self.no_m3u = kwargs.get('no_m3u', False)
         self.albums_only = kwargs.get('albums_only', False)
-        self.no_fallback = not kwargs.get('no_fallback', False)
+        self.no_fallback = kwargs.get('no_fallback', False)
         self.no_database = kwargs.get('no_database', False)
         self.app_id = kwargs.get('app_id')
         self.secrets = kwargs.get('secrets')
