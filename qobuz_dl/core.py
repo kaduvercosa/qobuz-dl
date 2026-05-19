@@ -561,10 +561,9 @@ class QobuzDL:
                     
                     year = str(i.get("release_date_original") or i.get("release_date") or "    ")[:4]
                     
+                    t_count = i.get("tracks_count", 0)
+                    duration = i.get("duration", 0)
                     raw_type = i.get("release_type") or i.get("product_type")
-                    if not raw_type:
-                        t_count = i.get("tracks_count", 0)
-                        duration = i.get("duration", 0) 
                     
                     if raw_type and raw_type.lower() in ["single", "ep"] and (t_count >= 7 or duration >= 1740):
                         raw_type = "Album"
