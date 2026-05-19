@@ -743,7 +743,7 @@ class QobuzDL:
         logger.info(f"{CYAN}[*] Last.fm URL detected! Initiating Last.fm integration...{OFF}")
         
         # Step 1: Extract textual list from Last.fm using our isolated parser
-        tracks_list = fetch_lastfm_playlist(playlist_url)
+        tracks_list = await fetch_lastfm_playlist(playlist_url)
         
         if not tracks_list:
             logger.info(f"{YELLOW}[!] Last.fm processing aborted (no tracks).{OFF}")
