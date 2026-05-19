@@ -519,8 +519,7 @@ async def amain():
                 target_dir = "\\\\?\\" + target_dir
 
         try:
-            import asyncio
-            asyncio.run(interactive_fix_lyrics(target_dir, genius_token=genius_token, deepl_api_key=deepl_api_key, target_lang=target_lang))
+            await interactive_fix_lyrics(target_dir, genius_token=genius_token, deepl_api_key=deepl_api_key, target_lang=target_lang)
         except KeyboardInterrupt:
             print("\n\n\033[91m[!] Operation manually interrupted by the user (CTRL+C).\033[0m")
         sys.exit(0)

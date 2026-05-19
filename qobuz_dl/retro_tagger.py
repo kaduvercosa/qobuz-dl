@@ -96,15 +96,21 @@ def _process_single_file(file_path_str, engine, overwrite=False, current_idx=0, 
         # =========================
 
         # Instead of printing inside the thread, return the results to print sequentially
-        res_tuple = asyncio.run(engine.fetch_and_inject(
-            file_path=file_path_str,
-            album_artist=search_artist,
-            track=title,
-            album=album,
-            save_lrc=True,
-            overwrite=overwrite,
-            return_message=True
-        ))
+        # Safely create a new event loop for this thread to avoid RuntimeError
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            res_tuple = loop.run_until_complete(engine.fetch_and_inject(
+                file_path=file_path_str,
+                album_artist=search_artist,
+                track=title,
+                album=album,
+                save_lrc=True,
+                overwrite=overwrite,
+                return_message=True
+            ))
+        finally:
+            loop.close()
 
         # Unpack, robustly handling old and new returns
         success = res_tuple[0]
