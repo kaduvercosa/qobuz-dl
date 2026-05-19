@@ -649,7 +649,7 @@ class Download:
 
             search_album = _safe_get(track_metadata, "album", "title", default="")
             
-            letra_ok = await self.lyrics_engine.fetch_and_inject(
+            letra_ok, trans_count, total_lines, resp_code = await self.lyrics_engine.fetch_and_inject(
                     file_path=final_file, 
                     album_artist=search_artist, 
                     track=track_title, 
@@ -657,8 +657,22 @@ class Download:
                     save_lrc=not self.no_lrc_files
             )
                 
-            if not letra_ok:
-                await safe_print_async(f"{RED}  [!] Letra Nao Encontrada: {track_title} {OFF}")
+            if letra_ok:
+                if resp_code == "Local":
+                    await safe_print_async(f"{CYAN}[*] Letra Já Existente (Local): {track_no}. {track_title} - {search_artist}{OFF}")
+                else:
+                    if total_lines > 0 and trans_count > 0:
+                        trans_type = "Total" if trans_count >= total_lines else "Parcial"
+                        trad_str = f"{trans_count}/{total_lines} - ({trans_type})"
+                    elif total_lines > 0:
+                        trad_str = "Não"
+                    else:
+                        trad_str = "Não"
+                    
+                    await safe_print_async(f"{CYAN}[*] Letra Encontrada: {track_no}. {track_title} - {search_artist} | Tradução: {trad_str} | Response_Code: {resp_code}{OFF}")
+            else:
+                resp_str = resp_code if resp_code else "Não"
+                await safe_print_async(f"{RED}[ - ] Letra Não Encontrada: {track_no}. {track_title} - {search_artist} | Tradução: Não | Response_Code: {resp_str}{OFF}")
 
         delay_time = getattr(self.settings, 'delay', 0)
         if delay_time == 0 and '--delay' in sys.argv:
