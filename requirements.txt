@@ -10,3 +10,5 @@ pycryptodome
 questionary
 lyricsgenius
 langdetect
+requests
+deepl
