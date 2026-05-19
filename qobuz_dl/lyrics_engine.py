@@ -208,7 +208,9 @@ class LyricsEngine:
             pass
 
         # 2. MICRO DETECÇÃO: Envia tudo, menos as linhas que o langdetect tiver CERTEZA ABSOLUTA de que já estão em PT-BR
-        # Removemos o filtro de tamanho (len) conforme solicitado, para traduzir qualquer palavra isolada.
+        # Removemos o filtro de tamanho (len) para traduzir qualquer palavra isolada (Ex: "Yes", "Hello").
+        # No entanto, adicionamos uma checagem leve para evitar que frases muito curtas gerem falsos positivos no langdetect
+        # que pulariam a tradução erroneamente.
         lines_to_deepl = []
         indices_to_translate = [] # Mapeia quais índices do 'texts_to_translate' realmente enviamos
 
@@ -217,12 +219,14 @@ class LyricsEngine:
             if not txt_clean:
                 continue
 
-            try:
-                line_lang = detect(txt_clean)
-                if line_lang.lower() == self.target_lang.split('-')[0].lower():
-                    continue # Já está no idioma alvo
-            except Exception:
-                pass
+            # Se a linha for mais longa, deixamos o langdetect verificar se devemos pular (já está no idioma)
+            if len(txt_clean.split()) >= 3:
+                try:
+                    line_lang = detect(txt_clean)
+                    if line_lang.lower() == self.target_lang.split('-')[0].lower():
+                        continue # Já está no idioma alvo
+                except Exception:
+                    pass
 
             lines_to_deepl.append(txt_clean)
             indices_to_translate.append(i)
