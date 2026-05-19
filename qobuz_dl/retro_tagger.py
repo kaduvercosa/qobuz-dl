@@ -347,19 +347,18 @@ async def interactive_fix_lyrics(
         return
 
     file_options.sort() # Ensure pure alphabetical order
-    file_options.append(">> Exit") # Provide a way to exit the loop
 
     while True:
-        title_text = "Select one or more tracks to fix their lyrics (Press SPACE to select, ENTER to continue):"
+        title_text = "Select one or more tracks to fix their lyrics\n(Press SPACE to select, ENTER to continue, or CTRL+C to Exit):"
 
         # Enable multiselect
-        selected = pick(file_options, title_text, multiselect=True, min_selection_count=1)
-
-        if not selected:
+        try:
+            selected = pick(file_options, title_text, multiselect=True, min_selection_count=1)
+        except KeyboardInterrupt:
+            # Captures CTRL+C to act as the Exit/Back button cleanly
             break
 
-        # Check if user selected the "Exit" option
-        if any(item[0] == ">> Exit" for item in selected):
+        if not selected:
             break
 
         print(f"\n{CYAN}[*] You selected {len(selected)} tracks to fix.{OFF}")
