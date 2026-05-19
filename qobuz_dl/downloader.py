@@ -669,7 +669,7 @@ class Download:
                     else:
                         trad_str = "Não"
                     
-                    await safe_print_async(f"{CYAN}[*] Letra Encontrada: {track_no}. {track_title} - {search_artist} | Tradução: {trad_str} | Response_Code: {resp_code}{OFF}")
+                        await safe_print_async(f"{OFF}   [*] Letra Encontrada: {track_no}. {track_title} - {search_artist} | Tradução: {trad_str} | Response_Code: {resp_code}{OFF}")
             else:
                 resp_str = resp_code if resp_code else "Não"
                 await safe_print_async(f"{RED}[ - ] Letra Não Encontrada: {track_no}. {track_title} - {search_artist} | Tradução: Não | Response_Code: {resp_str}{OFF}")
