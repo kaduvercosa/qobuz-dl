@@ -40,7 +40,6 @@ class Client:
         logger.info(f"{YELLOW}Logging...{OFF}")
         self.secrets = secrets
         self.id = str(app_id)
-        self.secrets = secrets
         self.force_english = force_english
         
         if Bundle:
