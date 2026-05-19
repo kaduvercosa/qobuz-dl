@@ -519,13 +519,13 @@ class Download:
         legacy_flag = getattr(self.settings, 'legacy_charmap', False) if hasattr(self, 'settings') else False
         
         if getattr(self, 'is_playlist', False):
-            # Forza un nome file pulito senza numero traccia per le playlist
+            # Forza un nome file pulito sem numero traccia per le playlist
             clean_playlist_format = "{artist} - {track_title}"
             formatted_path = sanitize_filename(clean_filename(clean_playlist_format.format(**filename_attr), legacy_charmap=legacy_flag), replacement_text="_")
         elif multiple and self.settings.multiple_disc_one_dir:
             formatted_path = sanitize_filename(clean_filename(self.settings.multiple_disc_track_format.format(**filename_attr), legacy_charmap=legacy_flag), replacement_text="_")
         else:
-            # FIX MULTI-DISC PATHING: Includiamo la cartella CD nel percorso finale se ci sono più dischi
+            # FIX MULTI-DISC PATHING: Includemos a cartela CD no percurso final se houver vários discos
             base_formatted = sanitize_filename(clean_filename(self.track_format.format(**filename_attr), legacy_charmap=legacy_flag), replacement_text="_")
             total_discs = album_or_track_metadata.get('media_count', 1)
             if multiple and total_discs > 1:
@@ -669,10 +669,11 @@ class Download:
                     else:
                         trad_str = "Não"
                     
-                        await safe_print_async(f"{OFF}   [*] Letra Encontrada: {track_no}. {track_title} - {search_artist} | Tradução: {trad_str} | Response_Code: {resp_code}{OFF}")
+                    # BUG FIX: A indentação desta linha foi corrigida! Agora é impressa corretamente.
+                    await safe_print_async(f"{OFF}[*] Letra Encontrada: {track_no}. {track_title} - {search_artist} | Tradução: {trad_str} | Response_Code: {resp_code}{OFF}")
             else:
                 resp_str = resp_code if resp_code else "Não"
-                await safe_print_async(f"{RED}   [-] Letra Não Encontrada: {track_no}. {track_title} - {search_artist} | Tradução: Não | Response_Code: {resp_str}{OFF}")
+                await safe_print_async(f"{RED}[-] Letra Não Encontrada: {track_no}. {track_title} - {search_artist} | Tradução: Não | Response_Code: {resp_str}{OFF}")
 
         delay_time = getattr(self.settings, 'delay', 0)
         if delay_time == 0 and '--delay' in sys.argv:
@@ -808,7 +809,7 @@ class Download:
         # FIX: Applica la logica corretta a seconda se è una traccia singola o un album
         track_dict = item_dict if is_track_id else item_dict["tracks"]["items"][0]
         
-        # INIZIALIZZAZIONE MANCANTE: Di default la qualità è rispettata!
+        # INIZIALIZZAZIONE MANCANTE: Di default la qualidade é respeitada!
         quality_met = True
         
         try:
@@ -1181,7 +1182,7 @@ async def tqdm_download_segments(track_url_dict, fname, track_name, is_parallel=
 
     if is_parallel:
         size_mb = total_size / (1024 * 1024)
-        await safe_print_async(f"{C}[+] In progress: {track_name} [{size_mb:.1f} MB]{O}")
+        await safe_print_async(f"{C}[+] Em Andamento: {track_name} [{size_mb:.1f} MB]{O}")
         tqdm_desc, b_format = "", ""
     else:
         await safe_print_async(f"{C}[+] In progress: {track_name}{O}")
