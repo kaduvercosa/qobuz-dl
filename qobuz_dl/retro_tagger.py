@@ -539,13 +539,33 @@ async def _handle_manual_lyric_search(track_info, engine):
     # Proceed to inject manually
     print(f"\n{GREEN}[+] Downloading and injecting chosen lyrics...{OFF}")
 
-    success = await engine.inject_manual_lyrics(
+    result = await engine.inject_manual_lyrics(
         file_path=track_info["path"],
         raw_lyrics=chosen_lyric_data.get("syncedLyrics") or chosen_lyric_data.get("plainLyrics"),
         is_synced=bool(chosen_lyric_data.get("syncedLyrics"))
     )
 
+    # inject_manual_lyrics agora retorna (success, trans_count, total_lines)
+    # para que possamos exibir o mesmo log que aparece nos downloads e no overwrite.
+    if isinstance(result, tuple):
+        success, trans_count, total_lines = result
+    else:
+        success, trans_count, total_lines = result, 0, 0
+
     if success:
+        # Monta o mesmo "Letra Encontrada" do modo normal / overwrite
+        provider = chosen_lyric_data.get("provider", "Unknown")
+        if total_lines > 0 and trans_count > 0:
+            trans_type = "Total" if trans_count >= total_lines else "Parcial"
+            trad_str = f"{trans_count}/{total_lines} - ({trans_type})"
+        elif total_lines > 0:
+            trad_str = "Não"
+        else:
+            trad_str = "Não"
+
+        C = "\033[96m"
+        O = "\033[0m"
+        print(f"{O}  [*] Letra Encontrada: {track_title} - {search_artist} | Tradução: {trad_str} | Response_Code: {provider}{O}")
         print(f"{GREEN}[+] Lyrics successfully replaced!{OFF}")
     else:
         print(f"{RED}[!] Failed to inject lyrics.{OFF}")
