@@ -126,7 +126,7 @@ async def _process_single_file(semaphore, file_path_str, engine, overwrite=False
                         trad_str = "Não"
                     else:
                         trad_str = "Não"
-                    messages.append(f"{G}  [*] Letra Encontrada: {title} - {search_artist} | Tradução: {trad_str} | Response_Code: {resp_code}{O}")
+                    messages.append(f"{O}  [*] Letra Encontrada: {title} - {search_artist} | Tradução: {trad_str} | Response_Code: {resp_code}{O}")
             else:
                 resp_str = resp_code if resp_code else "Não"
                 messages.append(f"{Y}  [!] Falha ao obter letra para: {title} - {search_artist} | Code: {resp_str}{O}")
