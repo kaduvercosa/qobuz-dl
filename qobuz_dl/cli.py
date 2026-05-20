@@ -519,7 +519,7 @@ async def amain():
         try:
             # Captura a flag do terminal usando getattr(retorna False se a flag não for digitada)
             overwrite_flag = getattr(arguments, 'overwrite', False)
-            inject_lyrics_retroactively(target_dir, genius_token=genius_token, deepl_api_key=deepl_api_key, overwrite=overwrite_flag, target_lang=target_lang)
+            await inject_lyrics_retroactively(target_dir, genius_token=genius_token, deepl_api_key=deepl_api_key, overwrite=overwrite_flag, target_lang=target_lang)
         except KeyboardInterrupt:
             print("\n\n\033[91m[!] Operation manually interrupted by the user (CTRL+C).\033[0m")
             print("\033[93mAlready processed files are safe. Exiting...\033[0m")
