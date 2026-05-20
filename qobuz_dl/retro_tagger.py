@@ -1,628 +1,587 @@
 import os
-import re
-import asyncio
-import aiohttp
+import time
 import logging
+from pathlib import Path
 from mutagen.flac import FLAC
-from mutagen.id3 import ID3, USLT, ID3NoHeaderError
+import mutagen.id3 as id3
+from mutagen.id3 import ID3NoHeaderError
+from threading import Lock
+import asyncio
 
-# Import lyricsgenius apenas se o usuário tiver configurado o token
-try:
-    import lyricsgenius
-except ImportError:
-    lyricsgenius = None
-
-# Import deepl para traduções automáticas (API Oficial)
-try:
-    import deepl
-    DEEPL_AVAILABLE = True
-except ImportError:
-    deepl = None
-    DEEPL_AVAILABLE = False
-
-# Import fasttext e langdetect para detecção de idioma
-try:
-    import fasttext
-    # Suppress the fasttext load warning
-    fasttext.FastText.eprint = lambda x: None
-except ImportError:
-    fasttext = None
-
-try:
-    from langdetect import detect as langdetect_detect
-except ImportError:
-    langdetect_detect = None
-
-# Configurar logging e silenciar as bibliotecas ruidosas de rede
-logging.getLogger("httpx").setLevel(logging.WARNING)
-logging.getLogger("httpcore").setLevel(logging.WARNING)
-logging.getLogger("urllib3").setLevel(logging.WARNING)
-logging.getLogger("deepl").setLevel(logging.WARNING)
+from qobuz_dl.lyrics_engine import LyricsEngine
+from qobuz_dl.color import CYAN, GREEN, YELLOW, RED, OFF
 
 logger = logging.getLogger(__name__)
 
-class LyricsEngine:
-    def __init__(self, genius_token=None, deepl_api_key=None, translate=True, target_lang='PT-BR', translation_symbol=" ¬ "):
-        self.genius_token = genius_token
-        self.genius = None
-        self.deepl_api_key = deepl_api_key
-        self.deepl_translator = None
-        self.translate = translate
-        self.target_lang = target_lang
-        self.translation_symbol = translation_symbol
-        
-        self.fasttext_model = None
-        self._init_fasttext()
+# =========================
+# THREAD-SAFE PRINT
+# =========================
 
-        # Dicionário de exclusão rápida (falsos positivos em PT-BR)
-        self.pt_false_positives = {"oh", "yeah", "ah", "baby", "na", "la", "uh", "hey"}
+print_lock = Lock()
 
-        # BUG FIX: Verificar se deepl está disponível e inicializar o translator
-        if self.translate and self.deepl_api_key:
-            if not DEEPL_AVAILABLE:
-                print("\n\033[93m[!] AVISO: O pacote 'deepl' não está instalado!")
-                print("    Traduções via DeepL serão desabilitadas.")
-                print("    Instale com: pip install deepl\033[0m\n")
-                self.translate = False
-                self.deepl_api_key = None
-            else:
-                try:
-                    self.deepl_translator = deepl.Translator(deepl_api_key)
-                    logger.debug(f"[*] DeepL Translator inicializado para idioma alvo: {target_lang}")
-                except Exception as e:
-                    logger.error(f"[!] Erro ao inicializar DeepL Translator: {e}")
-                    print(f"\n\033[91m[!] Erro ao inicializar DeepL: {e}\033[0m")
-                    self.translate = False
-                    self.deepl_api_key = None
-        
-        if self.genius_token and lyricsgenius:
-            try:
-                self.genius = lyricsgenius.Genius(self.genius_token, verbose=False, remove_section_headers=True)
-                logger.debug("[*] Genius API inicializado como fallback")
-            except Exception as e:
-                logger.error(f"[!] Erro ao inicializar Genius: {e}")
-                self.genius = None
+def safe_print(message):
+    with print_lock:
+        print(message, flush=True)
 
-    def _init_fasttext(self):
-        """Inicializa o modelo fasttext se disponível."""
-        if not fasttext:
-            return
+# =========================
+# PROCESS SINGLE FILE
+# =========================
 
-        model_path = os.path.join(os.path.dirname(__file__), "lid.176.ftz")
+async def _process_single_file(semaphore, file_path_str, engine, overwrite=False, current_idx=0, total_files=0):
+    async with semaphore:
         try:
-            if not os.path.exists(model_path):
-                import urllib.request
-                print("\n\033[96m[*] Baixando modelo Fasttext (lid.176.ftz) para detecção de idiomas (900KB)...\033[0m")
-                urllib.request.urlretrieve("https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.ftz", model_path)
+            title, artist, album_artist, album = "", "", "", ""
+            has_lyrics = False
 
-            self.fasttext_model = fasttext.load_model(model_path)
-        except Exception as e:
-            logger.debug(f"[*] Falha ao inicializar Fasttext: {e}")
+            file_path_lower = file_path_str.lower()
 
-    def _detect_lang(self, text):
-        """Retorna tuple (lang_code, confidence_score) usando fasttext ou langdetect."""
-        if self.fasttext_model:
-            try:
-                text_clean = text.replace('\n', ' ')
-                res = self.fasttext_model.predict(text_clean)
-                label = res[0][0] # ex: '__label__en'
-                score = float(res[1][0])
-                return label.replace('__label__', ''), score
-            except Exception:
-                pass
+            # Cores para a UI
+            C = "\033[96m"  # Cyan
+            G = "\033[92m"  # Green
+            Y = "\033[93m"  # Yellow
+            O = "\033[0m"   # Off/Reset
+            RED_COLOR = "\033[91m"  # Red
 
-        if langdetect_detect:
-            try:
-                return langdetect_detect(text), 0.5 # langdetect não retorna score fácil, assumimos 0.5
-            except Exception:
-                pass
-        return None, 0.0
+            # =========================
+            # FLAC
+            # =========================
+            if file_path_lower.endswith(".flac"):
+                audio = FLAC(file_path_str)
 
-    def _has_lyrics(self, file_path, check_lrc=True):
-        """Verifica se o arquivo já possui letra."""
-        if check_lrc:
-            base_name = os.path.splitext(file_path)[0]
-            if os.path.exists(f"{base_name}.lrc"):
-                return True
-        
-        ext = os.path.splitext(file_path)[1].lower()
-        try:
-            if ext == '.flac':
-                audio = FLAC(file_path)
-                if audio.get('LYRICS') or audio.get('UNSYNCEDLYRICS'):
-                    return True
-            elif ext == '.mp3':
+                # Verifica se já possui letra
+                if audio.get("LYRICS") or audio.get("UNSYNCEDLYRICS") or audio.get("LYRICS_SYNCED"):
+                    has_lyrics = True
+
+                title = audio.get("TITLE", [""])[0]
+                artist = audio.get("ARTIST", [""])[0]
+                album_artist = audio.get("ALBUMARTIST", [""])[0]
+                album = audio.get("ALBUM", [""])[0]
+
+            # =========================
+            # MP3
+            # =========================
+            elif file_path_lower.endswith(".mp3"):
                 try:
-                    audio = ID3(file_path)
-                    if any(frame.FrameID in ['USLT', 'SYLT'] for frame in audio.values()):
-                        return True
+                    audio = id3.ID3(file_path_str)
                 except ID3NoHeaderError:
-                    pass
-        except Exception:
-            pass
-        return False
+                    return current_idx, {"status": "skipped", "artist": "Unknown", "title": "Unknown", "messages": []}
 
-    def _is_valid_translation(self, original, translated):
-        """Verifica se a tradução é válida (não é idêntica ou vazia)."""
-        if not translated or not translated.strip():
-            return False
-        return original.strip().lower() != translated.strip().lower()
+                # Verifica se já possui letra
+                if audio.getall("USLT") or audio.getall("SYLT"):
+                    has_lyrics = True
 
-    async def _process_translation(self, lyrics, is_synced=True):
-        """Traduz a letra usando DeepL mantendo o idioma original e duplicando os timestamps."""
-        lines = lyrics.split('\n')
-        texts_to_translate = []
-        line_mapping = []
+                title = audio.get("TIT2").text[0] if audio.get("TIT2") else ""
+                artist = audio.get("TPE1").text[0] if audio.get("TPE1") else ""
+                album_artist = audio.get("TPE2").text[0] if audio.get("TPE2") else ""
+                album = audio.get("TALB").text[0] if audio.get("TALB") else ""
 
-        for line in lines:
-            if not line.strip():
-                line_mapping.append(('empty', None, ''))
-                continue
+            # =========================
+            # VALIDATION & LOGIC
+            # =========================
 
-            if is_synced:
-                match = re.match(r'^((?:\[\d+:\d+(?:\.\d+)?\]\s*)+)(.*)', line)
-                if match:
-                    ts = match.group(1)
-                    txt = match.group(2).strip()
-                    if txt:
-                        texts_to_translate.append(txt)
-                        line_mapping.append(('synced', ts, txt))
-                    else:
-                        line_mapping.append(('empty_synced', ts, ''))
-                else:
-                    line_mapping.append(('raw', None, line))
-            else:
-                txt = line.strip()
-                if txt:
-                    texts_to_translate.append(txt)
-                    line_mapping.append(('text', None, txt))
-                else:
-                    line_mapping.append(('empty', None, ''))
+            if not title or not artist:
+                return current_idx, {"status": "skipped", "artist": artist or "Unknown", "title": title or "Unknown", "messages": []}
 
-        total_lines = len(texts_to_translate)
+            # Prioriza o Álbum Artista para não quebrar na busca (exceto se for Various Artists)
+            search_artist = album_artist if album_artist and album_artist.lower() != "various artists" else artist
 
-        # Retornar original se tradução desabilitada ou sem API key
-        if not self.translate or not self.deepl_api_key or not self.deepl_translator:
-            logger.debug("[*] Tradução desabilitada ou DeepL não configurado, retornando lyrics original")
-            return lyrics, 0, total_lines
-
-        if not texts_to_translate:
-            logger.debug("[*] Sem linhas para traduzir, retornando original")
-            return lyrics, 0, total_lines
-
-        # 1. DETECÇÃO GLOBAL DE IDIOMA (economia de quota)
-        full_text = " ".join(texts_to_translate)
-        target_lang_code = self.target_lang.split('-')[0].lower()
-
-        dominant_lang_code, _ = self._detect_lang(full_text)
-        if dominant_lang_code and dominant_lang_code.lower() == target_lang_code:
-            logger.debug(f"[*] Texto já está em {self.target_lang}, pulando tradução")
-            return lyrics, 0, total_lines
-
-        # Se o idioma global não for o alvo, e for muito diferente (ex: Espanhol), seremos rígidos para pular linha
-        is_foreign_song = dominant_lang_code and dominant_lang_code.lower() not in (target_lang_code, "en")
-
-        # 2. PREPARAR LINHAS PARA TRADUÇÃO (Restaurado filtro linha-por-linha via Fasttext)
-        lines_to_translate = []
-        indices_to_translate = []
-        
-        for i, txt in enumerate(texts_to_translate):
-            txt_clean = txt.strip()
-            if not txt_clean:
-                continue
-
-            # Filtro re-adicionado usando Fasttext e dicionário de falsos positivos
-            words = txt_clean.lower().split()
-            if len(words) >= 1:
-                # Se for apenas palavras irrelevantes/ruídos, evite pular achando que é PT-BR
-                is_false_positive = all(w in self.pt_false_positives for w in words)
-
-                if not is_false_positive:
-                    line_lang, score = self._detect_lang(txt_clean)
-                    if line_lang and line_lang.lower() == target_lang_code:
-                        # Se a música inteira é estrangeira (ex: Espanhol), precisamos de quase 100% de certeza
-                        # que esta linha específica é Português para pulá-la e não mandar pro DeepL.
-                        threshold = 0.98 if is_foreign_song else 0.85
-                        if score >= threshold:
-                            continue  # É português com alta confiança, não precisa traduzir
-
-            lines_to_translate.append(txt_clean)
-            indices_to_translate.append(i)
-
-        if not lines_to_translate:
-            logger.debug("[*] Nenhuma linha para traduzir após filtros")
-            return lyrics, 0, total_lines
-
-        # 3. TRADUÇÃO EM LOTE COM DEEPL
-        translated_texts = [""] * len(texts_to_translate)
-        try:
-            logger.debug(f"[*] Iniciando tradução DeepL para {len(lines_to_translate)} linhas (idioma alvo: {self.target_lang})")
-            
-            # Executa tradução de forma assíncrona
-            translated_results = await asyncio.to_thread(
-                self.deepl_translator.translate_text,
-                lines_to_translate,
-                target_lang=self.target_lang
-            )
-
-            # Se retornar um único resultado, converte para lista
-            if not isinstance(translated_results, list):
-                translated_results = [translated_results]
-
-            # Mapeia os resultados de volta ao índice original
-            for original_idx, translated_text in zip(indices_to_translate, translated_results):
-                translated_texts[original_idx] = translated_text.text if hasattr(translated_text, 'text') else str(translated_text)
-
-            logger.debug(f"[*] Tradução concluída: {len([t for t in translated_texts if t])} linhas traduzidas")
-
-        except Exception as e:
-            logger.error(f"[!] Erro fatal na tradução DeepL: {e}")
-            print(f"\n\033[91m[!] Erro ao traduzir com DeepL: {e}\033[0m")
-            return lyrics, 0, total_lines
-
-        # 4. REMONTAR AS LINHAS COM TRADUÇÃO
-        result_lines = []
-        trans_idx = 0
-        translation_count = 0
-
-        for item in line_mapping:
-            l_type, ts, txt = item
-            
-            if l_type == 'synced':
-                result_lines.append(f"{ts}{txt}")
-                if trans_idx < len(translated_texts):
-                    traducao = translated_texts[trans_idx]
-                    if self._is_valid_translation(txt, traducao):
-                        result_lines.append(f"{ts}{self.translation_symbol}{traducao}")
-                        translation_count += 1
-                trans_idx += 1
-                
-            elif l_type == 'text':
-                result_lines.append(txt)
-                if trans_idx < len(translated_texts):
-                    traducao = translated_texts[trans_idx]
-                    if self._is_valid_translation(txt, traducao):
-                        result_lines.append(f"{self.translation_symbol}{traducao}")
-                        translation_count += 1
-                trans_idx += 1
-                
-            elif l_type == 'empty_synced':
-                result_lines.append(f"{ts}")
-                
-            elif l_type in ('raw', 'empty'):
-                result_lines.append(txt)
-
-        logger.debug(f"[*] Tradução processada: {translation_count} linhas com tradução válida")
-        return '\n'.join(result_lines), translation_count, total_lines
-
-    async def _fetch_lyrics_plus(self, artist, title):
-        """Busca letras no LyricsPlus (Apple Music)."""
-        import urllib.parse
-        try:
-            query = urllib.parse.quote(f"{title} {artist}")
-            search_url = f"https://lyricsplus.binimum.org/api/search?q={query}"
-
-            async with aiohttp.ClientSession() as session:
-                async with session.get(search_url, timeout=35) as resp:
-                    data = await resp.json(content_type=None)
-                    items = data.get("data", [])
-                    if not items:
-                        return None
-                    song_id = items[0]["id"]
-
-                lyric_url = f"https://lyricsplus.binimum.org/api/lyrics?id={song_id}"
-                async with session.get(lyric_url, timeout=35) as resp:
-                    lyric_data = await resp.json(content_type=None)
-                    lrc = lyric_data.get("data", {}).get("syncedLyrics", "")
-                    if not lrc:
-                        lrc = lyric_data.get("data", {}).get("plainLyrics", "")
-                    return lrc if lrc else None
-        except Exception as e:
-            logger.debug(f"[*] Erro ao buscar no LyricsPlus: {e}")
-        return None
-
-    async def _fetch_musixmatch_lyrics(self, artist, title):
-        """Busca letras sincronizadas no Musixmatch usando endpoint mobile."""
-        import urllib.parse
-
-        headers = {
-            "Host": "apic-appmobile.musixmatch.com",
-            "authority": "apic-appmobile.musixmatch.com",
-            "X-Cookie": "x-mxm-token-guid=",
-            "x-mxm-app-version": "10.1.1",
-            "X-User-Agent": "Musixmatch/2025120901 CFNetwork/3860.300.31 Darwin/25.2.0",
-            "Accept-Language": "en-US,en;q=0.9",
-            "Accept": "application/json",
-        }
-
-        try:
-            async with aiohttp.ClientSession(headers=headers) as session:
-                url = "https://apic-appmobile.musixmatch.com/ws/1.1/token.get?app_id=mac-ios-v2.0"
-                async with session.get(url, timeout=35) as resp:
-                    data = await resp.json(content_type=None)
-                    if data.get("message", {}).get("header", {}).get("status_code") == 200:
-                        token = data["message"]["body"]["user_token"]
-                    else:
-                        token = "21051986b9886beabe1ce01c3ce94c96319411f8f2c12267636fa7"
-
-                params = {
-                    "q_artist": artist,
-                    "q_track": title,
-                    "format": "json",
-                    "namespace": "lyrics_richsynched",
-                    "usertoken": token,
-                    "app_id": "mac-ios-v2.0"
+            # Se não for overwrite e já tiver letra, avisa e pula
+            if not overwrite and has_lyrics:
+                return current_idx, {
+                    "status": "skipped",
+                    "artist": search_artist,
+                    "title": title,
+                    "messages": [f"{Y}  [*] Ignorado (Já Marcado): {title} - {search_artist}{O}"]
                 }
 
-                url = "https://apic-appmobile.musixmatch.com/ws/1.1/macro.subtitles.get?" + urllib.parse.urlencode(params)
-                async with session.get(url, timeout=35) as resp:
-                    data = await resp.json(content_type=None)
-                    if data.get("message", {}).get("header", {}).get("status_code") == 200:
-                        macro_calls = data["message"]["body"]["macro_calls"]
-                        subtitles = macro_calls.get("track.subtitles.get", {}).get("message", {}).get("body", {})
-                        if subtitles and "subtitle_list" in subtitles and len(subtitles["subtitle_list"]) > 0:
-                            return subtitles["subtitle_list"][0]["subtitle"]["subtitle_body"]
+            # =========================
+            # SEARCH & INJECT
+            # =========================
 
-                        lyrics = macro_calls.get("track.lyrics.get", {}).get("message", {}).get("body", {})
-                        if lyrics and "lyrics" in lyrics:
-                            return lyrics["lyrics"]["lyrics_body"]
-        except Exception as e:
-            logger.debug(f"[*] Erro ao buscar no Musixmatch: {e}")
-        return None
+            # Feedback imediato: avisa que o arquivo entrou em processamento
+            # antes das requests de rede (evita silêncio que parece travamento)
+            safe_print(f"{C}  [{current_idx}/{total_files}] Buscando: {title} - {search_artist}...{O}")
+            task_start = time.monotonic()
 
-    async def _fetch_netease_lyrics(self, artist, title):
-        """Busca letras no Netease Music."""
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        }
+            res_tuple = await engine.fetch_and_inject(
+                file_path=file_path_str,
+                album_artist=search_artist,
+                track=title,
+                album=album,
+                save_lrc=True,
+                overwrite=overwrite
+            )
 
-        search_url = "https://music.163.com/api/search/get/"
-        params = {
-            "s": f"{title} {artist}",
-            "type": "1",
-            "offset": "0",
-            "limit": "5"
-        }
+            elapsed = time.monotonic() - task_start
 
-        try:
-            async with aiohttp.ClientSession(headers=headers) as session:
-                async with session.post(search_url, data=params, timeout=35) as resp:
-                    data = await resp.json(content_type=None)
-                    items = data.get("result", {}).get("songs", [])
-                    if not items:
-                        return None
-                    song_id = items[0]["id"]
+            # Unpack the return signature (success, trans_count, total_lines, status_code)
+            success = res_tuple[0]
+            trans_count = res_tuple[1] if len(res_tuple) > 1 else 0
+            total_lines = res_tuple[2] if len(res_tuple) > 2 else 0
+            resp_code = res_tuple[3] if len(res_tuple) > 3 else "Unknown"
 
-                lyric_url = f"https://music.163.com/api/song/lyric?os=pc&id={song_id}&lv=-1&kv=-1&tv=-1"
-                async with session.get(lyric_url, timeout=35) as resp:
-                    lyric_data = await resp.json(content_type=None)
-                    lrc = lyric_data.get("lrc", {}).get("lyric", "")
-                    return lrc if lrc else None
-        except Exception as e:
-            logger.debug(f"[*] Erro ao buscar no Netease: {e}")
-        return None
+            messages = []
+            if success:
+                if resp_code == "Local":
+                    messages.append(f"{C}[*] Letra Já Existente (Local): {title} - {search_artist}{O}")
+                else:
+                    if total_lines > 0 and trans_count > 0:
+                        trans_type = "Total" if trans_count >= total_lines else "Parcial"
+                        trad_str = f"{trans_count}/{total_lines} - ({trans_type})"
+                    elif total_lines > 0:
+                        trad_str = "Não"
+                    else:
+                        trad_str = "Não"
+                    messages.append(f"{O}  [*] Letra Encontrada: {title} - {search_artist} | Tradução: {trad_str} | Response_Code: {resp_code} | Tempo: {elapsed:.1f}s{O}")
+            else:
+                resp_str = resp_code if resp_code else "Não"
+                messages.append(f"{Y}  [!] Falha ao obter letra para: {title} - {search_artist} | Code: {resp_str} | Tempo: {elapsed:.1f}s{O}")
 
-    async def inject_manual_lyrics(self, file_path, raw_lyrics, is_synced=True):
-        """Injeta a letra manualmente no arquivo.
-        Retorna (success, trans_count, total_lines) para que o chamador
-        possa exibir o mesmo log de tradução que aparece nos downloads normais.
-        """
-        if not raw_lyrics:
-            return False, 0, 0
-
-        try:
-            final_lyrics, trans_count, total_lines = await self._process_translation(raw_lyrics, is_synced=is_synced)
-            self._inject_metadata(file_path, final_lyrics)
-            if is_synced:
-                self._save_lrc_file(file_path, final_lyrics)
-            return True, trans_count, total_lines
-        except Exception as e:
-            logger.error(f"[!] Erro em inject_manual_lyrics: {e}")
-            return False, 0, 0
-
-    async def fetch_and_inject(self, file_path, album_artist, track, album, save_lrc=True, overwrite=False):
-        """
-        Busca e injeta as letras em arquivo de áudio.
-        
-        Retorna:
-            (bool, int, int, str|int): (sucesso, linhas_traduzidas, total_linhas, status_code)
-        """
-        if not overwrite and self._has_lyrics(file_path, check_lrc=True):
-            logger.debug(f"[*] Arquivo já possui letras: {file_path}")
-            return (True, 0, 0, "Local")
-
-        status = None
-        try:
-            # 1. Tentar Musixmatch (Prioridade Máxima)
-            logger.debug(f"[*] Tentando Musixmatch para: {track}")
-            mxm_lyrics = await self._fetch_musixmatch_lyrics(album_artist, track)
-            if mxm_lyrics:
-                logger.debug(f"[*] Letra encontrada no Musixmatch para: {track}")
-                final_lyrics, trans_count, total_lines = await self._process_translation(mxm_lyrics, is_synced=True)
-                self._inject_metadata(file_path, final_lyrics)
-                if save_lrc:
-                    self._save_lrc_file(file_path, final_lyrics)
-                return (True, trans_count, total_lines, "200 [Musixmatch]")
-
-            # 2. Tentar LyricsPlus (Apple Music)
-            logger.debug(f"[*] Tentando LyricsPlus para: {track}")
-            lyricsplus_lyrics = await self._fetch_lyrics_plus(album_artist, track)
-            if lyricsplus_lyrics:
-                logger.debug(f"[*] Letra encontrada no LyricsPlus para: {track}")
-                final_lyrics, trans_count, total_lines = await self._process_translation(lyricsplus_lyrics, is_synced=True)
-                self._inject_metadata(file_path, final_lyrics)
-                if save_lrc:
-                    self._save_lrc_file(file_path, final_lyrics)
-                return (True, trans_count, total_lines, "200 [LyricsPlus]")
-
-            # 3. Tentar LRCLIB (Fallback 1)
-            logger.debug(f"[*] Tentando LRCLIB para: {track}")
-            lrclib_url = "https://lrclib.net/api/get"
-            headers = {"User-Agent": "qobuz-dl-master/2.5 (https://github.com/kaduvercosa/qobuz-dl)"}
-            
-            params = {"artist_name": album_artist, "track_name": track, "album_name": album}
-            
-            try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(lrclib_url, params=params, headers=headers, timeout=35) as response:
-                        status = response.status
-                        if status == 200:
-                            data = await response.json()
-
-                    if status != 200:
-                        params = {"artist_name": album_artist, "track_name": track}
-                        async with session.get(lrclib_url, params=params, headers=headers, timeout=35) as response:
-                            status = response.status
-                            if status == 200:
-                                data = await response.json()
-            except asyncio.TimeoutError:
-                logger.debug(f"[*] LRCLIB demorou muito a responder (Timeout) para: {track}")
-                status = "Timeout"
-            except aiohttp.ClientError as e:
-                logger.debug(f"[*] Erro de rede ao contatar LRCLIB para {track}: {e}")
-                status = "Erro_Rede"
-
-            if status == 200:
-                synced_lyrics = data.get("syncedLyrics")
-                plain_lyrics = data.get("plainLyrics")
-                
-                if synced_lyrics:
-                    logger.debug(f"[*] Letras sincronizadas encontradas no LRCLIB para: {track}")
-                    final_lyrics, trans_count, total_lines = await self._process_translation(synced_lyrics, is_synced=True)
-                    self._inject_metadata(file_path, final_lyrics)
-                    if save_lrc:
-                        self._save_lrc_file(file_path, final_lyrics)
-                    return (True, trans_count, total_lines, f"{status} [LRCLIB]")
-                    
-                elif plain_lyrics:
-                    logger.debug(f"[*] Letras simples encontradas no LRCLIB para: {track}")
-                    final_lyrics, trans_count, total_lines = await self._process_translation(plain_lyrics, is_synced=False)
-                    self._inject_metadata(file_path, final_lyrics)
-                    # Plain Lyrics não tem timestamps, não salvar como .lrc
-                    return (True, trans_count, total_lines, f"{status} [LRCLIB]")
-
-            # 4. Tentar Netease (Fallback 2)
-            logger.debug(f"[*] Tentando Netease para: {track}")
-            netease_lyrics = await self._fetch_netease_lyrics(album_artist, track)
-            if netease_lyrics:
-                logger.debug(f"[*] Letra encontrada no Netease para: {track}")
-                final_lyrics, trans_count, total_lines = await self._process_translation(netease_lyrics, is_synced=True)
-                self._inject_metadata(file_path, final_lyrics)
-                if save_lrc:
-                    self._save_lrc_file(file_path, final_lyrics)
-                return (True, trans_count, total_lines, "200 [Netease]")
-
-            # 5. Tentar Genius (Fallback Final)
-            if self.genius:
-                logger.debug(f"[*] Tentando Genius API para: {track}")
-                song = await asyncio.to_thread(self.genius.search_song, track, album_artist)
-                if song and song.lyrics:
-                    logger.debug(f"[*] Letra encontrada via Genius para: {track}")
-                    final_lyrics, trans_count, total_lines = await self._process_translation(song.lyrics, is_synced=False)
-                    self._inject_metadata(file_path, final_lyrics)
-                    # Genius retorna letra plain, não salvar como .lrc
-                    return (True, trans_count, total_lines, "200 [Genius]")
-
-            logger.debug(f"[!] Nenhuma letra encontrada para: {track}")
+            status_result = "injected" if success else "skipped"
+            return current_idx, {"status": status_result, "artist": search_artist, "title": title, "messages": messages, "elapsed": elapsed}
 
         except Exception as e:
-            error_msg = str(e) if str(e) else type(e).__name__
-            print(f"\033[91m[!] Erro interno ao processar letras: {error_msg}\033[0m")
-            logger.error(f"[!] Erro interno no fetch_and_inject: {error_msg}", exc_info=True)
-
-        return (False, 0, 0, status if status else "Não")
-
-    def _save_lrc_file(self, audio_file_path, synced_lyrics):
-        """Salva as letras em arquivo .lrc com tratamento de erro."""
-        try:
-            base_name = os.path.splitext(audio_file_path)[0]
-            lrc_path = f"{base_name}.lrc"
-            with open(lrc_path, 'w', encoding='utf-8') as f:
-                f.write(synced_lyrics)
-            logger.debug(f"[*] Arquivo .lrc salvo: {lrc_path}")
-        except Exception as e:
-            logger.error(f"[!] Erro ao salvar arquivo .lrc: {e}")
-
-    def _inject_metadata(self, file_path, lyrics):
-        """Injeta as letras nos metadados do arquivo de áudio."""
-        if not lyrics:
-            return
-        ext = os.path.splitext(file_path)[1].lower()
-        try:
-            if ext == '.flac':
-                audio = FLAC(file_path)
-                audio['LYRICS'] = lyrics
-                audio.save()
-                logger.debug(f"[*] Metadados FLAC injetados: {file_path}")
-            elif ext == '.mp3':
-                try:
-                    audio = ID3(file_path)
-                except ID3NoHeaderError:
-                    audio = ID3()
-                audio.add(USLT(encoding=3, lang='eng', desc='', text=lyrics))
-                audio.save(file_path)
-                logger.debug(f"[*] Metadados ID3 injetados: {file_path}")
-        except Exception as e:
-            logger.error(f"[!] Erro ao injetar metadados de lyrics: {e}")
+            logger.error(f"Error in _process_single_file: {e}", exc_info=True)
+            return current_idx, {"status": "error", "artist": "Unknown", "title": "Unknown", "messages": [f"{RED}[!] Error processing {file_path_str}: {e}{OFF}"]}
 
 
-# --- FUNÇÕES ADICIONADAS PARA COMPATIBILIDADE COM O CLI ---
+# =========================
+# MAIN RETRO SCAN
+# =========================
 
-async def inject_lyrics_retroactively(target_dir, genius_token=None, deepl_api_key=None, overwrite=False, target_lang='PT-BR'):
-    """
-    Injeta letras retroativamente percorrendo arquivos de áudio em um diretório alvo.
-    """
-    engine = LyricsEngine(genius_token=genius_token, deepl_api_key=deepl_api_key, target_lang=target_lang)
-    
-    print(f"\n[*] Iniciando injeção de letras em: {target_dir}")
-    
-    for root, _, files in os.walk(target_dir):
-        for file in files:
-            if not file.lower().endswith(('.flac', '.mp3')):
-                continue
-                
-            filepath = os.path.join(root, file)
-            
-            # Tenta extrair tags básicas para busca
-            try:
-                artist, title, album = "Unknown", "Unknown", "Unknown"
-                if file.endswith('.flac'):
-                    audio = FLAC(filepath)
-                    artist = audio.get('artist', [''])[0]
-                    title = audio.get('title', [''])[0]
-                    album = audio.get('album', [''])[0]
-                elif file.endswith('.mp3'):
-                    audio = ID3(filepath)
-                    artist = str(audio.get('TPE1', ''))
-                    title = str(audio.get('TIT2', ''))
-                    album = str(audio.get('TALB', ''))
-                
-                # Pula arquivos que não possuem pelo menos o nome do artista e faixa
-                if not artist or not title or artist == "Unknown" or title == "Unknown":
-                    logger.warning(f"[*] Pulando arquivo sem tags suficientes: {file}")
-                    continue
+async def inject_lyrics_retroactively(
+    directory_path,
+    genius_token=None,
+    deepl_api_key=None,
+    overwrite=False,
+    target_lang="PT-BR"
+):
 
-                print(f"[*] Processando: {artist} - {title}")
-                await engine.fetch_and_inject(filepath, artist, title, album, overwrite=overwrite)
-                
-            except Exception as e:
-                logger.error(f"[!] Erro ao processar {file}: {e}")
-
-    print("[*] Operação de letras concluída.")
-
-
-async def interactive_fix_lyrics(target_dir, genius_token=None, deepl_api_key=None, target_lang='PT-BR'):
-    """
-    Função wrapper para resolver possíveis erros caso o comando 'fl' / 'fix-lyrics' 
-    seja chamado pela CLI do Qobuz-DL.
-    """
-    print(f"\n[*] Iniciando correção interativa em: {target_dir}")
-    print("[!] Redirecionando para o processo de injeção sobrescrevendo letras antigas...")
-    
-    await inject_lyrics_retroactively(
-        target_dir=target_dir, 
-        genius_token=genius_token, 
-        deepl_api_key=deepl_api_key, 
-        overwrite=True, 
-        target_lang=target_lang
+    safe_print(
+        f"\n{CYAN}[*] Starting retroactive lyrics scan in: "
+        f"{directory_path}{OFF}\n"
     )
+
+    if overwrite:
+        safe_print(
+            f"{RED}[!] OVERWRITE MODE ENABLED: "
+            f"Existing lyrics will be replaced.{OFF}\n"
+        )
+
+    target_dir = Path(directory_path)
+
+    if not target_dir.is_dir():
+        safe_print(
+            f"{RED}[!] Error: "
+            f"The directory '{directory_path}' does not exist.{OFF}\n"
+        )
+        return
+
+    engine = LyricsEngine(genius_token=genius_token, deepl_api_key=deepl_api_key, translate=True, target_lang=target_lang)
+
+    # =========================
+    # FILE DISCOVERY
+    # =========================
+
+    all_files = []
+
+    for ext in [".flac", ".mp3"]:
+        all_files.extend(list(target_dir.rglob(f"*{ext}")))
+        all_files.extend(list(target_dir.rglob(f"*{ext.upper()}")))
+
+    # Remove duplicados
+    all_files = list(set(all_files))
+
+    processed = len(all_files)
+    injected = 0
+    skipped = 0
+    errors = 0
+
+    safe_print(
+        f"{CYAN}[*] Found {processed} compatible audio files. "
+        f"Processing...{OFF}\n"
+    )
+
+    # =========================
+    # PARALLEL PROCESSING
+    # =========================
+
+    max_workers = 3
+    semaphore = asyncio.Semaphore(max_workers)
+
+    tasks = []
+
+    # Mantém a ordem original dos arquivos para impressão sequencial
+    for idx, path in enumerate(all_files, 1):
+        task = asyncio.create_task(
+            _process_single_file(
+                semaphore,
+                str(path),
+                engine,
+                overwrite,
+                idx,
+                processed
+            )
+        )
+        tasks.append(task)
+
+    files_done = 0
+    elapsed_times = []
+    scan_start = time.monotonic()
+
+    for future in asyncio.as_completed(tasks):
+        try:
+            result = await future
+            idx, result_data = result
+        except Exception as e:
+            logger.error(f"[!] Async execution error: {e}")
+            files_done += 1
+            continue
+
+        files_done += 1
+
+        if isinstance(result_data, str):
+             data = {"status": result_data, "messages": []}
+        else:
+             data = result_data
+
+        status = data.get("status")
+        messages = data.get("messages", [])
+        elapsed = data.get("elapsed")
+
+        # Atualiza média de tempo e calcula ETA
+        if elapsed is not None:
+            elapsed_times.append(elapsed)
+
+        remaining = processed - files_done
+        if elapsed_times and remaining > 0:
+            avg_time = sum(elapsed_times) / len(elapsed_times)
+            eta_sec = (remaining * avg_time) / max_workers
+            if eta_sec >= 60:
+                eta_str = f"{int(eta_sec // 60)}m{int(eta_sec % 60):02d}s"
+            else:
+                eta_str = f"{eta_sec:.0f}s"
+            eta_info = f"{CYAN}  [ETA: ~{eta_str} restantes para {remaining} arquivo(s)]{OFF}"
+        elif remaining == 0:
+            total_sec = time.monotonic() - scan_start
+            if total_sec >= 60:
+                total_str = f"{int(total_sec // 60)}m{int(total_sec % 60):02d}s"
+            else:
+                total_str = f"{total_sec:.0f}s"
+            eta_info = f"{GREEN}  [Concluído em {total_str}]{OFF}"
+        else:
+            eta_info = None
+
+        output_parts = []
+        if messages:
+            output_parts.append("\n".join(messages))
+        if eta_info:
+            output_parts.append(eta_info)
+        if output_parts:
+            safe_print("\n".join(output_parts))
+
+        if status == "injected":
+            injected += 1
+        elif status == "skipped":
+            skipped += 1
+        elif status == "error":
+            errors += 1
+
+    # =========================
+    # FINAL SUMMARY
+    # =========================
+
+    safe_print(f"\n{GREEN}[+] Retroactive Scan and Injection Completed!{OFF}")
+    safe_print(f"{CYAN}  - TOTAL DE ARQUIVOS ANALISADOS: {processed}{OFF}")
+    safe_print(f"{OFF}  - ARQUIVOS EDITADOS/TAGGEADOS: {injected}{OFF}")
+    safe_print(f"{YELLOW}  - ARQUIVOS PULADOS (dados já etiquetados ou ausentes): {skipped}{OFF}")
+
+    if errors > 0:
+        safe_print(f"{RED}  - Errors encountered: {errors}{OFF}")
+
+    safe_print("\n")
+
+
+# =========================
+# INTERACTIVE FIX LYRICS
+# =========================
+
+async def interactive_fix_lyrics(
+    directory_path,
+    genius_token=None,
+    deepl_api_key=None,
+    target_lang="PT-BR"
+):
+    from pick import pick
+
+    target_dir = Path(directory_path)
+
+    if not target_dir.is_dir():
+        print(f"{RED}[!] Error: The directory '{directory_path}' does not exist.{OFF}")
+        return
+
+    engine = LyricsEngine(genius_token=genius_token, deepl_api_key=deepl_api_key, translate=True, target_lang=target_lang)
+
+    # 1. SCAN DIRECTORY
+    all_files = []
+    for ext in [".flac", ".mp3"]:
+        all_files.extend(list(target_dir.rglob(f"*{ext}")))
+        all_files.extend(list(target_dir.rglob(f"*{ext.upper()}")))
+
+    all_files = list(set(all_files))
+    all_files.sort()
+
+    if not all_files:
+        print(f"{RED}[!] No compatible audio files found in '{directory_path}'.{OFF}")
+        return
+
+    file_options = []
+    file_mapping = {}
+
+    print(f"{CYAN}[*] Scanning {len(all_files)} files to build the interactive menu...{OFF}")
+
+    for path in all_files:
+        path_str = str(path)
+        path_lower = path_str.lower()
+        title, artist, album, album_artist = "", "", "", ""
+        duration = 0
+
+        try:
+            if path_lower.endswith(".flac"):
+                audio = FLAC(path_str)
+                title = audio.get("TITLE", [""])[0]
+                artist = audio.get("ARTIST", [""])[0]
+                duration = audio.info.length
+                album = audio.get("ALBUM", [""])[0]
+                album_artist = audio.get("ALBUMARTIST", [""])[0]
+            elif path_lower.endswith(".mp3"):
+                from mutagen.mp3 import MP3
+                mp3_audio = MP3(path_str)
+                tags = mp3_audio.tags or id3.ID3()
+                # CORREÇÃO DE BUG: Alterado de audio.get para tags.get
+                title = tags.get("TIT2").text[0] if tags.get("TIT2") else ""
+                artist = tags.get("TPE1").text[0] if tags.get("TPE1") else ""
+                duration = mp3_audio.info.length
+                album = tags.get("TALB").text[0] if tags.get("TALB") else ""
+                album_artist = tags.get("TPE2").text[0] if tags.get("TPE2") else ""
+        except Exception:
+            continue
+
+        if title and artist:
+            display_str = f"{title} - {artist}{path.suffix}"
+            file_options.append(display_str)
+            file_mapping[display_str] = {
+                "path": path_str,
+                "title": title,
+                "artist": artist,
+                "duration": duration,
+                "album": album,
+                "album_artist": album_artist
+            }
+
+    if not file_options:
+        print(f"{RED}[!] Failed to extract metadata from files in '{directory_path}'.{OFF}")
+        return
+
+    file_options.sort()
+
+    while True:
+        title_text = "Select one or more tracks to fix their lyrics\n(Press SPACE to select, ENTER to continue, or CTRL+C to Exit):"
+
+        try:
+            selected = pick(file_options, title_text, multiselect=True, min_selection_count=1)
+        except KeyboardInterrupt:
+            break
+
+        if not selected:
+            break
+
+        print(f"\n{CYAN}[*] You selected {len(selected)} tracks to fix.{OFF}")
+
+        for item in selected:
+            selected_option = item[0]
+            track_info = file_mapping[selected_option]
+            await _handle_manual_lyric_search(track_info, engine)
+
+        print(f"\n{GREEN}[+] Batch fix completed! Returning to track list...{OFF}")
+        await asyncio.sleep(1.5)
+
+async def _handle_manual_lyric_search(track_info, engine):
+    from pick import pick
+
+    search_artist = track_info["album_artist"] if track_info["album_artist"] and track_info["album_artist"].lower() != "various artists" else track_info["artist"]
+    track_title = track_info["title"]
+    real_duration = track_info.get("duration", 0)
+    real_mins = int(real_duration // 60)
+    real_secs = int(real_duration % 60)
+
+    print(f"\n{CYAN}[*] Searching alternatives for: {search_artist} - {track_title}...{OFF}")
+
+    results = []
+
+    # 1. Query LRCLIB search endpoint
+    lrclib_url = "https://lrclib.net/api/search"
+    headers = {"User-Agent": "qobuz-dl-master/2.5 (https://github.com/kaduvercosa/qobuz-dl)"}
+    params = {"track_name": track_title, "artist_name": search_artist}
+
+    async def fetch_lrclib():
+        async with aiohttp.ClientSession() as session:
+            async with session.get(lrclib_url, params=params, headers=headers, timeout=35) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    for item in data:
+                        results.append({
+                            "provider": "LRCLIB",
+                            "duration": item.get("duration", 0),
+                            "syncedLyrics": item.get("syncedLyrics"),
+                            "plainLyrics": item.get("plainLyrics"),
+                            "artistName": item.get("artistName"),
+                            "trackName": item.get("trackName"),
+                            "albumName": item.get("albumName", "Unknown")
+                        })
+
+    # 2. Query Musixmatch
+    async def fetch_musixmatch():
+        text = await engine._fetch_musixmatch_lyrics(search_artist, track_title)
+        if text:
+            results.append({
+                "provider": "Musixmatch",
+                "duration": real_duration,
+                "syncedLyrics": text,
+                "plainLyrics": None,
+                "artistName": search_artist,
+                "trackName": track_title,
+                "albumName": "Musixmatch"
+            })
+
+    # 3. Query LyricsPlus
+    async def fetch_lyricsplus():
+        text = await engine._fetch_lyrics_plus(search_artist, track_title)
+        if text:
+            results.append({
+                "provider": "LyricsPlus",
+                "duration": real_duration,
+                "syncedLyrics": text,
+                "plainLyrics": None,
+                "artistName": search_artist,
+                "trackName": track_title,
+                "albumName": "LyricsPlus"
+            })
+
+    # 4. Query Netease
+    async def fetch_netease():
+        text = await engine._fetch_netease_lyrics(search_artist, track_title)
+        if text:
+            results.append({
+                "provider": "Netease",
+                "duration": real_duration,
+                "syncedLyrics": text,
+                "plainLyrics": None,
+                "artistName": search_artist,
+                "trackName": track_title,
+                "albumName": "Netease"
+            })
+
+    # 5. Query Genius
+    async def fetch_genius():
+        if engine.genius:
+            song = await asyncio.to_thread(engine.genius.search_song, track_title, search_artist)
+            if song and song.lyrics:
+                results.append({
+                    "provider": "Genius",
+                    "duration": 0,
+                    "syncedLyrics": None,
+                    "plainLyrics": song.lyrics,
+                    "artistName": search_artist,
+                    "trackName": track_title,
+                    "albumName": "Genius"
+                })
+
+    try:
+        await asyncio.gather(
+            fetch_lrclib(),
+            fetch_musixmatch(),
+            fetch_lyricsplus(),
+            fetch_netease(),
+            fetch_genius()
+        )
+    except Exception as e:
+        print(f"{RED}[!] Search failed: {e}{OFF}")
+        return
+
+    if not results:
+        print(f"{YELLOW}[!] No alternative lyrics found for this track across all providers.{OFF}")
+        await asyncio.sleep(2)
+        return
+
+    options = []
+    option_mapping = {}
+
+    def sort_key(r):
+        dur = r.get("duration", 0)
+        if dur == 0: return float('inf')
+        return abs(dur - real_duration)
+
+    results.sort(key=sort_key)
+
+    for res in results:
+        duration_sec = res.get("duration", 0)
+        if duration_sec > 0:
+            minutes = int(duration_sec // 60)
+            seconds = int(duration_sec % 60)
+            duration_str = f"[{minutes:02d}:{seconds:02d}]"
+
+            diff = abs(duration_sec - real_duration)
+            diff_str = f"(Match! {diff:.0f}s dif)" if diff <= 2 else f"({diff:.0f}s dif)"
+        else:
+            duration_str = "[--:--]"
+            diff_str = ""
+
+        sync_status = "[Synced]" if res.get("syncedLyrics") else "[Unsynced]"
+        provider = res.get("provider")
+
+        display = f"{duration_str} | {provider} | {diff_str} {res.get('artistName')} - {res.get('trackName')} {sync_status} (Album: {res.get('albumName')})"
+        display = display.replace("  ", " ")
+        options.append(display)
+        option_mapping[display] = res
+
+    options.append(">> Cancel / Back to Track List")
+
+    title_prompt = f"Target Duration: [{real_mins:02d}:{real_secs:02d}] | File: {track_title}\nChoose the alternative lyric:"
+    selected_option, index = pick(options, title_prompt, indicator="* ")
+
+    if selected_option == ">> Cancel / Back to Track List":
+        return
+
+    chosen_lyric_data = option_mapping[selected_option]
+
+    print(f"\n{GREEN}[+] Downloading and injecting chosen lyrics...{OFF}")
+
+    result = await engine.inject_manual_lyrics(
+        file_path=track_info["path"],
+        raw_lyrics=chosen_lyric_data.get("syncedLyrics") or chosen_lyric_data.get("plainLyrics"),
+        is_synced=bool(chosen_lyric_data.get("syncedLyrics"))
+    )
+
+    if isinstance(result, tuple):
+        success, trans_count, total_lines = result
+    else:
+        success, trans_count, total_lines = result, 0, 0
+
+    if success:
+        provider = chosen_lyric_data.get("provider", "Unknown")
+        if total_lines > 0 and trans_count > 0:
+            trans_type = "Total" if trans_count >= total_lines else "Parcial"
+            trad_str = f"{trans_count}/{total_lines} - ({trans_type})"
+        elif total_lines > 0:
+            trad_str = "Não"
+        else:
+            trad_str = "Não"
+
+        O = "\033[0m"
+        print(f"{O}  [*] Letra Encontrada: {track_title} - {search_artist} | Tradução: {trad_str} | Response_Code: {provider}{O}")
+        print(f"{GREEN}[+] Lyrics successfully replaced!{OFF}")
+    else:
+        print(f"{RED}[!] Failed to inject lyrics.{OFF}")
+
+    await asyncio.sleep(2)
