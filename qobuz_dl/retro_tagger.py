@@ -332,10 +332,12 @@ async def interactive_fix_lyrics(
                 artist = audio.get("ARTIST", [""])[0]
                 duration = audio.info.length
             elif path_lower.endswith(".mp3"):
-                audio = id3.ID3(path_str)
+                from mutagen.mp3 import MP3
+                mp3_audio = MP3(path_str) # MP3 lê stream + tags
+                tags = mp3_audio.tags or id3.ID3() # Garante que tags não é None
                 title = audio.get("TIT2").text[0] if audio.get("TIT2") else ""
                 artist = audio.get("TPE1").text[0] if audio.get("TPE1") else ""
-                duration = audio.info.length
+                duration = mp3_audio.info.length
         except Exception:
             continue
 
@@ -348,8 +350,8 @@ async def interactive_fix_lyrics(
                 "title": title,
                 "artist": artist,
                 "duration": duration,
-                "album": audio.get("ALBUM", [""])[0] if path_lower.endswith(".flac") else (audio.get("TALB").text[0] if audio.get("TALB") else ""),
-                "album_artist": audio.get("ALBUMARTIST", [""])[0] if path_lower.endswith(".flac") else (audio.get("TPE2").text[0] if audio.get("TPE2") else "")
+                "album": tags.get("ALBUM", [""])[0] if path_lower.endswith(".flac") else (tags.get("TALB").text[0] if tags.get("TALB") else ""),
+                "album_artist": tags.get("ALBUMARTIST", [""])[0] if path_lower.endswith(".flac") else (tags.get("TPE2").text[0] if tags.get("TPE2") else "")
             }
 
     if not file_options:
