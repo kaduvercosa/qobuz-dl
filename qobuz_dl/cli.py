@@ -300,6 +300,26 @@ def _initial_checks():
         sys.exit(qobuz_dl_args().print_help())
 
 async def check_for_updates():
+    """
+    Checks for a new release on GitHub at most once per day.
+    The date of the last check is stored in CONFIG_PATH/last_update_check.
+    This avoids a network request on every single command invocation,
+    which is especially noticeable on slow connections like iSH/mobile.
+    """
+    import datetime
+
+    check_file = os.path.join(CONFIG_PATH, "last_update_check")
+
+    # Read the date of the last check (if any)
+    try:
+        with open(check_file, "r") as f:
+            last_check_str = f.read().strip()
+        last_check = datetime.date.fromisoformat(last_check_str)
+        if last_check >= datetime.date.today():
+            return  # Already checked today, skip
+    except Exception:
+        pass  # File missing or unreadable — proceed with the check
+
     try:
         from qobuz_dl import __version__
         
@@ -320,6 +340,13 @@ async def check_for_updates():
             print(f"{YELLOW}    - PyPI: run 'pip install -U qobuz-dl-master'{OFF}")
             print(f"{YELLOW}    - Docker: pull the latest image{OFF}")
             print(f"{YELLOW}    - Standalone: download the new release from GitHub{OFF}\n")
+
+        # Save today's date so we don't check again until tomorrow
+        try:
+            with open(check_file, "w") as f:
+                f.write(str(datetime.date.today()))
+        except Exception:
+            pass
             
     except Exception:
         pass
