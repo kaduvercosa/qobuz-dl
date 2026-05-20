@@ -403,19 +403,22 @@ class LyricsEngine:
         return None
 
     async def inject_manual_lyrics(self, file_path, raw_lyrics, is_synced=True):
-        """Injeta a letra manualmente no arquivo. Retorna bool indicando sucesso."""
+        """Injeta a letra manualmente no arquivo.
+        Retorna (success, trans_count, total_lines) para que o chamador
+        possa exibir o mesmo log de tradução que aparece nos downloads normais.
+        """
         if not raw_lyrics:
-            return False
+            return False, 0, 0
 
         try:
-            final_lyrics, _, _ = await self._process_translation(raw_lyrics, is_synced=is_synced)
+            final_lyrics, trans_count, total_lines = await self._process_translation(raw_lyrics, is_synced=is_synced)
             self._inject_metadata(file_path, final_lyrics)
             if is_synced:
                 self._save_lrc_file(file_path, final_lyrics)
-            return True
+            return True, trans_count, total_lines
         except Exception as e:
             logger.error(f"[!] Erro em inject_manual_lyrics: {e}")
-            return False
+            return False, 0, 0
 
     async def fetch_and_inject(self, file_path, album_artist, track, album, save_lrc=True, overwrite=False):
         """
