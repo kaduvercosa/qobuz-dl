@@ -107,7 +107,7 @@ async def _process_single_file(semaphore, file_path_str, engine, state, overwrit
             # =========================
             # SEARCH & INJECT
             # =========================
-            safe_print(f"{C}  [{current_idx}/{total_files}] Buscando: {title} - {search_artist}...{O}")
+            safe_print(f"{C}[{current_idx}/{total_files}] Buscando: {title} - {search_artist}...{O}")
             task_start = time.monotonic()
 
             res_tuple = await engine.fetch_and_inject(
@@ -177,7 +177,7 @@ async def _process_single_file(semaphore, file_path_str, engine, state, overwrit
                     eta_str = f"{int(eta_sec // 60)}m{int(eta_sec % 60):02d}s"
                 else:
                     eta_str = f"{eta_sec:.0f}s"
-                eta_info = f"{CYAN}  [ETA: ~{eta_str} restantes para {remaining} arquivo(s)]{O}"
+                eta_info = f"{CYAN}[ETA: ~{eta_str} restantes para {remaining} arquivo(s)]{O}"
             elif remaining == 0:
                 total_sec = time.monotonic() - state.scan_start
                 if total_sec >= 60:
