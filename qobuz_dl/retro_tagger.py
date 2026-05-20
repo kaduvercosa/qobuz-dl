@@ -15,7 +15,7 @@ from qobuz_dl.color import CYAN, GREEN, YELLOW, RED, OFF
 logger = logging.getLogger(__name__)
 
 # =========================
-# THREAD-SAFE PRINT
+# THREAD-SAFE PRINT & STATE
 # =========================
 
 print_lock = Lock()
@@ -23,6 +23,17 @@ print_lock = Lock()
 def safe_print(message):
     with print_lock:
         print(message, flush=True)
+
+class ScanState:
+    """Classe dedicada para evitar qualquer possibilidade de KeyError em dicionários assíncronos."""
+    def __init__(self, total_files):
+        self.processed = total_files
+        self.files_done = 0
+        self.injected = 0
+        self.skipped = 0
+        self.errors = 0
+        self.elapsed_times = []
+        self.scan_start = time.monotonic()
 
 # =========================
 # PROCESS SINGLE FILE
@@ -96,7 +107,7 @@ async def _process_single_file(semaphore, file_path_str, engine, state, overwrit
             # =========================
             # SEARCH & INJECT
             # =========================
-            safe_print(f"{C}[{current_idx}/{total_files}] Buscando: {title} - {search_artist}...{O}")
+            safe_print(f"{C}  [{current_idx}/{total_files}] Buscando: {title} - {search_artist}...{O}")
             task_start = time.monotonic()
 
             res_tuple = await engine.fetch_and_inject(
@@ -133,44 +144,49 @@ async def _process_single_file(semaphore, file_path_str, engine, state, overwrit
                 resp_str = resp_code if resp_code else "Não"
                 msg = f"{Y}  [!] Falha ao obter letra para: {title} - {search_artist} | Code: {resp_str} | Tempo: {elapsed:.1f}s{O}"
 
+        except asyncio.CancelledError:
+            # Captura cancelamentos (Ctrl+C ou timeout) silenciosamente
+            raise
         except Exception as e:
             logger.error(f"Error in _process_single_file: {e}", exc_info=True)
             status_result = "error"
-            msg = f"{RED}[!] Error processing {file_path_str}: {e}{OFF}"
+            msg = f"{RED_COLOR}[!] Error processing {file_path_str}: {e}{O}"
 
         finally:
             # Atualiza o estado global imediatamente antes de sair do semáforo
-            state["files_done"] : 0
+            # Usando atributos da classe, KeyError não existe mais.
+            state.files_done += 1
+            
             if elapsed is not None:
-                state["elapsed_times"].append(elapsed)
+                state.elapsed_times.append(elapsed)
 
             if status_result == "injected":
-                state["injected"] += 1
+                state.injected += 1
             elif status_result == "error":
-                state["errors"] += 1
+                state.errors += 1
             else:
-                state["skipped"] += 1
+                state.skipped += 1
 
-            # Calcula o ETA de forma síncrona com o término real da task
-            remaining = state["processed"] - state["files_done"]
+            # Calcula o ETA
+            remaining = state.processed - state.files_done
             eta_info = None
-            if state["elapsed_times"] and remaining > 0:
-                avg_time = sum(state["elapsed_times"]) / len(state["elapsed_times"])
+            if state.elapsed_times and remaining > 0:
+                avg_time = sum(state.elapsed_times) / len(state.elapsed_times)
                 eta_sec = (remaining * avg_time) / 3  # max_workers = 3
                 if eta_sec >= 60:
                     eta_str = f"{int(eta_sec // 60)}m{int(eta_sec % 60):02d}s"
                 else:
                     eta_str = f"{eta_sec:.0f}s"
-                eta_info = f"{CYAN}[ETA: ~{eta_str} restantes para {remaining} arquivo(s)]{OFF}"
+                eta_info = f"{CYAN}  [ETA: ~{eta_str} restantes para {remaining} arquivo(s)]{O}"
             elif remaining == 0:
-                total_sec = time.monotonic() - state["scan_start"]
+                total_sec = time.monotonic() - state.scan_start
                 if total_sec >= 60:
                     total_str = f"{int(total_sec // 60)}m{int(total_sec % 60):02d}s"
                 else:
                     total_str = f"{total_sec:.0f}s"
-                eta_info = f"{GREEN}  [Concluído em {total_str}]{OFF}"
+                eta_info = f"{G}  [Concluído em {total_str}]{O}"
 
-            # Exibe o bloco visual de forma atômica (garante ordem cronológica exata)
+            # Exibe o bloco visual (garante ordem cronológica)
             output_parts = []
             if msg:
                 output_parts.append(msg)
@@ -211,17 +227,10 @@ async def inject_lyrics_retroactively(
 
     all_files = list(set(all_files))
 
-    # Objeto de estado compartilhado para contagem linear em tempo real
-    state = {
-        "processed": len(all_files),
-        "injected": 0,
-        "skipped": 0,
-        "errors": 0,
-        "elapsed_times": [],
-        "scan_start": time.monotonic()
-    }
+    # Objeto de estado seguro (evita KeyError)
+    state = ScanState(len(all_files))
 
-    safe_print(f"{CYAN}[*] Found {state['processed']} compatible audio files. Processing...{OFF}\n")
+    safe_print(f"{CYAN}[*] Found {state.processed} compatible audio files. Processing...{OFF}\n")
 
     max_workers = 3
     semaphore = asyncio.Semaphore(max_workers)
@@ -236,25 +245,26 @@ async def inject_lyrics_retroactively(
                 state,
                 overwrite,
                 idx,
-                state["processed"]
+                state.processed
             )
         )
         tasks.append(task)
 
-    # Como as próprias tasks gerenciam seus logs na hora exata em que terminam,
-    # basta darmos um gather limpo sem perder performance esperando iteradores ordinais
-    await asyncio.gather(*tasks)
+    try:
+        await asyncio.gather(*tasks)
+    except asyncio.CancelledError:
+        safe_print(f"\n{RED}[!] Processo interrompido pelo usuário.{OFF}\n")
 
     # =========================
     # FINAL SUMMARY
     # =========================
     safe_print(f"\n{GREEN}[+] Retroactive Scan and Injection Completed!{OFF}")
-    safe_print(f"{CYAN}  - TOTAL DE ARQUIVOS ANALISADOS: {state['processed']}{OFF}")
-    safe_print(f"{OFF}  - ARQUIVOS EDITADOS/TAGGEADOS: {state['injected']}{OFF}")
-    safe_print(f"{YELLOW}  - ARQUIVOS PULADOS (dados já etiquetados ou ausentes): {state['skipped']}{OFF}")
+    safe_print(f"{CYAN}  - TOTAL DE ARQUIVOS ANALISADOS: {state.processed}{OFF}")
+    safe_print(f"{OFF}  - ARQUIVOS EDITADOS/TAGGEADOS: {state.injected}{OFF}")
+    safe_print(f"{YELLOW}  - ARQUIVOS PULADOS (dados já etiquetados ou ausentes): {state.skipped}{OFF}")
 
-    if state["errors"] > 0:
-        safe_print(f"{RED}  - Errors encountered: {state['errors']}{OFF}")
+    if state.errors > 0:
+        safe_print(f"{RED}  - Errors encountered: {state.errors}{OFF}")
     safe_print("\n")
 
 
