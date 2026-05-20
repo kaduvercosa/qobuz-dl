@@ -4,7 +4,6 @@ from pathlib import Path
 from mutagen.flac import FLAC
 import mutagen.id3 as id3
 from mutagen.id3 import ID3NoHeaderError
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
 
 from qobuz_dl.lyrics_engine import LyricsEngine
@@ -28,130 +27,125 @@ def safe_print(message):
 
 import asyncio
 
-def _process_single_file(file_path_str, engine, overwrite=False, current_idx=0, total_files=0):
-    try:
-        title, artist, album_artist, album = "", "", "", ""
-        has_lyrics = False
-
-        file_path_lower = file_path_str.lower()
-
-        # Cores para a UI
-        C = "\033[96m"  # Cyan
-        G = "\033[92m"  # Green
-        Y = "\033[93m"  # Yellow
-        O = "\033[0m"   # Off/Reset
-        RED_COLOR = "\033[91m"  # Red
-
-        # =========================
-        # FLAC
-        # =========================
-        if file_path_lower.endswith(".flac"):
-            audio = FLAC(file_path_str)
-
-            # Verifica se já possui letra
-            if audio.get("LYRICS") or audio.get("UNSYNCEDLYRICS") or audio.get("LYRICS_SYNCED"):
-                has_lyrics = True
-
-            title = audio.get("TITLE", [""])[0]
-            artist = audio.get("ARTIST", [""])[0]
-            album_artist = audio.get("ALBUMARTIST", [""])[0]
-            album = audio.get("ALBUM", [""])[0]
-
-        # =========================
-        # MP3
-        # =========================
-        elif file_path_lower.endswith(".mp3"):
-            try:
-                audio = id3.ID3(file_path_str)
-            except ID3NoHeaderError:
-                return {"status": "skipped", "artist": "Unknown", "title": "Unknown", "messages": []}
-
-            # Verifica se já possui letra
-            if audio.getall("USLT") or audio.getall("SYLT"):
-                has_lyrics = True
-
-            title = audio.get("TIT2").text[0] if audio.get("TIT2") else ""
-            artist = audio.get("TPE1").text[0] if audio.get("TPE1") else ""
-            album_artist = audio.get("TPE2").text[0] if audio.get("TPE2") else ""
-            album = audio.get("TALB").text[0] if audio.get("TALB") else ""
-
-        # =========================
-        # VALIDATION & LOGIC
-        # =========================
-
-        if not title or not artist:
-            return {"status": "skipped", "artist": artist or "Unknown", "title": title or "Unknown", "messages": []}
-
-        # Prioriza o Álbum Artista para não quebrar na busca (exceto se for Various Artists)
-        search_artist = album_artist if album_artist and album_artist.lower() != "various artists" else artist
-
-        # Se não for overwrite e já tiver letra, avisa e pula
-        if not overwrite and has_lyrics:
-            return {
-                "status": "skipped",
-                "artist": search_artist,
-                "title": title,
-                "messages": [f"{Y}  [*] Ignorado (Já Marcado): {title} - {search_artist}{O}"]
-            }
-
-        # =========================
-        # SEARCH & INJECT
-        # =========================
-
-        # Instead of printing inside the thread, return the results to print sequentially
-        # Safely create a new event loop for this thread to avoid RuntimeError
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+async def _process_single_file(semaphore, file_path_str, engine, overwrite=False, current_idx=0, total_files=0):
+    async with semaphore:
         try:
-            res_tuple = loop.run_until_complete(engine.fetch_and_inject(
+            title, artist, album_artist, album = "", "", "", ""
+            has_lyrics = False
+
+            file_path_lower = file_path_str.lower()
+
+            # Cores para a UI
+            C = "\033[96m"  # Cyan
+            G = "\033[92m"  # Green
+            Y = "\033[93m"  # Yellow
+            O = "\033[0m"   # Off/Reset
+            RED_COLOR = "\033[91m"  # Red
+
+            # =========================
+            # FLAC
+            # =========================
+            if file_path_lower.endswith(".flac"):
+                audio = FLAC(file_path_str)
+
+                # Verifica se já possui letra
+                if audio.get("LYRICS") or audio.get("UNSYNCEDLYRICS") or audio.get("LYRICS_SYNCED"):
+                    has_lyrics = True
+
+                title = audio.get("TITLE", [""])[0]
+                artist = audio.get("ARTIST", [""])[0]
+                album_artist = audio.get("ALBUMARTIST", [""])[0]
+                album = audio.get("ALBUM", [""])[0]
+
+            # =========================
+            # MP3
+            # =========================
+            elif file_path_lower.endswith(".mp3"):
+                try:
+                    audio = id3.ID3(file_path_str)
+                except ID3NoHeaderError:
+                    return current_idx, {"status": "skipped", "artist": "Unknown", "title": "Unknown", "messages": []}
+
+                # Verifica se já possui letra
+                if audio.getall("USLT") or audio.getall("SYLT"):
+                    has_lyrics = True
+
+                title = audio.get("TIT2").text[0] if audio.get("TIT2") else ""
+                artist = audio.get("TPE1").text[0] if audio.get("TPE1") else ""
+                album_artist = audio.get("TPE2").text[0] if audio.get("TPE2") else ""
+                album = audio.get("TALB").text[0] if audio.get("TALB") else ""
+
+            # =========================
+            # VALIDATION & LOGIC
+            # =========================
+
+            if not title or not artist:
+                return current_idx, {"status": "skipped", "artist": artist or "Unknown", "title": title or "Unknown", "messages": []}
+
+            # Prioriza o Álbum Artista para não quebrar na busca (exceto se for Various Artists)
+            search_artist = album_artist if album_artist and album_artist.lower() != "various artists" else artist
+
+            # Se não for overwrite e já tiver letra, avisa e pula
+            if not overwrite and has_lyrics:
+                return current_idx, {
+                    "status": "skipped",
+                    "artist": search_artist,
+                    "title": title,
+                    "messages": [f"{Y}  [*] Ignorado (Já Marcado): {title} - {search_artist}{O}"]
+                }
+
+            # =========================
+            # SEARCH & INJECT
+            # =========================
+
+            # Instead of printing inside the thread, return the results to print sequentially
+            res_tuple = await engine.fetch_and_inject(
                 file_path=file_path_str,
                 album_artist=search_artist,
                 track=title,
                 album=album,
                 save_lrc=True,
                 overwrite=overwrite
-            ))
-        finally:
-            loop.close()
+            )
 
-        # Unpack the new return signature (success, trans_count, total_lines, status_code)
-        success = res_tuple[0]
-        trans_count = res_tuple[1] if len(res_tuple) > 1 else 0
-        total_lines = res_tuple[2] if len(res_tuple) > 2 else 0
-        resp_code = res_tuple[3] if len(res_tuple) > 3 else "Unknown"
+            # Unpack the new return signature (success, trans_count, total_lines, status_code)
+            success = res_tuple[0]
+            trans_count = res_tuple[1] if len(res_tuple) > 1 else 0
+            total_lines = res_tuple[2] if len(res_tuple) > 2 else 0
+            resp_code = res_tuple[3] if len(res_tuple) > 3 else "Unknown"
 
-        messages = []
-        if success:
-            if resp_code == "Local":
-                messages.append(f"{C}[*] Letra Já Existente (Local): {title} - {search_artist}{O}")
-            else:
-                if total_lines > 0 and trans_count > 0:
-                    trans_type = "Total" if trans_count >= total_lines else "Parcial"
-                    trad_str = f"{trans_count}/{total_lines} - ({trans_type})"
-                elif total_lines > 0:
-                    trad_str = "Não"
+            messages = []
+            if success:
+                if resp_code == "Local":
+                    messages.append(f"{C}[*] Letra Já Existente (Local): {title} - {search_artist}{O}")
                 else:
-                    trad_str = "Não"
-                messages.append(f"{G}  [*] Letra Encontrada: {title} - {search_artist} | Tradução: {trad_str} | Response_Code: {resp_code}{O}")
-        else:
-            resp_str = resp_code if resp_code else "Não"
-            messages.append(f"{Y}  [!] Falha ao obter letra para: {title} - {search_artist} | Code: {resp_str}{O}")
+                    if total_lines > 0 and trans_count > 0:
+                        trans_type = "Total" if trans_count >= total_lines else "Parcial"
+                        trad_str = f"{trans_count}/{total_lines} - ({trans_type})"
+                    elif total_lines > 0:
+                        trad_str = "Não"
+                    else:
+                        trad_str = "Não"
+                    messages.append(f"{G}  [*] Letra Encontrada: {title} - {search_artist} | Tradução: {trad_str} | Response_Code: {resp_code}{O}")
+            else:
+                resp_str = resp_code if resp_code else "Não"
+                messages.append(f"{Y}  [!] Falha ao obter letra para: {title} - {search_artist} | Code: {resp_str}{O}")
 
-        status_result = "injected" if success else "skipped"
-        return {"status": status_result, "artist": search_artist, "title": title, "messages": messages}
+            status_result = "injected" if success else "skipped"
+            return current_idx, {"status": status_result, "artist": search_artist, "title": title, "messages": messages}
 
-    except Exception as e:
-        logger.error(f"Error in _process_single_file: {e}", exc_info=True)
-        return {"status": "error", "artist": "Unknown", "title": "Unknown", "messages": [f"{RED}[!] Error processing {file_path_str}: {e}{OFF}"]}
+        except Exception as e:
+            logger.error(f"Error in _process_single_file: {e}", exc_info=True)
+            return current_idx, {"status": "error", "artist": "Unknown", "title": "Unknown", "messages": [f"{RED}[!] Error processing {file_path_str}: {e}{OFF}"]}
 
-    return {"status": "skipped", "artist": search_artist, "title": title, "messages": []}
+    return current_idx, {"status": "skipped", "artist": "Unknown", "title": "Unknown", "messages": []}
 
 
 # =========================
 # MAIN RETRO SCAN
 # =========================
 
-def inject_lyrics_retroactively(
+async def _async_inject_lyrics_retroactively(
     directory_path,
     genius_token=None,
     deepl_api_key=None,
@@ -210,69 +204,71 @@ def inject_lyrics_retroactively(
 
     # Ideal para iSH/iPad: rápido sem bagunçar o terminal
     max_workers = 3
+    semaphore = asyncio.Semaphore(max_workers)
 
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+    tasks = []
 
-        futures = {}
-
-        # Mantém a ordem original dos arquivos para impressão sequencial
-        for idx, path in enumerate(all_files, 1):
-            future = executor.submit(
-                _process_single_file,
+    # Mantém a ordem original dos arquivos para impressão sequencial
+    for idx, path in enumerate(all_files, 1):
+        task = asyncio.create_task(
+            _process_single_file(
+                semaphore,
                 str(path),
                 engine,
                 overwrite,
                 idx,
                 processed
             )
-            # Armazena o index original com o future
-            futures[future] = (idx, path)
+        )
+        tasks.append(task)
 
-        # Para imprimir na ordem exata de chegada (ex: [1/20], [2/20]),
-        # armazenamos os resultados assim que terminam, e processamos em ordem.
-        results_by_idx = {}
-        next_to_print = 1
+    # Para imprimir na ordem exata de chegada (ex: [1/20], [2/20]),
+    # armazenamos os resultados assim que terminam, e processamos em ordem.
+    results_by_idx = {}
+    next_to_print = 1
 
-        for future in as_completed(futures):
-            idx, path = futures[future]
-            try:
-                result_data = future.result()
-            except Exception as e:
-                logger.error(f"[!] Thread execution error: {e}")
-                result_data = {"status": "error", "artist": "Unknown", "title": "Unknown", "messages": []}
+    for future in asyncio.as_completed(tasks):
+        try:
+            result = await future
+            idx, result_data = result
+        except Exception as e:
+            logger.error(f"[!] Async execution error: {e}")
+            continue # We can't recover the idx safely here if the task threw without returning it.
+                     # However, _process_single_file catches all exceptions internally and returns the idx,
+                     # so this except block should theoretically never be hit.
 
-            # Salva o resultado no dict
-            if isinstance(result_data, str):
-                 results_by_idx[idx] = {"status": result_data, "messages": []}
-            else:
-                 results_by_idx[idx] = result_data
+        # Salva o resultado no dict
+        if isinstance(result_data, str):
+             results_by_idx[idx] = {"status": result_data, "messages": []}
+        else:
+             results_by_idx[idx] = result_data
 
-            # Imprime tudo que já está pronto e na ordem correta
-            while next_to_print in results_by_idx:
-                data = results_by_idx[next_to_print]
-                status = data.get("status")
-                artist = data.get("artist", "Unknown")
-                title = data.get("title", "Unknown")
-                messages = data.get("messages", [])
+        # Imprime tudo que já está pronto e na ordem correta
+        while next_to_print in results_by_idx:
+            data = results_by_idx[next_to_print]
+            status = data.get("status")
+            artist = data.get("artist", "Unknown")
+            title = data.get("title", "Unknown")
+            messages = data.get("messages", [])
 
-                # Imprime o início da busca
-                progresso = f"[{next_to_print}/{processed}]"
-                safe_print(f"{CYAN}{progresso} Processed: {artist} - {title}{OFF}")
+            # Imprime o início da busca
+            progresso = f"[{next_to_print}/{processed}]"
+            safe_print(f"{CYAN}{progresso} Processed: {artist} - {title}{OFF}")
 
-                # Imprime as mensagens retornadas
-                for msg in messages:
-                    safe_print(msg)
+            # Imprime as mensagens retornadas
+            for msg in messages:
+                safe_print(msg)
 
-                if status == "injected":
-                    injected += 1
-                elif status == "skipped":
-                    skipped += 1
-                elif status == "error":
-                    errors += 1
+            if status == "injected":
+                injected += 1
+            elif status == "skipped":
+                skipped += 1
+            elif status == "error":
+                errors += 1
 
-                # Deleta para poupar memória e avança o contador
-                del results_by_idx[next_to_print]
-                next_to_print += 1
+            # Deleta para poupar memória e avança o contador
+            del results_by_idx[next_to_print]
+            next_to_print += 1
 
     # =========================
     # FINAL SUMMARY
@@ -287,6 +283,31 @@ def inject_lyrics_retroactively(
         safe_print(f"{RED}  - Errors encountered: {errors}{OFF}")
 
     safe_print("\n")
+
+
+def inject_lyrics_retroactively(
+    directory_path,
+    genius_token=None,
+    deepl_api_key=None,
+    overwrite=False,
+    target_lang="PT-BR"
+):
+    try:
+        # Pega ou cria o loop se já existir
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+    loop.run_until_complete(
+        _async_inject_lyrics_retroactively(
+            directory_path,
+            genius_token,
+            deepl_api_key,
+            overwrite,
+            target_lang
+        )
+    )
 
 # =========================
 # INTERACTIVE FIX LYRICS
