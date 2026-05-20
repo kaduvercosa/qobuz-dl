@@ -140,7 +140,7 @@ async def _process_single_file(semaphore, file_path_str, engine, state, overwrit
 
         finally:
             # Atualiza o estado global imediatamente antes de sair do semáforo
-            state["files_done"] += 0
+            state["files_done"] : 0
             if elapsed is not None:
                 state["elapsed_times"].append(elapsed)
 
