@@ -126,7 +126,7 @@ async def _process_single_file(semaphore, file_path_str, engine, overwrite=False
                         trad_str = "Não"
                     else:
                         trad_str = "Não"
-                    messages.append(f"{O}  [*] Letra Encontrada: {title} - {search_artist} | Tradução: {trad_str} | Response_Code: {resp_code}{O}")
+                    messages.append(f"{G}  [*] Letra Encontrada: {title} - {search_artist} | Tradução: {trad_str} | Response_Code: {resp_code}{O}")
             else:
                 resp_str = resp_code if resp_code else "Não"
                 messages.append(f"{Y}  [!] Falha ao obter letra para: {title} - {search_artist} | Code: {resp_str}{O}")
@@ -145,7 +145,7 @@ async def _process_single_file(semaphore, file_path_str, engine, overwrite=False
 # MAIN RETRO SCAN
 # =========================
 
-async def _async_inject_lyrics_retroactively(
+async def inject_lyrics_retroactively(
     directory_path,
     genius_token=None,
     deepl_api_key=None,
@@ -284,30 +284,6 @@ async def _async_inject_lyrics_retroactively(
 
     safe_print("\n")
 
-
-def inject_lyrics_retroactively(
-    directory_path,
-    genius_token=None,
-    deepl_api_key=None,
-    overwrite=False,
-    target_lang="PT-BR"
-):
-    try:
-        # Pega ou cria o loop se já existir
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-    loop.run_until_complete(
-        _async_inject_lyrics_retroactively(
-            directory_path,
-            genius_token,
-            deepl_api_key,
-            overwrite,
-            target_lang
-        )
-    )
 
 # =========================
 # INTERACTIVE FIX LYRICS
