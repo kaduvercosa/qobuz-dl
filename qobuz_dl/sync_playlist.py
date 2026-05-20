@@ -43,7 +43,7 @@ def _scan_local_tracks(directory):
 
     return local_tracks, untagged_files
 
-def _fetch_remote_tracks(client, playlist_id):
+async def _fetch_remote_tracks(client, playlist_id):
     all_items = []
     playlist_name = "Unknown Playlist"
     async for chunk in client.get_plist_meta(playlist_id):
@@ -93,7 +93,7 @@ async def sync_playlist(qobuz_dl, url, folder, auto_confirm=False):
     logger.info(f"{YELLOW}URL : {url}{OFF}")
 
     logger.info(f"{CYAN}[1/4] Fetching playlist from Qobuz...{OFF}")
-    playlist_name, remote_items = _fetch_remote_tracks(qobuz_dl.client, playlist_id)
+    playlist_name, remote_items = await _fetch_remote_tracks(qobuz_dl.client, playlist_id)
     remote_ids = {str(item["id"]): item for item in remote_items}
     logger.info(f"{CYAN}      Found {len(remote_ids)} tracks in the Qobuz playlist.{OFF}")
 
