@@ -222,10 +222,8 @@ async def inject_lyrics_retroactively(
         )
         tasks.append(task)
 
-    # Para imprimir na ordem exata de chegada (ex: [1/20], [2/20]),
-    # armazenamos os resultados assim que terminam, e processamos em ordem.
-    results_by_idx = {}
-    next_to_print = 1
+    # Processa assim que terminam para feedback imediato no terminal
+    files_done = 0
 
     for future in asyncio.as_completed(tasks):
         try:
@@ -233,42 +231,37 @@ async def inject_lyrics_retroactively(
             idx, result_data = result
         except Exception as e:
             logger.error(f"[!] Async execution error: {e}")
+            files_done += 1
             continue # We can't recover the idx safely here if the task threw without returning it.
-                     # However, _process_single_file catches all exceptions internally and returns the idx,
-                     # so this except block should theoretically never be hit.
 
-        # Salva o resultado no dict
+        files_done += 1
+
         if isinstance(result_data, str):
-             results_by_idx[idx] = {"status": result_data, "messages": []}
+             data = {"status": result_data, "messages": []}
         else:
-             results_by_idx[idx] = result_data
+             data = result_data
 
-        # Imprime tudo que já está pronto e na ordem correta
-        while next_to_print in results_by_idx:
-            data = results_by_idx[next_to_print]
-            status = data.get("status")
-            artist = data.get("artist", "Unknown")
-            title = data.get("title", "Unknown")
-            messages = data.get("messages", [])
+        status = data.get("status")
+        artist = data.get("artist", "Unknown")
+        title = data.get("title", "Unknown")
+        messages = data.get("messages", [])
 
-            # Imprime o início da busca
-            progresso = f"[{next_to_print}/{processed}]"
-            safe_print(f"{CYAN}{progresso} Processed: {artist} - {title}{OFF}")
+        # Usa o lock nativo do safe_print para evitar mensagens bagunçadas
+        progresso = f"[{files_done}/{processed}]"
 
-            # Imprime as mensagens retornadas
-            for msg in messages:
-                safe_print(msg)
+        # Constrói um único bloco de impressão para não cruzar dados no terminal
+        output_block = f"{CYAN}{progresso} Processed: {artist} - {title}{OFF}"
+        for msg in messages:
+            output_block += f"\n{msg}"
 
-            if status == "injected":
-                injected += 1
-            elif status == "skipped":
-                skipped += 1
-            elif status == "error":
-                errors += 1
+        safe_print(output_block)
 
-            # Deleta para poupar memória e avança o contador
-            del results_by_idx[next_to_print]
-            next_to_print += 1
+        if status == "injected":
+            injected += 1
+        elif status == "skipped":
+            skipped += 1
+        elif status == "error":
+            errors += 1
 
     # =========================
     # FINAL SUMMARY

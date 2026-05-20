@@ -100,22 +100,23 @@ class LyricsEngine:
             logger.debug(f"[*] Falha ao inicializar Fasttext: {e}")
 
     def _detect_lang(self, text):
-        """Retorna o código do idioma usando fasttext (primário) ou langdetect."""
+        """Retorna tuple (lang_code, confidence_score) usando fasttext ou langdetect."""
         if self.fasttext_model:
             try:
                 text_clean = text.replace('\n', ' ')
                 res = self.fasttext_model.predict(text_clean)
                 label = res[0][0] # ex: '__label__en'
-                return label.replace('__label__', '')
+                score = float(res[1][0])
+                return label.replace('__label__', ''), score
             except Exception:
                 pass
 
         if langdetect_detect:
             try:
-                return langdetect_detect(text)
+                return langdetect_detect(text), 0.5 # langdetect não retorna score fácil, assumimos 0.5
             except Exception:
                 pass
-        return None
+        return None, 0.0
 
     def _has_lyrics(self, file_path, check_lrc=True):
         """Verifica se o arquivo já possui letra."""
@@ -193,10 +194,13 @@ class LyricsEngine:
         full_text = " ".join(texts_to_translate)
         target_lang_code = self.target_lang.split('-')[0].lower()
 
-        dominant_lang = self._detect_lang(full_text)
-        if dominant_lang and dominant_lang.lower() == target_lang_code:
+        dominant_lang_code, _ = self._detect_lang(full_text)
+        if dominant_lang_code and dominant_lang_code.lower() == target_lang_code:
             logger.debug(f"[*] Texto já está em {self.target_lang}, pulando tradução")
             return lyrics, 0, total_lines
+
+        # Se o idioma global não for o alvo, e for muito diferente (ex: Espanhol), seremos rígidos para pular linha
+        is_foreign_song = dominant_lang_code and dominant_lang_code.lower() not in (target_lang_code, "en")
 
         # 2. PREPARAR LINHAS PARA TRADUÇÃO (Restaurado filtro linha-por-linha via Fasttext)
         lines_to_translate = []
@@ -214,9 +218,13 @@ class LyricsEngine:
                 is_false_positive = all(w in self.pt_false_positives for w in words)
 
                 if not is_false_positive:
-                    line_lang = self._detect_lang(txt_clean)
+                    line_lang, score = self._detect_lang(txt_clean)
                     if line_lang and line_lang.lower() == target_lang_code:
-                        continue  # Já está no idioma alvo real, pula
+                        # Se a música inteira é estrangeira (ex: Espanhol), precisamos de quase 100% de certeza
+                        # que esta linha específica é Português para pulá-la e não mandar pro DeepL.
+                        threshold = 0.98 if is_foreign_song else 0.85
+                        if score >= threshold:
+                            continue  # É português com alta confiança, não precisa traduzir
 
             lines_to_translate.append(txt_clean)
             indices_to_translate.append(i)
