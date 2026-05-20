@@ -64,7 +64,7 @@ def _process_single_file(file_path_str, engine, overwrite=False, current_idx=0, 
             try:
                 audio = id3.ID3(file_path_str)
             except ID3NoHeaderError:
-                return "skipped"
+                return {"status": "skipped", "artist": "Unknown", "title": "Unknown", "messages": []}
 
             # Verifica se já possui letra
             if audio.getall("USLT") or audio.getall("SYLT"):
@@ -80,16 +80,19 @@ def _process_single_file(file_path_str, engine, overwrite=False, current_idx=0, 
         # =========================
 
         if not title or not artist:
-            return "skipped"
+            return {"status": "skipped", "artist": artist or "Unknown", "title": title or "Unknown", "messages": []}
 
         # Prioriza o Álbum Artista para não quebrar na busca (exceto se for Various Artists)
         search_artist = album_artist if album_artist and album_artist.lower() != "various artists" else artist
-        progresso = f"[{current_idx}/{total_files}]"
 
         # Se não for overwrite e já tiver letra, avisa e pula
         if not overwrite and has_lyrics:
-            safe_print(f"{Y}{progresso} Ignorado (Já Marcado): {search_artist} - {title}{O}")
-            return "skipped"
+            return {
+                "status": "skipped",
+                "artist": search_artist,
+                "title": title,
+                "messages": [f"{Y}  [*] Ignorado (Já Marcado): {title} - {search_artist}{O}"]
+            }
 
         # =========================
         # SEARCH & INJECT
@@ -106,7 +109,7 @@ def _process_single_file(file_path_str, engine, overwrite=False, current_idx=0, 
                 track=title,
                 album=album,
                 save_lrc=True,
-                overwrite=True
+                overwrite=overwrite
             ))
         finally:
             loop.close()
@@ -254,7 +257,7 @@ def inject_lyrics_retroactively(
 
                 # Imprime o início da busca
                 progresso = f"[{next_to_print}/{processed}]"
-                safe_print(f"{CYAN}{progresso} Searching: {artist} - {title}{OFF}")
+                safe_print(f"{CYAN}{progresso} Processed: {artist} - {title}{OFF}")
 
                 # Imprime as mensagens retornadas
                 for msg in messages:
