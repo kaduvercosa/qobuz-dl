@@ -339,46 +339,62 @@ async def amain():
         sys.exit(0)
     # --------------------------------------------
 
-    # --- NEW: STATS COMMAND INTEGRATION ---
+    # --- STATS COMMAND: real-time scan of the download folder ---
     if len(sys.argv) > 1 and sys.argv[1] == "stats":
-        from qobuz_dl.db import get_stats
-        
-        # QOBUZ_DB è già definito all'inizio di cli.py, lo usiamo direttamente
-        stats = get_stats(QOBUZ_DB)
-        
-        print(f"\n{CYAN}--- QOBUZ-DL MASTER STATISTICS ---{OFF}")
-        if not stats or (stats.get('total_tracks', 0) == 0 and stats.get('total_albums', 0) == 0):
-            print(f"{YELLOW}No data found yet. Start downloading to populate your stats!{OFF}")
-        else:
-            print(f"Total Tracks Downloaded:  {GREEN}{stats.get('total_tracks', 0)}{OFF}")
-            print(f"Total Albums Downloaded:  {GREEN}{stats.get('total_albums', 0)}{OFF}")
-            print(f"Total Unique Artists:     {GREEN}{stats.get('total_artists', 0)}{OFF}\n")
+        from qobuz_dl.db import get_folder_stats
 
-            # Map quality numbers to readable labels
-            quality_map = {
-                "5": "320 kbps (MP3)",
-                "6": "16-Bit / 44.1 kHz (CD / FLAC)",
-                "7": "24-Bit / <96 kHz (Hi-Res)",
-                "27": "24-Bit / >96 kHz (Hi-Res)"
-            }
+        # Read the download directory directly from config.ini so we don't need
+        # to fully initialize QobuzDL just to know where the files live.
+        _cfg = configparser.ConfigParser(interpolation=None)
+        _cfg.read(CONFIG_FILE)
+        _sec = "qobuz" if _cfg.has_section("qobuz") else "DEFAULT"
+        scan_dir = os.path.expanduser(
+            _cfg.get(_sec, "directory", fallback=None)
+            or _cfg.get(_sec, "default_folder", fallback="Qobuz Downloads")
+        )
+
+        print(f"\n{CYAN}--- QOBUZ-DL MASTER — LIBRARY STATISTICS ---{OFF}")
+        print(f"{YELLOW}Scanning: {scan_dir}{OFF}\n")
+
+        if not os.path.isdir(scan_dir):
+            print(f"{RED}[!] Directory not found: {scan_dir}{OFF}")
+            print(f"{YELLOW}    Make sure your download folder exists and is correctly set in config.ini{OFF}\n")
+            sys.exit(1)
+
+        stats = get_folder_stats(scan_dir)
+
+        if stats['total_tracks'] == 0:
+            print(f"{YELLOW}No audio files found. Start downloading to populate your library!{OFF}")
+        else:
+            # Format total disk usage in a human-readable way
+            size_bytes = stats['total_size_bytes']
+            if size_bytes >= 1_073_741_824:
+                size_str = f"{size_bytes / 1_073_741_824:.2f} GB"
+            else:
+                size_str = f"{size_bytes / 1_048_576:.1f} MB"
+
+            print(f"Total Tracks on Disk:  {GREEN}{stats['total_tracks']}{OFF}")
+            print(f"Total Album Folders:   {GREEN}{stats['total_albums']}{OFF}")
+            print(f"Total Unique Artists:  {GREEN}{stats['total_artists']}{OFF}")
+            print(f"Library Size:          {GREEN}{size_str}{OFF}\n")
 
             quality_dist = stats.get('quality_distribution', {})
             if quality_dist:
                 print(f"{YELLOW}Quality Distribution:{OFF}")
-                for q_num, count in quality_dist.items():
-                    label = quality_map.get(q_num, f"Unknown ({q_num})")
-                    print(f" - {label}: {count}")
+                # Sort descending so Hi-Res+ appears at the top
+                for q_label, count in sorted(quality_dist.items(), reverse=True):
+                    print(f"  {q_label}: {count} tracks")
                 print()
 
             top_artists = stats.get('top_artists', [])
             if top_artists:
                 print(f"{YELLOW}Top Artists:{OFF}")
                 for i, (artist, count) in enumerate(top_artists, 1):
-                    print(f" {i}. {artist} ({count} items)")
+                    print(f"  {i}. {artist} ({count} tracks)")
 
-        print(f"{CYAN}-------------------------------------{OFF}\n")
-        sys.exit(0) # Esce immediatamente dopo aver stampato le statistiche
-    # -------------------------------------------------
+        print(f"\n{CYAN}--------------------------------------------{OFF}\n")
+        sys.exit(0)
+    # -------------------------------------------------------------
 
     config = configparser.ConfigParser(interpolation=None)
     config.read(CONFIG_FILE)
