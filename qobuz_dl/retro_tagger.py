@@ -26,6 +26,7 @@ def safe_print(message):
 # =========================
 
 import asyncio
+import time
 
 async def _process_single_file(semaphore, file_path_str, engine, overwrite=False, current_idx=0, total_files=0):
     async with semaphore:
@@ -197,6 +198,7 @@ async def inject_lyrics_retroactively(
         f"{CYAN}[*] Found {processed} compatible audio files. "
         f"Processing...{OFF}\n"
     )
+    _start_time = time.monotonic()
 
     # =========================
     # PARALLEL PROCESSING
@@ -249,8 +251,24 @@ async def inject_lyrics_retroactively(
         # Usa o lock nativo do safe_print para evitar mensagens bagunçadas
         progresso = f"[{files_done}/{processed}]"
 
+        # ETA calculation based on elapsed time and files remaining
+        _elapsed = time.monotonic() - _start_time
+        _remaining = processed - files_done
+        if files_done > 0 and _remaining > 0:
+            _avg = _elapsed / files_done
+            _eta_secs = int(_avg * _remaining)
+            if _eta_secs >= 3600:
+                _eta_str = f"{_eta_secs // 3600}h{(_eta_secs % 3600) // 60}m"
+            elif _eta_secs >= 60:
+                _eta_str = f"{_eta_secs // 60}m{_eta_secs % 60}s"
+            else:
+                _eta_str = f"{_eta_secs}s"
+            eta_part = f" | ETA: ~{_eta_str}"
+        else:
+            eta_part = ""
+
         # Constrói um único bloco de impressão para não cruzar dados no terminal
-        output_block = f"{CYAN}{progresso} Processed: {artist} - {title}{OFF}"
+        output_block = f"{CYAN}{progresso}{eta_part} Processed: {artist} - {title}{OFF}"
         for msg in messages:
             output_block += f"\n{msg}"
 
