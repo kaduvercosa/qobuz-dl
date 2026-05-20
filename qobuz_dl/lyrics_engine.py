@@ -243,6 +243,102 @@ class LyricsEngine:
         logger.debug(f"[*] Tradução processada: {translation_count} linhas com tradução válida")
         return '\n'.join(result_lines), translation_count, total_lines
 
+    async def _fetch_musixmatch_lyrics(self, artist, title):
+        """Busca letras sincronizadas no Musixmatch usando endpoint mobile."""
+        import urllib.parse
+
+        headers = {
+            "Host": "apic-appmobile.musixmatch.com",
+            "authority": "apic-appmobile.musixmatch.com",
+            "X-Cookie": "x-mxm-token-guid=",
+            "x-mxm-app-version": "10.1.1",
+            "X-User-Agent": "Musixmatch/2025120901 CFNetwork/3860.300.31 Darwin/25.2.0",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept": "application/json",
+        }
+
+        try:
+            async with aiohttp.ClientSession(headers=headers) as session:
+                url = "https://apic-appmobile.musixmatch.com/ws/1.1/token.get?app_id=mac-ios-v2.0"
+                async with session.get(url, timeout=10) as resp:
+                    data = await resp.json(content_type=None)
+                    if data.get("message", {}).get("header", {}).get("status_code") == 200:
+                        token = data["message"]["body"]["user_token"]
+                    else:
+                        token = "21051986b9886beabe1ce01c3ce94c96319411f8f2c12267636fa7"
+
+                params = {
+                    "q_artist": artist,
+                    "q_track": title,
+                    "format": "json",
+                    "namespace": "lyrics_richsynched",
+                    "usertoken": token,
+                    "app_id": "mac-ios-v2.0"
+                }
+
+                url = "https://apic-appmobile.musixmatch.com/ws/1.1/macro.subtitles.get?" + urllib.parse.urlencode(params)
+                async with session.get(url, timeout=10) as resp:
+                    data = await resp.json(content_type=None)
+                    if data.get("message", {}).get("header", {}).get("status_code") == 200:
+                        macro_calls = data["message"]["body"]["macro_calls"]
+                        subtitles = macro_calls.get("track.subtitles.get", {}).get("message", {}).get("body", {})
+                        if subtitles and "subtitle_list" in subtitles and len(subtitles["subtitle_list"]) > 0:
+                            return subtitles["subtitle_list"][0]["subtitle"]["subtitle_body"]
+
+                        lyrics = macro_calls.get("track.lyrics.get", {}).get("message", {}).get("body", {})
+                        if lyrics and "lyrics" in lyrics:
+                            return lyrics["lyrics"]["lyrics_body"]
+        except Exception as e:
+            logger.debug(f"[*] Erro ao buscar no Musixmatch: {e}")
+        return None
+
+    async def _fetch_netease_lyrics(self, artist, title):
+        """Busca letras no Netease Music."""
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        }
+
+        search_url = "https://music.163.com/api/search/get/"
+        params = {
+            "s": f"{title} {artist}",
+            "type": "1",
+            "offset": "0",
+            "limit": "5"
+        }
+
+        try:
+            async with aiohttp.ClientSession(headers=headers) as session:
+                async with session.post(search_url, data=params, timeout=10) as resp:
+                    data = await resp.json(content_type=None)
+                    items = data.get("result", {}).get("songs", [])
+                    if not items:
+                        return None
+                    song_id = items[0]["id"]
+
+                lyric_url = f"https://music.163.com/api/song/lyric?os=pc&id={song_id}&lv=-1&kv=-1&tv=-1"
+                async with session.get(lyric_url, timeout=10) as resp:
+                    lyric_data = await resp.json(content_type=None)
+                    lrc = lyric_data.get("lrc", {}).get("lyric", "")
+                    return lrc if lrc else None
+        except Exception as e:
+            logger.debug(f"[*] Erro ao buscar no Netease: {e}")
+        return None
+
+    async def inject_manual_lyrics(self, file_path, raw_lyrics, is_synced=True):
+        """Injeta a letra manualmente no arquivo. Retorna bool indicando sucesso."""
+        if not raw_lyrics:
+            return False
+
+        try:
+            final_lyrics, _, _ = await self._process_translation(raw_lyrics, is_synced=is_synced)
+            self._inject_metadata(file_path, final_lyrics)
+            if is_synced:
+                self._save_lrc_file(file_path, final_lyrics)
+            return True
+        except Exception as e:
+            logger.error(f"[!] Erro em inject_manual_lyrics: {e}")
+            return False
+
     async def fetch_and_inject(self, file_path, album_artist, track, album, save_lrc=True, overwrite=False):
         """
         Busca e injeta as letras em arquivo de áudio.
@@ -256,12 +352,24 @@ class LyricsEngine:
 
         status = None
         try:
+            # 1. Tentar Musixmatch (Prioridade Máxima)
+            logger.debug(f"[*] Tentando Musixmatch para: {track}")
+            mxm_lyrics = await self._fetch_musixmatch_lyrics(album_artist, track)
+            if mxm_lyrics:
+                logger.debug(f"[*] Letra encontrada no Musixmatch para: {track}")
+                final_lyrics, trans_count, total_lines = await self._process_translation(mxm_lyrics, is_synced=True)
+                self._inject_metadata(file_path, final_lyrics)
+                if save_lrc:
+                    self._save_lrc_file(file_path, final_lyrics)
+                return (True, trans_count, total_lines, 200)
+
+            # 2. Tentar LRCLIB (Fallback 1)
+            logger.debug(f"[*] Tentando LRCLIB para: {track}")
             lrclib_url = "https://lrclib.net/api/get"
             headers = {"User-Agent": "qobuz-dl-master/2.5 (https://github.com/kaduvercosa/qobuz-dl)"}
             
             params = {"artist_name": album_artist, "track_name": track, "album_name": album}
             
-            # --- PROTEÇÃO CONTRA TIMEOUT E ERROS DE REDE DA API LRCLIB ---
             try:
                 async with aiohttp.ClientSession() as session:
                     async with session.get(lrclib_url, params=params, headers=headers, timeout=12) as response:
@@ -281,14 +389,13 @@ class LyricsEngine:
             except aiohttp.ClientError as e:
                 logger.debug(f"[*] Erro de rede ao contatar LRCLIB para {track}: {e}")
                 status = "Erro_Rede"
-            # -------------------------------------------------------------
 
             if status == 200:
                 synced_lyrics = data.get("syncedLyrics")
                 plain_lyrics = data.get("plainLyrics")
                 
                 if synced_lyrics:
-                    logger.debug(f"[*] Letras sincronizadas encontradas para: {track}")
+                    logger.debug(f"[*] Letras sincronizadas encontradas no LRCLIB para: {track}")
                     final_lyrics, trans_count, total_lines = await self._process_translation(synced_lyrics, is_synced=True)
                     self._inject_metadata(file_path, final_lyrics)
                     if save_lrc:
@@ -296,14 +403,25 @@ class LyricsEngine:
                     return (True, trans_count, total_lines, status)
                     
                 elif plain_lyrics:
-                    logger.debug(f"[*] Letras simples encontradas para: {track}")
+                    logger.debug(f"[*] Letras simples encontradas no LRCLIB para: {track}")
                     final_lyrics, trans_count, total_lines = await self._process_translation(plain_lyrics, is_synced=False)
                     self._inject_metadata(file_path, final_lyrics)
                     if save_lrc:
                         self._save_lrc_file(file_path, final_lyrics)
                     return (True, trans_count, total_lines, status)
 
-            # --- FALLBACK DO GENIUS ---
+            # 3. Tentar Netease (Fallback 2)
+            logger.debug(f"[*] Tentando Netease para: {track}")
+            netease_lyrics = await self._fetch_netease_lyrics(album_artist, track)
+            if netease_lyrics:
+                logger.debug(f"[*] Letra encontrada no Netease para: {track}")
+                final_lyrics, trans_count, total_lines = await self._process_translation(netease_lyrics, is_synced=True)
+                self._inject_metadata(file_path, final_lyrics)
+                if save_lrc:
+                    self._save_lrc_file(file_path, final_lyrics)
+                return (True, trans_count, total_lines, 200)
+
+            # 4. Tentar Genius (Fallback Final)
             if self.genius:
                 logger.debug(f"[*] Tentando Genius API para: {track}")
                 song = await asyncio.to_thread(self.genius.search_song, track, album_artist)
