@@ -498,8 +498,7 @@ class LyricsEngine:
                     logger.debug(f"[*] Letras simples encontradas no LRCLIB para: {track}")
                     final_lyrics, trans_count, total_lines = await self._process_translation(plain_lyrics, is_synced=False)
                     self._inject_metadata(file_path, final_lyrics)
-                    if save_lrc:
-                        self._save_lrc_file(file_path, final_lyrics)
+                    # Plain Lyrics não tem timestamps, não salvar como .lrc
                     return (True, trans_count, total_lines, f"{status} [LRCLIB]")
 
             # 4. Tentar Netease (Fallback 2)
@@ -521,8 +520,7 @@ class LyricsEngine:
                     logger.debug(f"[*] Letra encontrada via Genius para: {track}")
                     final_lyrics, trans_count, total_lines = await self._process_translation(song.lyrics, is_synced=False)
                     self._inject_metadata(file_path, final_lyrics)
-                    if save_lrc:
-                        self._save_lrc_file(file_path, final_lyrics)
+                    # Genius retorna letra plain, não salvar como .lrc
                     return (True, trans_count, total_lines, "200 [Genius]")
 
             logger.debug(f"[!] Nenhuma letra encontrada para: {track}")
