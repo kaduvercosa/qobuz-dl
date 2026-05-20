@@ -1,6 +1,7 @@
 import sys
 import difflib
 import string
+import re
 import configparser
 import logging
 import glob
@@ -22,6 +23,22 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(message)s",
 )
+
+# ============================================================
+# HELPER: Windows Long Path Support (evita duplicação)
+# ============================================================
+def ensure_long_path(path: str) -> str:
+    # """Garante o prefixo de long path do Windows (\\\\?\\) quando necessário."""
+    if os.name != "nt":
+        return path
+    try:
+        abs_path = os.path.abspath(os.path.expanduser(path))
+        if not abs_path.startswith("\\\\?\\"):
+            return "\\\\?\\" + abs_path
+        return abs_path
+    except Exception:
+        return path
+
 
 if os.name == "nt":
     OS_CONFIG = os.environ.get("APPDATA") or str(Path.home() / "AppData" / "Roaming")
@@ -52,7 +69,6 @@ def validate_config_formats(formats_to_check):
 
     has_errors = False
     
-    # Define color strings locally to ensure they print correctly in terminal
     C_RED = '\033[91m'
     C_YEL = '\033[93m'
     C_GRE = '\033[92m'
@@ -71,11 +87,9 @@ def validate_config_formats(formats_to_check):
                 if base_var not in VALID_KEYS:
                     print(f"{C_YEL}[!] Config Warning: Unknown variable '{{{base_var}}}' detected in '{config_name}'.{C_OFF}")
                     
-                    # --- NEW: 'Did you mean' logic using difflib ---
                     similar_keys = difflib.get_close_matches(base_var, VALID_KEYS, n=1, cutoff=0.6)
                     if similar_keys:
                         print(f"    {C_GRE}-> Did you mean '{{{similar_keys[0]}}}'?{C_OFF}")
-                    # -----------------------------------------------
                     
                     print(f"    {C_RED}-> This will cause the entire format string to be discarded during download.{C_OFF}")
                     has_errors = True
@@ -86,7 +100,6 @@ def validate_config_formats(formats_to_check):
 
     if has_errors:
         print(f"\n{C_YEL}[*] Tip: Please check your config.ini file or your command line arguments and fix any typos before downloading.{C_OFF}\n")
-        # Abort the process immediately
         sys.exit(1)
 
 
@@ -185,7 +198,6 @@ def _reset_config(config_file):
         print("\nWizard aborted.")
         sys.exit(1)
 
-    # Opções adicionais fixadas nativamente para a melhor qualidade/experiência
     config["qobuz"]["default_limit"] = "500"
     config["qobuz"]["no_m3u"] = "false"
     config["qobuz"]["albums_only"] = "false"
@@ -251,7 +263,7 @@ def _remove_leftovers(directory):
     for i in glob.glob(directory, recursive=True):
         try:
             os.remove(i)
-        except:  # noqa
+        except:
             pass
 
 
@@ -275,7 +287,7 @@ async def _handle_commands(qobuz, arguments):
             await sync_playlist(
                 qobuz,
                 arguments.URL,
-                qobuz.directory,  # <-- MODIFIED: Previously it was arguments.FOLDER
+                qobuz.directory,
                 auto_confirm=arguments.yes,
             )
         elif arguments.command == "lucky":
@@ -301,26 +313,20 @@ def _initial_checks():
     if len(sys.argv) < 2:
         sys.exit(qobuz_dl_args().print_help())
 
+
 async def check_for_updates():
-    """
-    Checks for a new release on GitHub at most once per day.
-    The date of the last check is stored in CONFIG_PATH/last_update_check.
-    This avoids a network request on every single command invocation,
-    which is especially noticeable on slow connections like iSH/mobile.
-    """
     import datetime
 
     check_file = os.path.join(CONFIG_PATH, "last_update_check")
 
-    # Read the date of the last check (if any)
     try:
         with open(check_file, "r") as f:
             last_check_str = f.read().strip()
         last_check = datetime.date.fromisoformat(last_check_str)
         if last_check >= datetime.date.today():
-            return  # Already checked today, skip
+            return
     except Exception:
-        pass  # File missing or unreadable — proceed with the check
+        pass
 
     try:
         from qobuz_dl import __version__
@@ -334,8 +340,12 @@ async def check_for_updates():
         latest_version_str = data.get("tag_name", "").replace("v", "")
         current_version_str = __version__
         
-        latest_tuple = tuple(map(int, latest_version_str.split(".")))
-        current_tuple = tuple(map(int, current_version_str.split(".")))
+        def parse_version(v: str):
+            parts = re.findall(r'\d+', v)
+            return tuple(int(p) for p in parts[:3])
+        
+        latest_tuple = parse_version(latest_version_str)
+        current_tuple = parse_version(current_version_str)
         
         if latest_tuple > current_tuple:
             print(f"\n{YELLOW}[*] UPDATE AVAILABLE: Master Edition v{latest_version_str} is out!{OFF}")
@@ -343,7 +353,6 @@ async def check_for_updates():
             print(f"{YELLOW}    - Docker: pull the latest image{OFF}")
             print(f"{YELLOW}    - Standalone: download the new release from GitHub{OFF}\n")
 
-        # Save today's date so we don't check again until tomorrow
         try:
             with open(check_file, "w") as f:
                 f.write(str(datetime.date.today()))
@@ -353,27 +362,21 @@ async def check_for_updates():
     except Exception:
         pass
 
+
 async def amain():
     await check_for_updates()
 
-    # --- RADAR FEATURE (Standalone Intercept) ---
-    import sys
     if len(sys.argv) > 1 and sys.argv[1] == "radar":
         from qobuz_dl.radar import run_radar
-        
         try:
             run_radar()
         except KeyboardInterrupt:
             print("\n\n\033[91m[!] Radar manually interrupted by the user (CTRL+C).\033[0m")
         sys.exit(0)
-    # --------------------------------------------
 
-    # --- STATS COMMAND: real-time scan of the download folder ---
     if len(sys.argv) > 1 and sys.argv[1] == "stats":
         from qobuz_dl.db import get_folder_stats
 
-        # Read the download directory directly from config.ini so we don't need
-        # to fully initialize QobuzDL just to know where the files live.
         _cfg = configparser.ConfigParser(interpolation=None)
         _cfg.read(CONFIG_FILE)
         _sec = "qobuz" if _cfg.has_section("qobuz") else "DEFAULT"
@@ -395,7 +398,6 @@ async def amain():
         if stats['total_tracks'] == 0:
             print(f"{YELLOW}No audio files found. Start downloading to populate your library!{OFF}")
         else:
-            # Format total disk usage in a human-readable way
             size_bytes = stats['total_size_bytes']
             if size_bytes >= 1_073_741_824:
                 size_str = f"{size_bytes / 1_073_741_824:.2f} GB"
@@ -410,7 +412,6 @@ async def amain():
             quality_dist = stats.get('quality_distribution', {})
             if quality_dist:
                 print(f"{YELLOW}Quality Distribution:{OFF}")
-                # Sort descending so Hi-Res+ appears at the top
                 for q_label, count in sorted(quality_dist.items(), reverse=True):
                     print(f"  {q_label}: {count} tracks")
                 print()
@@ -423,7 +424,6 @@ async def amain():
 
         print(f"\n{CYAN}--------------------------------------------{OFF}\n")
         sys.exit(0)
-    # -------------------------------------------------------------
 
     config = configparser.ConfigParser(interpolation=None)
     config.read(CONFIG_FILE)
@@ -440,19 +440,17 @@ async def amain():
         deepl_api_key = config.get(section, "deepl_api_key", fallback=None)
         target_lang = config.get(section, "target_lang", fallback="PT-BR")
         
-        # --- FIX: Backward compatibility for default_folder ---
         directory_val = config.get(section, "directory", fallback=None)
         if directory_val is not None:
             default_folder = directory_val
         else:
             legacy_val = config.get(section, "default_folder", fallback=None)
             if legacy_val is not None:
-                # If the legacy key is used, accept it but print a yellow warning
                 print(f"\033[93m[!] Notice: 'default_folder' in config.ini is deprecated. Please rename it to 'directory' for future updates.\033[0m")
                 default_folder = legacy_val
             else:
                 default_folder = "Qobuz Downloads"
-        # ------------------------------------------------------
+
         default_limit = config.get(section, "default_limit")
         default_quality = config.get(section, "default_quality")
         
@@ -470,7 +468,8 @@ async def amain():
         blacklist_config = config.get(section, "blacklist", fallback="blacklist.txt")
         
         app_id = config.get(section, "app_id")
-        secrets = [s for s in config.get(section, "secrets").split(",") if s]
+        secrets_raw = config.get(section, "secrets", fallback="")
+        secrets = [s.strip() for s in secrets_raw.split(",") if s.strip()]
         
         smart_discography = config.getboolean(section, "smart_discography", fallback=False)
         folder_format = config.get(section, "folder_format", fallback=DEFAULT_FOLDER)
@@ -489,7 +488,6 @@ async def amain():
     except (configparser.Error, KeyError) as error:
         arguments = qobuz_dl_args().parse_args()
         if not arguments.reset:
-            # FIX: Define ANSI codes locally to bypass UnboundLocalError
             RED_C = '\033[91m'
             YELLOW_C = '\033[93m'
             OFF_C = '\033[0m'
@@ -514,39 +512,25 @@ async def amain():
             pass
         sys.exit(f"{GREEN}Database has been purged.{OFF}")
 
-    # --- NEW DB SYNC FEATURE (Lightweight Mode) ---
     if getattr(arguments, 'sync_db', None):
         from qobuz_dl.sync import sync_database
         from qobuz_dl.qopy import Client
                 
-        # Initialize a lightweight API client for Reverse Lookup (bypassing the heavy downloader)
         sync_client = Client(email, password, app_id, secrets, user_auth_token=token, force_english=force_english)
         
-        # Path management
         sync_dir = default_folder if arguments.sync_db == "DEFAULT" else arguments.sync_db
-        
-        if os.name == "nt":
-            sync_dir = os.path.abspath(sync_dir)
-            if not sync_dir.startswith("\\\\?\\"):
-                sync_dir = "\\\\?\\" + sync_dir
+        sync_dir = ensure_long_path(sync_dir)
                 
         sync_database(sync_dir, QOBUZ_DB, sync_client)
         sys.exit(f"\n{GREEN}Database synchronization finished successfully.{OFF}")
-    # ----------------------------------------------
 
-    # --- RETRO LYRICS FEATURE (Standalone Mode) ---
-    # Intercept the command here before QobuzDLSettings looks for 'directory', which would crash the program
     if arguments.command == "lyrics":
         from qobuz_dl.retro_tagger import inject_lyrics_retroactively
         
         target_dir = arguments.DIR
-        if os.name == "nt":
-            target_dir = os.path.abspath(target_dir)
-            if not target_dir.startswith("\\\\?\\"):
-                target_dir = "\\\\?\\" + target_dir
-                
+        target_dir = ensure_long_path(target_dir)
+        
         try:
-            # Captura a flag do terminal usando getattr(retorna False se a flag não for digitada)
             overwrite_flag = getattr(arguments, 'overwrite', False)
             await inject_lyrics_retroactively(target_dir, genius_token=genius_token, deepl_api_key=deepl_api_key, overwrite=overwrite_flag, target_lang=target_lang)
         except KeyboardInterrupt:
@@ -558,33 +542,21 @@ async def amain():
         from qobuz_dl.retro_tagger import interactive_fix_lyrics
 
         target_dir = arguments.DIR
-        if os.name == "nt":
-            target_dir = os.path.abspath(target_dir)
-            if not target_dir.startswith("\\\\?\\"):
-                target_dir = "\\\\?\\" + target_dir
+        target_dir = ensure_long_path(target_dir)
 
         try:
             await interactive_fix_lyrics(target_dir, genius_token=genius_token, deepl_api_key=deepl_api_key, target_lang=target_lang)
         except KeyboardInterrupt:
             print("\n\n\033[91m[!] Operation manually interrupted by the user (CTRL+C).\033[0m")
         sys.exit(0)
-    # ----------------------------------------------
 
     directory_to_use = arguments.directory if hasattr(arguments, 'directory') and arguments.directory else default_folder
     directory_to_use = os.path.expanduser(directory_to_use)
-
-    # --- WINDOWS LONG PATH BYPASS ---
-    if os.name == "nt":
-        directory_to_use = os.path.abspath(directory_to_use)
-        if not directory_to_use.startswith("\\\\?\\"):
-            directory_to_use = "\\\\?\\" + directory_to_use
-    # --------------------------------
+    directory_to_use = ensure_long_path(directory_to_use)
 
     settings = QobuzDLSettings.from_arguments_configparser(arguments, config)
     settings.legacy_charmap = legacy_charmap
     
-    # Execute the Pre-flight Config Check
-    # --- PRE-FLIGHT CONFIG CHECK ---
     formats_to_validate = {
         "folder_format": getattr(arguments, 'folder_format', None) or folder_format,
         "track_format": getattr(arguments, 'track_format', None) or track_format,
@@ -592,7 +564,6 @@ async def amain():
         "multiple_disc_track_format": config.get(section, "multiple_disc_track_format", fallback="{disc_number}.{track_number} - {track_title}")
     }
     validate_config_formats(formats_to_validate)
-    # -------------------------------
 
     qobuz = QobuzDL(
         directory_to_use,
@@ -631,12 +602,8 @@ async def amain():
 def main():
     import asyncio
 
-    # We must ensure synchronous initial configuration logic (like questionary)
-    # runs BEFORE creating the asyncio loop.
     import sys
 
-
-    # Pre-flight config checks before loop
     if len(sys.argv) > 1 and sys.argv[1].lower() == "-r":
         sys.exit(_reset_config(CONFIG_FILE))
 
@@ -646,6 +613,7 @@ def main():
         asyncio.run(amain())
     except KeyboardInterrupt:
         pass
+
 
 if __name__ == "__main__":
     main()
