@@ -50,8 +50,9 @@ class Client:
                     self.id = fresh_id
                     self.secrets = list(b.get_secrets().values())
                     logger.info(f"{GREEN}[+] App ID dynamically updated: {self.id}{OFF}")
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"Nao foi possivel atualizar app_id/secrets dinamicamente: {e}")
+                
 
         self.headers = {}
         if self.force_english:
