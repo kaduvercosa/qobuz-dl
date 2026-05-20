@@ -1,3 +1,9 @@
+Esse comportamento de os logs parecerem "fora de ordem" acontece por conta de uma sutil **corrida de concorrência (race condition)** no código original.
+Quando uma música terminava o download, ela liberava a vaga no semáforo *antes* de o loop principal processar o resultado. Com isso, a próxima música da fila pegava a vaga instantaneamente e printava o log "Buscando..." frações de milissegundo *antes* de a música anterior conseguir printar seu log de "Letra Encontrada".
+### A Solução
+Para resolver isso perfeitamente, mudei a arquitetura do relatório. Agora, tanto o log de conclusão (Letra Encontrada / Falha) quanto o cálculo de ETA ocorrem **dentro da própria tarefa**, exatamente no instante em que a requisição de rede finaliza e **antes** de liberar a vaga do semáforo para a próxima música.
+Substitua todo o conteúdo do seu arquivo **retro_tagger.py** por esta versão de alta performance calibrada:
+```python
 import os
 import time
 import logging
@@ -7,6 +13,7 @@ import mutagen.id3 as id3
 from mutagen.id3 import ID3NoHeaderError
 from threading import Lock
 import asyncio
+import aiohttp
 
 from qobuz_dl.lyrics_engine import LyricsEngine
 from qobuz_dl.color import CYAN, GREEN, YELLOW, RED, OFF
@@ -27,12 +34,15 @@ def safe_print(message):
 # PROCESS SINGLE FILE
 # =========================
 
-async def _process_single_file(semaphore, file_path_str, engine, overwrite=False, current_idx=0, total_files=0):
+async def _process_single_file(semaphore, file_path_str, engine, state, overwrite=False, current_idx=0, total_files=0):
     async with semaphore:
-        try:
-            title, artist, album_artist, album = "", "", "", ""
-            has_lyrics = False
+        status_result = "skipped"
+        msg = ""
+        elapsed = None
+        search_artist = "Unknown"
+        title = "Unknown"
 
+        try:
             file_path_lower = file_path_str.lower()
 
             # Cores para a UI
@@ -47,10 +57,10 @@ async def _process_single_file(semaphore, file_path_str, engine, overwrite=False
             # =========================
             if file_path_lower.endswith(".flac"):
                 audio = FLAC(file_path_str)
-
-                # Verifica se já possui letra
                 if audio.get("LYRICS") or audio.get("UNSYNCEDLYRICS") or audio.get("LYRICS_SYNCED"):
                     has_lyrics = True
+                else:
+                    has_lyrics = False
 
                 title = audio.get("TITLE", [""])[0]
                 artist = audio.get("ARTIST", [""])[0]
@@ -62,45 +72,37 @@ async def _process_single_file(semaphore, file_path_str, engine, overwrite=False
             # =========================
             elif file_path_lower.endswith(".mp3"):
                 try:
-                    audio = id3.ID3(file_path_str)
+                    audio_id3 = id3.ID3(file_path_str)
                 except ID3NoHeaderError:
-                    return current_idx, {"status": "skipped", "artist": "Unknown", "title": "Unknown", "messages": []}
+                    return
 
-                # Verifica se já possui letra
-                if audio.getall("USLT") or audio.getall("SYLT"):
+                if audio_id3.getall("USLT") or audio_id3.getall("SYLT"):
                     has_lyrics = True
+                else:
+                    has_lyrics = False
 
-                title = audio.get("TIT2").text[0] if audio.get("TIT2") else ""
-                artist = audio.get("TPE1").text[0] if audio.get("TPE1") else ""
-                album_artist = audio.get("TPE2").text[0] if audio.get("TPE2") else ""
-                album = audio.get("TALB").text[0] if audio.get("TALB") else ""
+                title = audio_id3.get("TIT2").text[0] if audio_id3.get("TIT2") else ""
+                artist = audio_id3.get("TPE1").text[0] if audio_id3.get("TPE1") else ""
+                album_artist = audio_id3.get("TPE2").text[0] if audio_id3.get("TPE2") else ""
+                album = audio_id3.get("TALB").text[0] if audio_id3.get("TALB") else ""
 
             # =========================
             # VALIDATION & LOGIC
             # =========================
 
             if not title or not artist:
-                return current_idx, {"status": "skipped", "artist": artist or "Unknown", "title": title or "Unknown", "messages": []}
+                return
 
-            # Prioriza o Álbum Artista para não quebrar na busca (exceto se for Various Artists)
             search_artist = album_artist if album_artist and album_artist.lower() != "various artists" else artist
 
-            # Se não for overwrite e já tiver letra, avisa e pula
             if not overwrite and has_lyrics:
-                return current_idx, {
-                    "status": "skipped",
-                    "artist": search_artist,
-                    "title": title,
-                    "messages": [f"{Y}  [*] Ignorado (Já Marcado): {title} - {search_artist}{O}"]
-                }
+                msg = f"{Y}  [*] Ignorado (Já Marcado): {title} - {search_artist}{O}"
+                return
 
             # =========================
             # SEARCH & INJECT
             # =========================
-
-            # Feedback imediato: avisa que o arquivo entrou em processamento
-            # antes das requests de rede (evita silêncio que parece travamento)
-            safe_print(f"{C}  [{current_idx}/{total_files}] Buscando: {title} - {search_artist}...{O}")
+            safe_print(f"{C}[{current_idx}/{total_files}] Buscando: {title} - {search_artist}...{O}")
             task_start = time.monotonic()
 
             res_tuple = await engine.fetch_and_inject(
@@ -114,16 +116,15 @@ async def _process_single_file(semaphore, file_path_str, engine, overwrite=False
 
             elapsed = time.monotonic() - task_start
 
-            # Unpack the return signature (success, trans_count, total_lines, status_code)
             success = res_tuple[0]
             trans_count = res_tuple[1] if len(res_tuple) > 1 else 0
             total_lines = res_tuple[2] if len(res_tuple) > 2 else 0
             resp_code = res_tuple[3] if len(res_tuple) > 3 else "Unknown"
 
-            messages = []
             if success:
+                status_result = "injected"
                 if resp_code == "Local":
-                    messages.append(f"{C}[*] Letra Já Existente (Local): {title} - {search_artist}{O}")
+                    msg = f"{C}[*] Letra Já Existente (Local): {title} - {search_artist}{O}"
                 else:
                     if total_lines > 0 and trans_count > 0:
                         trans_type = "Total" if trans_count >= total_lines else "Parcial"
@@ -132,17 +133,58 @@ async def _process_single_file(semaphore, file_path_str, engine, overwrite=False
                         trad_str = "Não"
                     else:
                         trad_str = "Não"
-                    messages.append(f"{O}  [*] Letra Encontrada: {title} - {search_artist} | Tradução: {trad_str} | Response_Code: {resp_code} | Tempo: {elapsed:.1f}s{O}")
+                    msg = f"{O}  [*] Letra Encontrada: {title} - {search_artist} | Tradução: {trad_str} | Response_Code: {resp_code} | Tempo: {elapsed:.1f}s{O}"
             else:
+                status_result = "skipped"
                 resp_str = resp_code if resp_code else "Não"
-                messages.append(f"{Y}  [!] Falha ao obter letra para: {title} - {search_artist} | Code: {resp_str} | Tempo: {elapsed:.1f}s{O}")
-
-            status_result = "injected" if success else "skipped"
-            return current_idx, {"status": status_result, "artist": search_artist, "title": title, "messages": messages, "elapsed": elapsed}
+                msg = f"{Y}  [!] Falha ao obter letra para: {title} - {search_artist} | Code: {resp_str} | Tempo: {elapsed:.1f}s{O}"
 
         except Exception as e:
             logger.error(f"Error in _process_single_file: {e}", exc_info=True)
-            return current_idx, {"status": "error", "artist": "Unknown", "title": "Unknown", "messages": [f"{RED}[!] Error processing {file_path_str}: {e}{OFF}"]}
+            status_result = "error"
+            msg = f"{RED}[!] Error processing {file_path_str}: {e}{OFF}"
+
+        finally:
+            # Atualiza o estado global imediatamente antes de sair do semáforo
+            state["files_done"] += 1
+            if elapsed is not None:
+                state["elapsed_times"].append(elapsed)
+
+            if status_result == "injected":
+                state["injected"] += 1
+            elif status_result == "error":
+                state["errors"] += 1
+            else:
+                state["skipped"] += 1
+
+            # Calcula o ETA de forma síncrona com o término real da task
+            remaining = state["processed"] - state["files_done"]
+            eta_info = None
+            if state["elapsed_times"] and remaining > 0:
+                avg_time = sum(state["elapsed_times"]) / len(state["elapsed_times"])
+                eta_sec = (remaining * avg_time) / 3  # max_workers = 3
+                if eta_sec >= 60:
+                    eta_str = f"{int(eta_sec // 60)}m{int(eta_sec % 60):02d}s"
+                else:
+                    eta_str = f"{eta_sec:.0f}s"
+                eta_info = f"{CYAN}[ETA: ~{eta_str} restantes para {remaining} arquivo(s)]{OFF}"
+            elif remaining == 0:
+                total_sec = time.monotonic() - state["scan_start"]
+                if total_sec >= 60:
+                    total_str = f"{int(total_sec // 60)}m{int(total_sec % 60):02d}s"
+                else:
+                    total_str = f"{total_sec:.0f}s"
+                eta_info = f"{GREEN}  [Concluído em {total_str}]{OFF}"
+
+            # Exibe o bloco visual de forma atômica (garante ordem cronológica exata)
+            output_parts = []
+            if msg:
+                output_parts.append(msg)
+            if eta_info:
+                output_parts.append(eta_info)
+
+            if output_parts:
+                safe_print("\n".join(output_parts))
 
 
 # =========================
@@ -156,149 +198,69 @@ async def inject_lyrics_retroactively(
     overwrite=False,
     target_lang="PT-BR"
 ):
-
-    safe_print(
-        f"\n{CYAN}[*] Starting retroactive lyrics scan in: "
-        f"{directory_path}{OFF}\n"
-    )
+    safe_print(f"\n{CYAN}[*] Starting retroactive lyrics scan in: {directory_path}{OFF}\n")
 
     if overwrite:
-        safe_print(
-            f"{RED}[!] OVERWRITE MODE ENABLED: "
-            f"Existing lyrics will be replaced.{OFF}\n"
-        )
+        safe_print(f"{RED}[!] OVERWRITE MODE ENABLED: Existing lyrics will be replaced.{OFF}\n")
 
     target_dir = Path(directory_path)
-
     if not target_dir.is_dir():
-        safe_print(
-            f"{RED}[!] Error: "
-            f"The directory '{directory_path}' does not exist.{OFF}\n"
-        )
+        safe_print(f"{RED}[!] Error: The directory '{directory_path}' does not exist.{OFF}\n")
         return
 
     engine = LyricsEngine(genius_token=genius_token, deepl_api_key=deepl_api_key, translate=True, target_lang=target_lang)
 
-    # =========================
-    # FILE DISCOVERY
-    # =========================
-
     all_files = []
-
     for ext in [".flac", ".mp3"]:
         all_files.extend(list(target_dir.rglob(f"*{ext}")))
         all_files.extend(list(target_dir.rglob(f"*{ext.upper()}")))
 
-    # Remove duplicados
     all_files = list(set(all_files))
 
-    processed = len(all_files)
-    injected = 0
-    skipped = 0
-    errors = 0
+    # Objeto de estado compartilhado para contagem linear em tempo real
+    state = {
+        "processed": len(all_files),
+        "injected": 0,
+        "skipped": 0,
+        "errors": 0,
+        "elapsed_times": [],
+        "scan_start": time.monotonic()
+    }
 
-    safe_print(
-        f"{CYAN}[*] Found {processed} compatible audio files. "
-        f"Processing...{OFF}\n"
-    )
-
-    # =========================
-    # PARALLEL PROCESSING
-    # =========================
+    safe_print(f"{CYAN}[*] Found {state['processed']} compatible audio files. Processing...{OFF}\n")
 
     max_workers = 3
     semaphore = asyncio.Semaphore(max_workers)
 
     tasks = []
-
-    # Mantém a ordem original dos arquivos para impressão sequencial
     for idx, path in enumerate(all_files, 1):
         task = asyncio.create_task(
             _process_single_file(
                 semaphore,
                 str(path),
                 engine,
+                state,
                 overwrite,
                 idx,
-                processed
+                state["processed"]
             )
         )
         tasks.append(task)
 
-    files_done = 0
-    elapsed_times = []
-    scan_start = time.monotonic()
-
-    for future in asyncio.as_completed(tasks):
-        try:
-            result = await future
-            idx, result_data = result
-        except Exception as e:
-            logger.error(f"[!] Async execution error: {e}")
-            files_done += 1
-            continue
-
-        files_done += 1
-
-        if isinstance(result_data, str):
-             data = {"status": result_data, "messages": []}
-        else:
-             data = result_data
-
-        status = data.get("status")
-        messages = data.get("messages", [])
-        elapsed = data.get("elapsed")
-
-        # Atualiza média de tempo e calcula ETA
-        if elapsed is not None:
-            elapsed_times.append(elapsed)
-
-        remaining = processed - files_done
-        if elapsed_times and remaining > 0:
-            avg_time = sum(elapsed_times) / len(elapsed_times)
-            eta_sec = (remaining * avg_time) / max_workers
-            if eta_sec >= 60:
-                eta_str = f"{int(eta_sec // 60)}m{int(eta_sec % 60):02d}s"
-            else:
-                eta_str = f"{eta_sec:.0f}s"
-            eta_info = f"{CYAN}  [ETA: ~{eta_str} restantes para {remaining} arquivo(s)]{OFF}"
-        elif remaining == 0:
-            total_sec = time.monotonic() - scan_start
-            if total_sec >= 60:
-                total_str = f"{int(total_sec // 60)}m{int(total_sec % 60):02d}s"
-            else:
-                total_str = f"{total_sec:.0f}s"
-            eta_info = f"{GREEN}  [Concluído em {total_str}]{OFF}"
-        else:
-            eta_info = None
-
-        output_parts = []
-        if messages:
-            output_parts.append("\n".join(messages))
-        if eta_info:
-            output_parts.append(eta_info)
-        if output_parts:
-            safe_print("\n".join(output_parts))
-
-        if status == "injected":
-            injected += 1
-        elif status == "skipped":
-            skipped += 1
-        elif status == "error":
-            errors += 1
+    # Como as próprias tasks gerenciam seus logs na hora exata em que terminam,
+    # basta darmos um gather limpo sem perder performance esperando iteradores ordinais
+    await asyncio.gather(*tasks)
 
     # =========================
     # FINAL SUMMARY
     # =========================
-
     safe_print(f"\n{GREEN}[+] Retroactive Scan and Injection Completed!{OFF}")
-    safe_print(f"{CYAN}  - TOTAL DE ARQUIVOS ANALISADOS: {processed}{OFF}")
-    safe_print(f"{OFF}  - ARQUIVOS EDITADOS/TAGGEADOS: {injected}{OFF}")
-    safe_print(f"{YELLOW}  - ARQUIVOS PULADOS (dados já etiquetados ou ausentes): {skipped}{OFF}")
+    safe_print(f"{CYAN}  - TOTAL DE ARQUIVOS ANALISADOS: {state['processed']}{OFF}")
+    safe_print(f"{OFF}  - ARQUIVOS EDITADOS/TAGGEADOS: {state['injected']}{OFF}")
+    safe_print(f"{YELLOW}  - ARQUIVOS PULADOS (dados já etiquetados ou ausentes): {state['skipped']}{OFF}")
 
-    if errors > 0:
-        safe_print(f"{RED}  - Errors encountered: {errors}{OFF}")
-
+    if state["errors"] > 0:
+        safe_print(f"{RED}  - Errors encountered: {state['errors']}{OFF}")
     safe_print("\n")
 
 
@@ -315,14 +277,12 @@ async def interactive_fix_lyrics(
     from pick import pick
 
     target_dir = Path(directory_path)
-
     if not target_dir.is_dir():
         print(f"{RED}[!] Error: The directory '{directory_path}' does not exist.{OFF}")
         return
 
     engine = LyricsEngine(genius_token=genius_token, deepl_api_key=deepl_api_key, translate=True, target_lang=target_lang)
 
-    # 1. SCAN DIRECTORY
     all_files = []
     for ext in [".flac", ".mp3"]:
         all_files.extend(list(target_dir.rglob(f"*{ext}")))
@@ -358,7 +318,6 @@ async def interactive_fix_lyrics(
                 from mutagen.mp3 import MP3
                 mp3_audio = MP3(path_str)
                 tags = mp3_audio.tags or id3.ID3()
-                # CORREÇÃO DE BUG: Alterado de audio.get para tags.get
                 title = tags.get("TIT2").text[0] if tags.get("TIT2") else ""
                 artist = tags.get("TPE1").text[0] if tags.get("TPE1") else ""
                 duration = mp3_audio.info.length
@@ -419,7 +378,6 @@ async def _handle_manual_lyric_search(track_info, engine):
 
     results = []
 
-    # 1. Query LRCLIB search endpoint
     lrclib_url = "https://lrclib.net/api/search"
     headers = {"User-Agent": "qobuz-dl-master/2.5 (https://github.com/kaduvercosa/qobuz-dl)"}
     params = {"track_name": track_title, "artist_name": search_artist}
@@ -440,7 +398,6 @@ async def _handle_manual_lyric_search(track_info, engine):
                             "albumName": item.get("albumName", "Unknown")
                         })
 
-    # 2. Query Musixmatch
     async def fetch_musixmatch():
         text = await engine._fetch_musixmatch_lyrics(search_artist, track_title)
         if text:
@@ -454,7 +411,6 @@ async def _handle_manual_lyric_search(track_info, engine):
                 "albumName": "Musixmatch"
             })
 
-    # 3. Query LyricsPlus
     async def fetch_lyricsplus():
         text = await engine._fetch_lyrics_plus(search_artist, track_title)
         if text:
@@ -468,7 +424,6 @@ async def _handle_manual_lyric_search(track_info, engine):
                 "albumName": "LyricsPlus"
             })
 
-    # 4. Query Netease
     async def fetch_netease():
         text = await engine._fetch_netease_lyrics(search_artist, track_title)
         if text:
@@ -482,7 +437,6 @@ async def _handle_manual_lyric_search(track_info, engine):
                 "albumName": "Netease"
             })
 
-    # 5. Query Genius
     async def fetch_genius():
         if engine.genius:
             song = await asyncio.to_thread(engine.genius.search_song, track_title, search_artist)
@@ -498,13 +452,7 @@ async def _handle_manual_lyric_search(track_info, engine):
                 })
 
     try:
-        await asyncio.gather(
-            fetch_lrclib(),
-            fetch_musixmatch(),
-            fetch_lyricsplus(),
-            fetch_netease(),
-            fetch_genius()
-        )
+        await asyncio.gather(fetch_lrclib(), fetch_musixmatch(), fetch_lyricsplus(), fetch_netease(), fetch_genius())
     except Exception as e:
         print(f"{RED}[!] Search failed: {e}{OFF}")
         return
@@ -554,7 +502,6 @@ async def _handle_manual_lyric_search(track_info, engine):
         return
 
     chosen_lyric_data = option_mapping[selected_option]
-
     print(f"\n{GREEN}[+] Downloading and injecting chosen lyrics...{OFF}")
 
     result = await engine.inject_manual_lyrics(
@@ -585,3 +532,5 @@ async def _handle_manual_lyric_search(track_info, engine):
         print(f"{RED}[!] Failed to inject lyrics.{OFF}")
 
     await asyncio.sleep(2)
+
+```
