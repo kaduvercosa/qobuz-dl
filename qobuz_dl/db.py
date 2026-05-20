@@ -157,3 +157,102 @@ def get_stats(db_path):
             return stats
     except sqlite3.Error:
         return None
+
+def get_folder_stats(directory):
+    """
+    Scans the actual download directory and builds real-time statistics
+    directly from the audio files on disk, reading embedded tags via mutagen.
+
+    Unlike get_stats() which reads from the database (a historical record),
+    this function reflects the true current state of the collection:
+    deleted or moved files are not counted, and quality is read from the
+    actual audio stream metadata rather than what was recorded at download time.
+    """
+    import os
+    from mutagen.flac import FLAC
+    from mutagen.id3 import ID3, ID3NoHeaderError
+
+    stats = {
+        'total_tracks': 0,
+        'total_albums': 0,
+        'total_artists': 0,
+        'quality_distribution': {},
+        'top_artists': [],
+        'total_size_bytes': 0,
+    }
+
+    artist_counts = {}
+    # Each directory that contains at least one audio file counts as one album folder.
+    album_dirs = set()
+
+    for root, _, files in os.walk(directory):
+        for fname in files:
+            fpath = os.path.join(root, fname)
+            lower = fname.lower()
+
+            if not lower.endswith(('.flac', '.mp3')):
+                continue
+
+            stats['total_tracks'] += 1
+            try:
+                stats['total_size_bytes'] += os.path.getsize(fpath)
+            except OSError:
+                pass
+            album_dirs.add(root)
+
+            try:
+                if lower.endswith('.flac'):
+                    audio = FLAC(fpath)
+
+                    # Prefer album artist for grouping (avoids counting "Various Artists"
+                    # compilations under each individual performer).
+                    artist = (
+                        audio.get('albumartist')
+                        or audio.get('album_artist')
+                        or audio.get('artist')
+                        or ['Unknown']
+                    )[0]
+
+                    # mutagen exposes the real technical metadata via audio.info,
+                    # which is read directly from the FLAC stream header — reliable
+                    # regardless of what tags were manually written.
+                    bd = getattr(audio.info, 'bits_per_sample', 16)
+                    sr = getattr(audio.info, 'sample_rate', 44100)
+
+                    # Map to the same quality tiers Qobuz uses internally
+                    # (quality IDs 27, 7, 6) so the output is familiar.
+                    if bd >= 24 and sr > 96000:
+                        q_label = "Hi-Res+ (24b/>96kHz)"
+                    elif bd >= 24:
+                        q_label = "Hi-Res (24b/\u226496kHz)"
+                    else:
+                        q_label = "CD (16b/44.1kHz)"
+
+                else:  # .mp3
+                    try:
+                        audio = ID3(fpath)
+                        # TPE2 = Album Artist (preferred), TPE1 = Track Artist
+                        frame = audio.get('TPE2') or audio.get('TPE1')
+                        artist = frame.text[0] if frame else 'Unknown'
+                    except ID3NoHeaderError:
+                        artist = 'Unknown'
+                    q_label = "MP3 (320kbps)"
+
+                artist_counts[artist] = artist_counts.get(artist, 0) + 1
+                stats['quality_distribution'][q_label] = (
+                    stats['quality_distribution'].get(q_label, 0) + 1
+                )
+
+            except Exception:
+                # Corrupt or unreadable file: count it but mark quality as unknown
+                # so the total track count remains accurate.
+                stats['quality_distribution']['Unknown'] = (
+                    stats['quality_distribution'].get('Unknown', 0) + 1
+                )
+
+    stats['total_albums'] = len(album_dirs)
+    stats['total_artists'] = len(artist_counts)
+    # Top 5 artists by track count, descending
+    stats['top_artists'] = sorted(artist_counts.items(), key=lambda x: -x[1])[:5]
+
+    return stats
