@@ -106,8 +106,7 @@ def _process_single_file(file_path_str, engine, overwrite=False, current_idx=0, 
                 track=title,
                 album=album,
                 save_lrc=True,
-                overwrite=overwrite,
-                return_message=None
+                overwrite=overwrite
             ))
         finally:
             loop.close()
