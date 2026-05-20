@@ -46,7 +46,7 @@ def _scan_local_tracks(directory):
 def _fetch_remote_tracks(client, playlist_id):
     all_items = []
     playlist_name = "Unknown Playlist"
-    for chunk in client.get_plist_meta(playlist_id):
+    async for chunk in client.get_plist_meta(playlist_id):
         if "name" in chunk and playlist_name == "Unknown Playlist":
             playlist_name = chunk.get("name")
         items = chunk.get("tracks", {}).get("items", [])
