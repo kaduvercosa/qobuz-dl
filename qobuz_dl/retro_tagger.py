@@ -388,7 +388,7 @@ async def _handle_manual_lyric_search(track_info, engine):
 
     async def fetch_lrclib():
         async with aiohttp.ClientSession() as session:
-            async with session.get(lrclib_url, params=params, headers=headers, timeout=35) as resp:
+            async with session.get(lrclib_url, params=params, headers=headers, timeout=40) as resp:
                 if resp.status == 200:
                     data = await resp.json()
                     for item in data:
