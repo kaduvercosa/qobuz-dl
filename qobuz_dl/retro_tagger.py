@@ -532,5 +532,3 @@ async def _handle_manual_lyric_search(track_info, engine):
         print(f"{RED}[!] Failed to inject lyrics.{OFF}")
 
     await asyncio.sleep(2)
-
-```
