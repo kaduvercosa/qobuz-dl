@@ -1,9 +1,9 @@
-Esse comportamento de os logs parecerem "fora de ordem" acontece por conta de uma sutil **corrida de concorrência (race condition)** no código original.
-Quando uma música terminava o download, ela liberava a vaga no semáforo *antes* de o loop principal processar o resultado. Com isso, a próxima música da fila pegava a vaga instantaneamente e printava o log "Buscando..." frações de milissegundo *antes* de a música anterior conseguir printar seu log de "Letra Encontrada".
+# Esse comportamento de os logs parecerem "fora de ordem" acontece por conta de uma sutil **corrida de concorrência (race condition)** no código original.
+# Quando uma música terminava o download, ela liberava a vaga no semáforo *antes* de o loop principal processar o resultado. Com isso, a próxima música da fila pegava a vaga instantaneamente e printava o log "Buscando..." frações de milissegundo *antes* de a música anterior conseguir printar seu log de "Letra Encontrada".
 ### A Solução
-Para resolver isso perfeitamente, mudei a arquitetura do relatório. Agora, tanto o log de conclusão (Letra Encontrada / Falha) quanto o cálculo de ETA ocorrem **dentro da própria tarefa**, exatamente no instante em que a requisição de rede finaliza e **antes** de liberar a vaga do semáforo para a próxima música.
-Substitua todo o conteúdo do seu arquivo **retro_tagger.py** por esta versão de alta performance calibrada:
-```python
+# Para resolver isso perfeitamente, mudei a arquitetura do relatório. Agora, tanto o log de conclusão (Letra Encontrada / Falha) quanto o cálculo de ETA ocorrem **dentro da própria tarefa**, exatamente no instante em que a requisição de rede finaliza e **antes** de liberar a vaga do semáforo para a próxima música.
+# Substitua todo o conteúdo do seu arquivo **retro_tagger.py** por esta versão de alta performance calibrada:
+
 import os
 import time
 import logging
