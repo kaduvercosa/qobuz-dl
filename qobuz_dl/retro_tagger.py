@@ -425,18 +425,18 @@ async def _handle_manual_lyric_search(track_info, engine):
                             "albumName": item.get("albumName", "Unknown")
                         })
 
-    # 2. Query LyricsPlus (Apple Music) directly from the engine
-    async def fetch_lyricsplus():
-        text = await engine._fetch_lyrics_plus(search_artist, track_title)
+    # 2. Query Musixmatch directly from the engine
+    async def fetch_musixmatch():
+        text = await engine._fetch_musixmatch_lyrics(search_artist, track_title)
         if text:
             results.append({
-                "provider": "Apple",
-                "duration": real_duration, # Apple doesn't return duration, assume perfect match for sorting purposes
+                "provider": "Musixmatch",
+                "duration": real_duration, # Assume perfect match for sorting purposes
                 "syncedLyrics": text,
                 "plainLyrics": None,
                 "artistName": search_artist,
                 "trackName": track_title,
-                "albumName": "Apple Music"
+                "albumName": "Musixmatch"
             })
 
     # 3. Query Netease directly from the engine
@@ -471,7 +471,7 @@ async def _handle_manual_lyric_search(track_info, engine):
     try:
         await asyncio.gather(
             fetch_lrclib(),
-            fetch_lyricsplus(),
+            fetch_musixmatch(),
             fetch_netease(),
             fetch_genius()
         )
