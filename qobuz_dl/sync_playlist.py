@@ -76,7 +76,7 @@ def _clean_empty_dirs(base_directory,exclude_dirs=None):
             except OSError:
                 pass
 
-def sync_playlist(qobuz_dl, url, folder, auto_confirm=False):
+async def sync_playlist(qobuz_dl, url, folder, auto_confirm=False):
     from qobuz_dl.utils import get_url_info, make_m3u
 
     try:
