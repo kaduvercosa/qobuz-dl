@@ -111,10 +111,28 @@ def _process_single_file(file_path_str, engine, overwrite=False, current_idx=0, 
         finally:
             loop.close()
 
-        # Unpack, robustly handling old and new returns
+        # Unpack the new return signature (success, trans_count, total_lines, status_code)
         success = res_tuple[0]
-        has_translation = res_tuple[1]
-        messages = res_tuple[2] if len(res_tuple) > 2 else []
+        trans_count = res_tuple[1] if len(res_tuple) > 1 else 0
+        total_lines = res_tuple[2] if len(res_tuple) > 2 else 0
+        resp_code = res_tuple[3] if len(res_tuple) > 3 else "Unknown"
+
+        messages = []
+        if success:
+            if resp_code == "Local":
+                messages.append(f"{C}[*] Letra Já Existente (Local): {title} - {search_artist}{O}")
+            else:
+                if total_lines > 0 and trans_count > 0:
+                    trans_type = "Total" if trans_count >= total_lines else "Parcial"
+                    trad_str = f"{trans_count}/{total_lines} - ({trans_type})"
+                elif total_lines > 0:
+                    trad_str = "Não"
+                else:
+                    trad_str = "Não"
+                messages.append(f"{G}  [*] Letra Encontrada: {title} - {search_artist} | Tradução: {trad_str} | Response_Code: {resp_code}{O}")
+        else:
+            resp_str = resp_code if resp_code else "Não"
+            messages.append(f"{Y}  [!] Falha ao obter letra para: {title} - {search_artist} | Code: {resp_str}{O}")
 
         status_result = "injected" if success else "skipped"
         return {"status": status_result, "artist": search_artist, "title": title, "messages": messages}
