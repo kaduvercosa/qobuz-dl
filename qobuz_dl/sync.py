@@ -1,5 +1,6 @@
 import logging
 import time
+import asyncio
 from pathlib import Path
 from mutagen.flac import FLAC
 from mutagen.id3 import ID3
@@ -60,7 +61,10 @@ def sync_database(directory, db_path, client):
                 
                 if not track_id and isrc:
                     logger.info(f"{CYAN}[*] Missing local ID. Fetching via API (ISRC: {isrc})...{OFF}")
-                    res = client.search_tracks(isrc, limit=1)
+                    try:
+                        res = asyncio.run(client.search_tracks(isrc, limit=1))
+                    except RuntimeError:
+                        res = None
                     if res and "tracks" in res and res["tracks"]["items"]:
                         q_track = res["tracks"]["items"][0]
                         track_id = str(q_track["id"])
