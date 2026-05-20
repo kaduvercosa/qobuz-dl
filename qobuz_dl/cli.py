@@ -16,6 +16,7 @@ from qobuz_dl.commands import qobuz_dl_args
 from qobuz_dl.core import QobuzDL
 from qobuz_dl.downloader import DEFAULT_FOLDER, DEFAULT_TRACK
 from qobuz_dl.settings import QobuzDLSettings
+from pathlib import Path
 
 logging.basicConfig(
     level=logging.INFO,
@@ -23,9 +24,10 @@ logging.basicConfig(
 )
 
 if os.name == "nt":
-    OS_CONFIG = os.environ.get("APPDATA")
+    OS_CONFIG = os.environ.get("APPDATA") or str(Path.home() / "AppData" / "Roaming")
 else:
-    OS_CONFIG = os.path.join(os.environ["HOME"], ".config")
+    home = os.environ.get("HOME") or str(Path.home())
+    OS_CONFIG = os.path.join(home, ".config")
 
 CONFIG_PATH = os.path.join(OS_CONFIG, "qobuz-dl")
 CONFIG_FILE = os.path.join(CONFIG_PATH, "config.ini")
