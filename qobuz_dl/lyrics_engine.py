@@ -20,11 +20,18 @@ except ImportError:
     deepl = None
     DEEPL_AVAILABLE = False
 
-# Import langdetect para detecção de idioma
+# Import fasttext e langdetect para detecção de idioma
 try:
-    from langdetect import detect
+    import fasttext
+    # Suppress the fasttext load warning
+    fasttext.FastText.eprint = lambda x: None
 except ImportError:
-    detect = None
+    fasttext = None
+
+try:
+    from langdetect import detect as langdetect_detect
+except ImportError:
+    langdetect_detect = None
 
 # Configurar logging e silenciar as bibliotecas ruidosas de rede
 logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -44,6 +51,12 @@ class LyricsEngine:
         self.target_lang = target_lang
         self.translation_symbol = translation_symbol
         
+        self.fasttext_model = None
+        self._init_fasttext()
+
+        # Dicionário de exclusão rápida (falsos positivos em PT-BR)
+        self.pt_false_positives = {"oh", "yeah", "ah", "baby", "na", "la", "uh", "hey"}
+
         # BUG FIX: Verificar se deepl está disponível e inicializar o translator
         if self.translate and self.deepl_api_key:
             if not DEEPL_AVAILABLE:
@@ -69,6 +82,40 @@ class LyricsEngine:
             except Exception as e:
                 logger.error(f"[!] Erro ao inicializar Genius: {e}")
                 self.genius = None
+
+    def _init_fasttext(self):
+        """Inicializa o modelo fasttext se disponível."""
+        if not fasttext:
+            return
+
+        model_path = os.path.join(os.path.dirname(__file__), "lid.176.ftz")
+        try:
+            if not os.path.exists(model_path):
+                import urllib.request
+                print("\n\033[96m[*] Baixando modelo Fasttext (lid.176.ftz) para detecção de idiomas (900KB)...\033[0m")
+                urllib.request.urlretrieve("https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.ftz", model_path)
+
+            self.fasttext_model = fasttext.load_model(model_path)
+        except Exception as e:
+            logger.debug(f"[*] Falha ao inicializar Fasttext: {e}")
+
+    def _detect_lang(self, text):
+        """Retorna o código do idioma usando fasttext (primário) ou langdetect."""
+        if self.fasttext_model:
+            try:
+                text_clean = text.replace('\n', ' ')
+                res = self.fasttext_model.predict(text_clean)
+                label = res[0][0] # ex: '__label__en'
+                return label.replace('__label__', '')
+            except Exception:
+                pass
+
+        if langdetect_detect:
+            try:
+                return langdetect_detect(text)
+            except Exception:
+                pass
+        return None
 
     def _has_lyrics(self, file_path, check_lrc=True):
         """Verifica se o arquivo já possui letra."""
@@ -144,17 +191,14 @@ class LyricsEngine:
 
         # 1. DETECÇÃO GLOBAL DE IDIOMA (economia de quota)
         full_text = " ".join(texts_to_translate)
-        try:
-            if detect:
-                dominant_lang = detect(full_text)
-                target_lang_code = self.target_lang.split('-')[0].lower()
-                if dominant_lang.lower() == target_lang_code:
-                    logger.debug(f"[*] Texto já está em {self.target_lang}, pulando tradução")
-                    return lyrics, 0, total_lines
-        except Exception as e:
-            logger.debug(f"[*] Erro na detecção de idioma: {e}, continuando com tradução")
+        target_lang_code = self.target_lang.split('-')[0].lower()
 
-        # 2. FILTRO POR LINHA (micro-detecção para linhas longas)
+        dominant_lang = self._detect_lang(full_text)
+        if dominant_lang and dominant_lang.lower() == target_lang_code:
+            logger.debug(f"[*] Texto já está em {self.target_lang}, pulando tradução")
+            return lyrics, 0, total_lines
+
+        # 2. PREPARAR LINHAS PARA TRADUÇÃO (Restaurado filtro linha-por-linha via Fasttext)
         lines_to_translate = []
         indices_to_translate = []
         
@@ -163,22 +207,22 @@ class LyricsEngine:
             if not txt_clean:
                 continue
 
-            # Se a linha for longa, verifica se já está no idioma alvo
-            if len(txt_clean.split()) >= 3:
-                try:
-                    if detect:
-                        line_lang = detect(txt_clean)
-                        target_lang_code = self.target_lang.split('-')[0].lower()
-                        if line_lang.lower() == target_lang_code:
-                            continue  # Já está no idioma alvo, pula
-                except Exception:
-                    pass
+            # Filtro re-adicionado usando Fasttext e dicionário de falsos positivos
+            words = txt_clean.lower().split()
+            if len(words) >= 1:
+                # Se for apenas palavras irrelevantes/ruídos, evite pular achando que é PT-BR
+                is_false_positive = all(w in self.pt_false_positives for w in words)
+
+                if not is_false_positive:
+                    line_lang = self._detect_lang(txt_clean)
+                    if line_lang and line_lang.lower() == target_lang_code:
+                        continue  # Já está no idioma alvo real, pula
 
             lines_to_translate.append(txt_clean)
             indices_to_translate.append(i)
 
         if not lines_to_translate:
-            logger.debug("[*] Nenhuma linha para traduzir após filtro de idioma")
+            logger.debug("[*] Nenhuma linha para traduzir após filtros")
             return lyrics, 0, total_lines
 
         # 3. TRADUÇÃO EM LOTE COM DEEPL
@@ -242,6 +286,32 @@ class LyricsEngine:
 
         logger.debug(f"[*] Tradução processada: {translation_count} linhas com tradução válida")
         return '\n'.join(result_lines), translation_count, total_lines
+
+    async def _fetch_lyrics_plus(self, artist, title):
+        """Busca letras no LyricsPlus (Apple Music)."""
+        import urllib.parse
+        try:
+            query = urllib.parse.quote(f"{title} {artist}")
+            search_url = f"https://lyricsplus.binimum.org/api/search?q={query}"
+
+            async with aiohttp.ClientSession() as session:
+                async with session.get(search_url, timeout=10) as resp:
+                    data = await resp.json(content_type=None)
+                    items = data.get("data", [])
+                    if not items:
+                        return None
+                    song_id = items[0]["id"]
+
+                lyric_url = f"https://lyricsplus.binimum.org/api/lyrics?id={song_id}"
+                async with session.get(lyric_url, timeout=10) as resp:
+                    lyric_data = await resp.json(content_type=None)
+                    lrc = lyric_data.get("data", {}).get("syncedLyrics", "")
+                    if not lrc:
+                        lrc = lyric_data.get("data", {}).get("plainLyrics", "")
+                    return lrc if lrc else None
+        except Exception as e:
+            logger.debug(f"[*] Erro ao buscar no LyricsPlus: {e}")
+        return None
 
     async def _fetch_musixmatch_lyrics(self, artist, title):
         """Busca letras sincronizadas no Musixmatch usando endpoint mobile."""
@@ -361,9 +431,20 @@ class LyricsEngine:
                 self._inject_metadata(file_path, final_lyrics)
                 if save_lrc:
                     self._save_lrc_file(file_path, final_lyrics)
-                return (True, trans_count, total_lines, 200)
+                return (True, trans_count, total_lines, "200 [Musixmatch]")
 
-            # 2. Tentar LRCLIB (Fallback 1)
+            # 2. Tentar LyricsPlus (Apple Music)
+            logger.debug(f"[*] Tentando LyricsPlus para: {track}")
+            lyricsplus_lyrics = await self._fetch_lyrics_plus(album_artist, track)
+            if lyricsplus_lyrics:
+                logger.debug(f"[*] Letra encontrada no LyricsPlus para: {track}")
+                final_lyrics, trans_count, total_lines = await self._process_translation(lyricsplus_lyrics, is_synced=True)
+                self._inject_metadata(file_path, final_lyrics)
+                if save_lrc:
+                    self._save_lrc_file(file_path, final_lyrics)
+                return (True, trans_count, total_lines, "200 [LyricsPlus]")
+
+            # 3. Tentar LRCLIB (Fallback 1)
             logger.debug(f"[*] Tentando LRCLIB para: {track}")
             lrclib_url = "https://lrclib.net/api/get"
             headers = {"User-Agent": "qobuz-dl-master/2.5 (https://github.com/kaduvercosa/qobuz-dl)"}
@@ -400,7 +481,7 @@ class LyricsEngine:
                     self._inject_metadata(file_path, final_lyrics)
                     if save_lrc:
                         self._save_lrc_file(file_path, final_lyrics)
-                    return (True, trans_count, total_lines, status)
+                    return (True, trans_count, total_lines, f"{status} [LRCLIB]")
                     
                 elif plain_lyrics:
                     logger.debug(f"[*] Letras simples encontradas no LRCLIB para: {track}")
@@ -408,9 +489,9 @@ class LyricsEngine:
                     self._inject_metadata(file_path, final_lyrics)
                     if save_lrc:
                         self._save_lrc_file(file_path, final_lyrics)
-                    return (True, trans_count, total_lines, status)
+                    return (True, trans_count, total_lines, f"{status} [LRCLIB]")
 
-            # 3. Tentar Netease (Fallback 2)
+            # 4. Tentar Netease (Fallback 2)
             logger.debug(f"[*] Tentando Netease para: {track}")
             netease_lyrics = await self._fetch_netease_lyrics(album_artist, track)
             if netease_lyrics:
@@ -419,9 +500,9 @@ class LyricsEngine:
                 self._inject_metadata(file_path, final_lyrics)
                 if save_lrc:
                     self._save_lrc_file(file_path, final_lyrics)
-                return (True, trans_count, total_lines, 200)
+                return (True, trans_count, total_lines, "200 [Netease]")
 
-            # 4. Tentar Genius (Fallback Final)
+            # 5. Tentar Genius (Fallback Final)
             if self.genius:
                 logger.debug(f"[*] Tentando Genius API para: {track}")
                 song = await asyncio.to_thread(self.genius.search_song, track, album_artist)
@@ -431,7 +512,7 @@ class LyricsEngine:
                     self._inject_metadata(file_path, final_lyrics)
                     if save_lrc:
                         self._save_lrc_file(file_path, final_lyrics)
-                    return (True, trans_count, total_lines, 200)
+                    return (True, trans_count, total_lines, "200 [Genius]")
 
             logger.debug(f"[!] Nenhuma letra encontrada para: {track}")
 

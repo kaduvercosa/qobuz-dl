@@ -439,7 +439,21 @@ async def _handle_manual_lyric_search(track_info, engine):
                 "albumName": "Musixmatch"
             })
 
-    # 3. Query Netease directly from the engine
+    # 3. Query LyricsPlus directly from the engine
+    async def fetch_lyricsplus():
+        text = await engine._fetch_lyrics_plus(search_artist, track_title)
+        if text:
+            results.append({
+                "provider": "LyricsPlus",
+                "duration": real_duration, # Assume perfect match for sorting purposes
+                "syncedLyrics": text,
+                "plainLyrics": None,
+                "artistName": search_artist,
+                "trackName": track_title,
+                "albumName": "LyricsPlus"
+            })
+
+    # 4. Query Netease directly from the engine
     async def fetch_netease():
         text = await engine._fetch_netease_lyrics(search_artist, track_title)
         if text:
@@ -453,7 +467,7 @@ async def _handle_manual_lyric_search(track_info, engine):
                 "albumName": "Netease"
             })
 
-    # 4. Query Genius directly from the engine
+    # 5. Query Genius directly from the engine
     async def fetch_genius():
         if engine.genius:
             song = await asyncio.to_thread(engine.genius.search_song, track_title, search_artist)
@@ -472,6 +486,7 @@ async def _handle_manual_lyric_search(track_info, engine):
         await asyncio.gather(
             fetch_lrclib(),
             fetch_musixmatch(),
+            fetch_lyricsplus(),
             fetch_netease(),
             fetch_genius()
         )
