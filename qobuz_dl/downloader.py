@@ -620,7 +620,7 @@ class Download:
                     raise Exception("No valid format returned by the server.")
 
             except Exception as e:
-                pass
+                last_error = e
 
         if not success and not abort_event.is_set():
             await safe_print_async(f"\n{RED}[!] TRACK {track_no} DEFINITIVELY DISCARDED AFTER ALL DOWNGRADES.{OFF}")
