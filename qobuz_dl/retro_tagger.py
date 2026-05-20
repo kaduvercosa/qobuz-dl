@@ -107,7 +107,7 @@ def _process_single_file(file_path_str, engine, overwrite=False, current_idx=0, 
                 album=album,
                 save_lrc=True,
                 overwrite=overwrite,
-                return_message=True
+                return_message=None
             ))
         finally:
             loop.close()
