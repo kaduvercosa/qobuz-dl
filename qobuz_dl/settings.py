@@ -57,6 +57,7 @@ class QobuzDLSettings:
 
         # Add parallel download thread count option
         self.max_workers = int(kwargs.get('max_workers', 3))
+        self.delay = int(kwargs.get('delay', 0))
 
         # user_auth_token
         self.user_auth_token = kwargs.get('user_auth_token', '')
@@ -65,13 +66,6 @@ class QobuzDLSettings:
         self.ai_provider = kwargs.get('ai_provider', 'openai')
         self.openai_api_key = kwargs.get('openai_api_key', '')
         self.gemini_api_key = kwargs.get('gemini_api_key', '')
-
-        # Webhook / Daemon
-        self.webhook_url = kwargs.get('webhook_url', '')
-
-        # Telegram Bot
-        self.telegram_bot_token = kwargs.get('telegram_bot_token', '')
-        self.telegram_chat_id = kwargs.get('telegram_chat_id', '')
 
     @staticmethod
     def from_arguments_configparser(arguments, config):
@@ -138,6 +132,7 @@ class QobuzDLSettings:
             
             # Add parallel download thread count configuration
             'max_workers': getattr(arguments, 'max_workers', None) or config.get(section, "max_workers", fallback="3"),
+            'delay': getattr(arguments, 'delay', 0) or config.getint(section, "delay", fallback=0),
 
             # user_auth_token
             'user_auth_token': config.get(section, "user_auth_token", fallback=""),
