@@ -303,7 +303,7 @@ class LyricsEngine:
             search_url = f"https://lyricsplus.binimum.org/api/search?q={query}"
 
             async with aiohttp.ClientSession() as session:
-                async with session.get(search_url, timeout=35) as resp:
+                async with session.get(search_url, timeout=40) as resp:
                     data = await resp.json(content_type=None)
                     items = data.get("data", [])
                     if not items:
@@ -311,7 +311,7 @@ class LyricsEngine:
                     song_id = items[0]["id"]
 
                 lyric_url = f"https://lyricsplus.binimum.org/api/lyrics?id={song_id}"
-                async with session.get(lyric_url, timeout=35) as resp:
+                async with session.get(lyric_url, timeout=40) as resp:
                     lyric_data = await resp.json(content_type=None)
                     lrc = lyric_data.get("data", {}).get("syncedLyrics", "")
                     if not lrc:
@@ -338,7 +338,7 @@ class LyricsEngine:
         try:
             async with aiohttp.ClientSession(headers=headers) as session:
                 url = "https://apic-appmobile.musixmatch.com/ws/1.1/token.get?app_id=mac-ios-v2.0"
-                async with session.get(url, timeout=35) as resp:
+                async with session.get(url, timeout=50) as resp:
                     data = await resp.json(content_type=None)
                     if data.get("message", {}).get("header", {}).get("status_code") == 200:
                         token = data["message"]["body"]["user_token"]
@@ -355,7 +355,7 @@ class LyricsEngine:
                 }
 
                 url = "https://apic-appmobile.musixmatch.com/ws/1.1/macro.subtitles.get?" + urllib.parse.urlencode(params)
-                async with session.get(url, timeout=35) as resp:
+                async with session.get(url, timeout=50) as resp:
                     data = await resp.json(content_type=None)
                     if data.get("message", {}).get("header", {}).get("status_code") == 200:
                         macro_calls = data["message"]["body"]["macro_calls"]
@@ -394,7 +394,7 @@ class LyricsEngine:
                     song_id = items[0]["id"]
 
                 lyric_url = f"https://music.163.com/api/song/lyric?os=pc&id={song_id}&lv=-1&kv=-1&tv=-1"
-                async with session.get(lyric_url, timeout=35) as resp:
+                async with session.get(lyric_url, timeout=40) as resp:
                     lyric_data = await resp.json(content_type=None)
                     lrc = lyric_data.get("lrc", {}).get("lyric", "")
                     return lrc if lrc else None
