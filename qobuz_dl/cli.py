@@ -270,7 +270,7 @@ async def _handle_commands(qobuz, arguments):
             await qobuz.download_list_of_urls(arguments.SOURCE)
         elif arguments.command in ("sync-playlist", "sp"):
             from qobuz_dl.sync_playlist import sync_playlist
-            sync_playlist(
+            await sync_playlist(
                 qobuz,
                 arguments.URL,
                 qobuz.directory,  # <-- MODIFIED: Previously it was arguments.FOLDER
