@@ -249,7 +249,7 @@ class QobuzDL:
             if getattr(self, 'allowed_release_types', None) is not None:
                 logger.info(f"{YELLOW}[*] Evaluating {len(items)} releases (unwanted types will be skipped silently)...{OFF}")
             else:
-                logger.info(f"{YELLOW}{len(items)} downloads in queue{OFF}")
+                logger.info(f"{YELLOW}[{len(items)} downloads na fila]{OFF}")
             
             # --- START PLAYLIST LOGIC (Flat Folder) ---
             is_playlist = (url_type == "playlist")
