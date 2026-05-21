@@ -490,7 +490,7 @@ class Download:
             else:
                 await _get_extra(track_meta["album"]["image"]["large"], dirn, art_size="org")
                 
-            if not getattr(self, 'is playlist', False) and self.settings.embed_art:
+            if not getattr(self, 'is_playlist', False) and self.settings.embed_art:
                 # Lógica normal de embed para albúns (não playlists)
                 cover_path = os.path.join(dirn, "cover.jpg")
                 embed_path = os.path.join(dirn, EMB_COVER_NAME)
