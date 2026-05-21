@@ -439,7 +439,22 @@ class Download:
             
             track_title = _get_title(track_meta)
             artist = _safe_get(track_meta, "performer", "name")
-            logger.info(f"\n{YELLOW}Downloading: {artist} - {track_title}{OFF}")
+            
+            # HEAD request to get file size before downloading
+            _file_size_str = ""
+            try:
+                async with aiohttp.ClientSession() as _s:
+                    async with _s.head(parse["url"], allow_redirects=True, timeout=aiohttp.ClientTimeout(total=5)) as _r:
+                        _bytes = int(_r.headers.get("content-lenght", 0))
+                        if _bytes > 0:
+                            if _bytes >= 1_048_576:
+                                _file_size_str = f" | {_bytes / 1_048_576: .1f} MB"
+                            else:
+                                _file_size_str = f" | {_bytes / 1024: .0f} KB"
+            except Exception:
+                pass
+
+            logger.info(f"\n{YELLOW}Downloading: {artist} - {track_title} {_file_size_str}{OFF}")
             url = track_meta.get("album", {}).get("url", "")
             release_date = track_meta.get("release_date_original", "")
             format_info = await self._get_format(track_meta, is_track_id=True, track_url_dict=parse)
@@ -463,22 +478,31 @@ class Download:
             os.makedirs(dirn, exist_ok=True)
 
             # --- CAPAS FORÇADAS PARA _ORG ---
+            _cover_saved = False
             if getattr(self, 'is_playlist', False):
                 logger.info(f"{OFF}Skipping standard cover save to keep playlist folder clean")
             elif self.settings.no_cover:
                 logger.info(f"{OFF}Skipping cover")
             else:
                 await _get_extra(track_meta["album"]["image"]["large"], dirn, art_size="org")
+                _cover_saved = True
 
             if self.settings.embed_art:
+                cover_path = os.path.join(dirn, "cover.jpg")
                 embed_path = os.path.join(dirn, EMB_COVER_NAME)
-                if os.path.exists(embed_path):
-                    try:
-                        os.remove(embed_path)
-                    except OSError:
-                        pass
-                
-                await _get_extra(track_meta["album"]["image"]["large"], dirn, extra=EMB_COVER_NAME, art_size="org")
+                if _cover_saved and os.path.exists(cover_path):
+                    # Reuse the already-downloaded cover.jpg instead of
+                    # making a second network request for the same image.
+                    shutil.copy2(cover_path, embed_path)
+                else:
+                    # cover.jpg was skipped (playlist, no_cover) so we
+                    # still need to fetch the image for embedding.
+                    if os.path.exists(embed_path):
+                        try:
+                            os.remove(embed_path)
+                        except OSError:
+                            pass
+                    await _get_extra(track_meta["album"]["image"]["large"], dirn, extra=EMB_COVER_NAME, art_size="org")
             else:
                 logger.info(f"{OFF}Skipping embedded art")
             # --------------------------------
