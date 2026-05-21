@@ -480,32 +480,28 @@ class Download:
             _cover_saved = False
             if getattr(self, 'is_playlist', False):
                 logger.info(f"{OFF}Skipping standard cover save to keep playlist folder clean")
-            elif self.settings.no_cover:
-                logger.info(f"{OFF}Skipping cover")
-            else:
-                await _get_extra(track_meta["album"]["image"]["large"], dirn, art_size="org")
-                _cover_saved = True
-
-            if self.settings.embed_art:
-                cover_path = os.path.join(dirn, "cover.jpg")
-                embed_path = os.path.join(dirn, EMB_COVER_NAME)
-                if _cover_saved and os.path.exists(cover_path):
-                    # Reuse the already-downloaded cover.jpg instead of
-                    # making a second network request for the same image.
-                    shutil.copy2(cover_path, embed_path)
-                else:
-                    # cover.jpg was skipped (playlist, no_cover) so we
-                    # still need to fetch the image for embedding.
+                
+                if self.settings.embed_art:
+                    # Em playlists mistas, baixa a capa especifica de cada música
+                    embed_path = os.path.join(dirn, EMB_COVER_NAME)
                     if os.path.exists(embed_path):
                         try:
                             os.remove(embed_path)
                         except OSError:
                             pass
                     await _get_extra(track_meta["album"]["image"]["large"], dirn, extra=EMB_COVER_NAME, art_size="org")
+            elif self.settings.no_cover:
+                logger.info(f"{OFF}Skipping cover")
             else:
-                logger.info(f"{OFF}Skipping embedded art")
-            # --------------------------------
+                await _get_extra(track_meta["album"]["image"]["large"], dirn, art_size="org")
                 
+            if not getattr(self, 'is playlist', False) and self.settings.embed_art:
+                # Lógica normal de embed para albúns (não playlists)
+                cover_path = os.path.join(dirn, "cover.jpg")
+                embed_path = os.path.join(dirn, EMB_COVER_NAME)
+                if os.path.exists(cover_path):
+                    shutil.copy2(cover_path, embed_path)
+            # --------------------------------
             is_mp3 = True if int(self.quality) == 5 else False
             
             await self._download_and_tag(
