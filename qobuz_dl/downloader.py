@@ -23,7 +23,7 @@ from pathvalidate import sanitize_filename, sanitize_filepath
 from tqdm import tqdm
 
 import qobuz_dl.metadata as metadata
-from qobuz_dl.color import OFF, GREEN, RED, YELLOW, CYAN
+from qobuz_dl.color import OFF, GREEN, RED, YELLOW, CYAN, RESET
 from qobuz_dl.exceptions import NonStreamable
 from qobuz_dl.settings import QobuzDLSettings
 from qobuz_dl.utils import get_album_artist, clean_filename
@@ -215,9 +215,12 @@ class Download:
             logger.info(f"{OFF}Skipping {album_title} as it doesn't meet quality requirement")
             return
 
+        # Puxa a quantidade de faixas (arquivos) que estão dentro dos metadados do álbum/playlist
+        total_tracks = len(album_meta.get("tracks", {}).get("items", []))
+
         logger.info(
-            f"\n{YELLOW}Downloading: {album_title}\nQuality: {file_format}"
-            f" ({bit_depth}/{sampling_rate})\n{OFF}"
+            f"\n{YELLOW}Downloading: {album_title}"
+            f"\nQuality: {file_format} ({bit_depth}bit/{sampling_rate}kHz) | {RESET}[{total_tracks} ARQUIVOS NA FILA]\n{OFF}"
         )
         
         album_attr = self._get_album_attr(
