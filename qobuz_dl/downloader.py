@@ -1,6 +1,7 @@
 from .lyrics_engine import LyricsEngine
 import logging
 import os
+import shutil
 import sys
 import time
 import random
@@ -23,7 +24,7 @@ from pathvalidate import sanitize_filename, sanitize_filepath
 from tqdm import tqdm
 
 import qobuz_dl.metadata as metadata
-from qobuz_dl.color import OFF, GREEN, RED, YELLOW, CYAN, RESET
+from qobuz_dl.color import OFF, GREEN, RED, YELLOW, CYAN
 from qobuz_dl.exceptions import NonStreamable
 from qobuz_dl.settings import QobuzDLSettings
 from qobuz_dl.utils import get_album_artist, clean_filename
@@ -215,12 +216,15 @@ class Download:
             logger.info(f"{OFF}Skipping {album_title} as it doesn't meet quality requirement")
             return
 
-        # Puxa a quantidade de faixas (arquivos) que estão dentro dos metadados do álbum/playlist
-        total_tracks = len(album_meta.get("tracks", {}).get("items", []))
-
+        # Count tracks available for download (excluding demos/samples)
+        _track_count = sum(
+            1 for t in album_meta["tracks"]["items"]
+            if "sample" not in t and t.get("streamable", True)
+        )
+        _queue_str = f"{_track_count} faixa" if _track_count == 1 else f"{_track_count} faixas"
         logger.info(
-            f"\n{YELLOW}Downloading: {album_title}"
-            f"\nQuality: {file_format} ({bit_depth}bit/{sampling_rate}kHz) | {RESET}[{total_tracks} ARQUIVOS NA FILA]\n{OFF}"
+            f"\n{YELLOW}Downloading: {album_title}\nQuality: {file_format}"
+            f" ({bit_depth}/{sampling_rate}) | [{_queue_str} na fila]\n{OFF}"
         )
         
         album_attr = self._get_album_attr(
@@ -297,10 +301,20 @@ class Download:
             if self.settings.no_cover:
                 logger.info(f"{OFF}Skipping cover")
             else:
+                # Download the cover once and save it as cover.jpg
                 await _get_extra(album_meta["image"]["large"], dirn, art_size="org")
 
             if self.settings.embed_art:
-                await _get_extra(album_meta["image"]["large"], dirn, extra=EMB_COVER_NAME, art_size="org")
+                cover_path = os.path.join(dirn, "cover.jpg")
+                embed_path = os.path.join(dirn, EMB_COVER_NAME)
+                if os.path.exists(cover_path):
+                    # Reuse the already-downloaded cover.jpg instead of
+                    # making a second network request for the same image.
+                    shutil.copy2(cover_path, embed_path)
+                else:
+                    # cover.jpg was skipped (no_cover=True) so we still
+                    # need to fetch the image for embedding.
+                    await _get_extra(album_meta["image"]["large"], dirn, extra=EMB_COVER_NAME, art_size="org")
             # --------------------------------
 
             if "goodies" in album_meta:
