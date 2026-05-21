@@ -462,6 +462,7 @@ class LyricsEngine:
             
             params = {"artist_name": album_artist, "track_name": track, "album_name": album}
             
+            data = {}
             try:
                 async with aiohttp.ClientSession() as session:
                     async with session.get(lrclib_url, params=params, headers=headers, timeout=35) as response:
