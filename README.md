@@ -3,10 +3,10 @@
 > **The Ultimate Lossless & Hi-Res Music Downloader for Qobuz**
 > Fork aprimorado com letras automáticas, tradução via DeepL, Radar de novidades, sincronização bidirecional de playlists e muito mais.
 
-[![Version](https://img.shields.io/badge/version-2.2.4.12-blue)](https://github.com/kaduvercosa/qobuz-dl)
+[![Version](https://img.shields.io/pypi/v/qobuz-dl-master?pypiBaseUrl=https%3A%2F%2Fpypi.org%2F&style=plastic&logo=%230C0C0E&logoColor=fedcba&logoSize=auto&color=fedcba&cacheSeconds=3600
+)](https://pypi.org/project/qobuz-dl-master/)
 [![Python](https://img.shields.io/badge/python-%3E%3D3.6-green)](https://www.python.org/)
 [![License: GPL](https://img.shields.io/badge/license-GPL-orange)](LICENSE)
-[![PyPI](https://img.shields.io/badge/PyPI-qobuz--dl--master-blueviolet)](https://pypi.org/project/qobuz-dl-master/)
 
 ---
 
