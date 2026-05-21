@@ -1047,10 +1047,10 @@ def _get_description(item: dict, track_title, multiple=None):
     return downloading_title
 
 async def tqdm_download(url_or_callable, fname, track_name, is_parallel=False):
-    if abort_event.is_set(): return
-    G, Y, C, O = "\033[92m", "\033[93m", "\033[96m", "\033[0m"
+    if abort_event.is_set(): 
+        return
     
-    already_printed = False
+    G, Y, C, O = "\033[92m", "\033[93m", "\033[96m", "\033[0m"
 
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -1065,7 +1065,9 @@ async def tqdm_download(url_or_callable, fname, track_name, is_parallel=False):
     else:
         tqdm_desc = ""
         b_format = ""
-
+    
+    progress_printed = False
+    
     downloaded_size = 0
     total_size = 0
     max_retries = 5
@@ -1095,7 +1097,7 @@ async def tqdm_download(url_or_callable, fname, track_name, is_parallel=False):
                     if downloaded_size == 0 and attempt == 0:
                         size_mb = total_size / (1024 * 1024)
                         await safe_print_async(f"{C}[+] In progress: {track_name} [{size_mb:.1f} MB]{O}")
-                        already_printed = True
+                        progress_printed = True
                         
                     if not is_parallel and downloaded_size == 0 and attempt == 0:
                         size_mb = total_size / (1024 * 1024)
