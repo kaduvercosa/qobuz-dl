@@ -39,7 +39,7 @@ class ScanState:
 # PROCESS SINGLE FILE
 # =========================
 
-async def _process_single_file(semaphore, file_path_str, engine, state, overwrite=False, current_idx=0, total_files=0):
+async def _process_single_file(semaphore, file_path_str, engine, state, overwrite=False, current_idx=0, total_files=0, max_workers=3):
     async with semaphore:
         status_result = "skipped"
         msg = ""
@@ -172,7 +172,7 @@ async def _process_single_file(semaphore, file_path_str, engine, state, overwrit
             eta_info = None
             if state.elapsed_times and remaining > 0:
                 avg_time = sum(state.elapsed_times) / len(state.elapsed_times)
-                eta_sec = (remaining * avg_time) / 3  # max_workers = 3
+                eta_sec = (remaining * avg_time) / max_workers
                 if eta_sec >= 60:
                     eta_str = f"{int(eta_sec // 60)}m{int(eta_sec % 60):02d}s"
                 else:
@@ -245,7 +245,8 @@ async def inject_lyrics_retroactively(
                 state,
                 overwrite,
                 idx,
-                state.processed
+                state.processed,
+                max_workers
             )
         )
         tasks.append(task)
