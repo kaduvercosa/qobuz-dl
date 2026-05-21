@@ -482,13 +482,8 @@ class Download:
                 logger.info(f"{OFF}Skipping standard cover save to keep playlist folder clean")
                 
                 if self.settings.embed_art:
-                    # Em playlists mistas, baixa a capa especifica de cada música
                     embed_path = os.path.join(dirn, EMB_COVER_NAME)
-                    if os.path.exists(embed_path):
-                        try:
-                            os.remove(embed_path)
-                        except OSError:
-                            pass
+                    # Baixa a capa da música atual(não remove se já existir de outra música)
                     await _get_extra(track_meta["album"]["image"]["large"], dirn, extra=EMB_COVER_NAME, art_size="org")
             elif self.settings.no_cover:
                 logger.info(f"{OFF}Skipping cover")
