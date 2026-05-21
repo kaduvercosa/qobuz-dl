@@ -447,9 +447,9 @@ class Download:
                         _bytes = int(_r.headers.get("content-length", 0))
                         if _bytes > 0:
                             if _bytes >= 1_048_576:
-                                _file_size_str = f" | {_bytes / 1_048_576: .1f} MB"
+                                _file_size_str = f" [{_bytes/1_048_576:.1f} MB]"
                             else:
-                                _file_size_str = f" | {_bytes / 1024: .0f} KB"
+                                _file_size_str = f" [{_bytes/1024:.0f} KB]"
             except Exception:
                 pass
 
@@ -1218,7 +1218,7 @@ async def tqdm_download_segments(track_url_dict, fname, track_name, is_parallel=
 
     if is_parallel:
         size_mb = total_size / (1024 * 1024)
-        await safe_print_async(f"{C}[+] Em Andamento: {track_name} [{size_mb:.1f} MB]{O}")
+        await safe_print_async(f"{C}[+] In progress: {track_name} [{size_mb:.1f} MB]{O}")
         tqdm_desc, b_format = "", ""
     else:
         await safe_print_async(f"{C}[+] In progress: {track_name}{O}")
