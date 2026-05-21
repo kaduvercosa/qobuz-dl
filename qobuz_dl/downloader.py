@@ -24,7 +24,7 @@ from pathvalidate import sanitize_filename, sanitize_filepath
 from tqdm import tqdm
 
 import qobuz_dl.metadata as metadata
-from qobuz_dl.color import OFF, GREEN, RED, YELLOW, CYAN
+from qobuz_dl.color import OFF, GREEN, RED, YELLOW, CYAN, RESET
 from qobuz_dl.exceptions import NonStreamable
 from qobuz_dl.settings import QobuzDLSettings
 from qobuz_dl.utils import get_album_artist, clean_filename
@@ -223,8 +223,8 @@ class Download:
         )
         _queue_str = f"{_track_count} faixa" if _track_count == 1 else f"{_track_count} faixas"
         logger.info(
-            f"\n{YELLOW}Downloading: {album_title}\nQuality: {file_format}"
-            f" ({bit_depth}/{sampling_rate}) | [{_queue_str} na fila]\n{OFF}"
+            f"\n{YELLOW}Downloading: {album_title}"
+            f"\nQuality: {file_format} ({bit_depth}bit/{sampling_rate}kHz) | {RESET}[{_queue_str} na fila]\n{OFF}"
         )
         
         album_attr = self._get_album_attr(
