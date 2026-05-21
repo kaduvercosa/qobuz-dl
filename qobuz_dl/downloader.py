@@ -12,7 +12,6 @@ import signal
 from typing import Tuple
 import concurrent.futures
 
-
 import aiohttp
 import aiofiles
 import asyncio
@@ -445,7 +444,7 @@ class Download:
             try:
                 async with aiohttp.ClientSession() as _s:
                     async with _s.head(parse["url"], allow_redirects=True, timeout=aiohttp.ClientTimeout(total=5)) as _r:
-                        _bytes = int(_r.headers.get("content-lenght", 0))
+                        _bytes = int(_r.headers.get("content-length", 0))
                         if _bytes > 0:
                             if _bytes >= 1_048_576:
                                 _file_size_str = f" | {_bytes / 1_048_576: .1f} MB"
@@ -1067,7 +1066,7 @@ async def tqdm_download(url_or_callable, fname, track_name, is_parallel=False):
     }
 
     if not is_parallel:
-        await safe_print_async(f"{C}[+] In progress: {track_name}{O}")
+        #await safe_print_async(f"{C}[+] In progress: {track_name}{O}")
         tqdm_desc = f" {G}Downloading{O}"
         b_format = "{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]"
     else:
@@ -1100,7 +1099,11 @@ async def tqdm_download(url_or_callable, fname, track_name, is_parallel=False):
                     if total_size == 0:
                         total_size = downloaded_size + int(r.headers.get('content-length', 0))
 
-                    if is_parallel and downloaded_size == 0 and attempt == 0:
+                    if downloaded_size == 0 and attempt == 0:
+                        size_mb = total_size / (1024 * 1024)
+                        await safe_print_async(f"{C}[+] In progress: {track_name} [{size_mb:.1f} MB]{O}")
+                        
+                    if not is_parallel and downloaded_size == 0 and attempt == 0:
                         size_mb = total_size / (1024 * 1024)
                         await safe_print_async(f"{C}[+] In progress: {track_name} [{size_mb:.1f} MB]{O}")
 
