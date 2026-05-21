@@ -1098,10 +1098,6 @@ async def tqdm_download(url_or_callable, fname, track_name, is_parallel=False):
                         size_mb = total_size / (1024 * 1024)
                         await safe_print_async(f"{C}[+] In progress: {track_name} [{size_mb:.1f} MB]{O}")
                         progress_printed = True
-                        
-                    if not is_parallel and downloaded_size == 0 and attempt == 0:
-                        size_mb = total_size / (1024 * 1024)
-                        await safe_print_async(f"{C}[+] In progress: {track_name} [{size_mb:.1f} MB]{O}")
 
                     async with aiofiles.open(fname, mode) as file:
                         with tqdm(
