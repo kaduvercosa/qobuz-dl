@@ -137,7 +137,7 @@ class Client:
             self.user_id = user_info.get("id") or user_info.get("user", {}).get("id")
             logger.info(f"{GREEN}Logged: OK (Membership: {self.label}){OFF}")
         except Exception:
-            logger.info(f"{YELLOW}[!] Profile validation bypassed.{OFF}")
+            logger.info(f"{YELLOW}[!] Assinatura Nao Encontrada: FREE.{OFF}")
             self.label = "Studio"
             self.user_id = None
 

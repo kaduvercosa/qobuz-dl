@@ -489,6 +489,8 @@ class QobuzDL:
             logger.info(f"{RED}Your search query is too short or invalid")
             return
 
+        w_art, w_tit, w_alb, w_typ, w_yea, w_qua = 15, 25, 20, 8, 5, 25 
+
         possibles = {
             "album": {
                 "func": self.client.search_albums,
@@ -546,7 +548,7 @@ class QobuzDL:
                     return []
                 iterable = results[mode_dict["key"]]["items"]
             # --------------------------------------------
-            
+            iterable.sort(key=lambda x: (x.get("title") or x.get("name") or "").lower()) 
             item_list = []
             
             for i in iterable:
@@ -558,6 +560,7 @@ class QobuzDL:
                         title = f"{title} ({i.get('version')})"
                     if i.get("parental_warning"):
                         title = f"{title} [E]"
+                    album_name = i.get("album", {}).get("title", "Unknown") 
                     
                     year = str(i.get("release_date_original") or i.get("release_date") or "    ")[:4]
                     
@@ -586,9 +589,15 @@ class QobuzDL:
                         quality = f"[HI-RES] {bit_depth}b/{sampling_rate}kHz"
                     else:
                         quality = "[ CD ] 16b/44.1kHz"
-                        
+                     
+                    if item_type == "album":
+                        album_name = ""
+                    elif item_type == "track":
+                        album_name = i.get("album", {}).get("title", "Unknown")
+                    else:
+                        album_name = "-" 
                     # --- FIX 1 APPLIED BELOW: Removed '│' separators, using 3 spaces ---
-                    text = f"{_align_text(artist, 20)}   {_align_text(title, 35)}   {_align_text(rel_type, 8)}   {year}   {quality}"
+                    text = f"{_align_text(artist, self.w_art)}   {_align_text(title, self.w_tit)}   {_align_text(album_name, self.w_alb)}   {_align_text(rel_type, self.w_typ)}   {_align_text(year, self.w_yea)}   {_align_text(quality, self.w_qua)}"
                 else:
                     name = i.get("name", "Unknown")
                     count = i.get("albums_count") if "albums_count" in i else i.get("tracks_count", 0)
@@ -616,6 +625,8 @@ class QobuzDL:
         # --- NEW: Flag to let the engine know we are in a TTY session ---
         self._is_interactive_session = True
         # ----------------------------------------------------------------
+        self.w_art, self.w_tit, self.w_alb, self.w_typ, self.w_yea, self.w_qua = 20, 35, 30, 8, 5, 25
+ 
         try:
             import pick
             # --- WINDOWS TERMINAL FIX & MULTISELECT LOOK ---
@@ -665,7 +676,7 @@ class QobuzDL:
                 else:
                     # --- STANDARD FLOW: Type the keyword ---
                     query = input(f"{CYAN}Enter your search: [Ctrl + c to quit]\n-{DF} ")
-                    logger.info(f"{YELLOW}Searching...{RESET}")
+                    logger.info(f"\n{YELLOW}Searching...{RESET}")
                     options = await self.search_by_type(query, selected_type, self.interactive_limit)
                     query_title = query.title()
                 
@@ -677,14 +688,16 @@ class QobuzDL:
                 
                 # --- CALIBRATED MINIMAL HEADER (Support for Favorites included) ---
                 if selected_type in ["album", "track"] or (selected_type == "favorites" and selected_fav in ["albums", "tracks"]):
-                    artist_h = "ARTIST".ljust(20)
-                    title_h = "TITLE".ljust(35)
-                    type_h = "TYPE".ljust(8)
-                    year_h = "YEAR".ljust(4)
+                    artist_h = "ARTIST".ljust(self.w_art)
+                    title_h = "TITLE".ljust(self.w_tit)
+                    album_h = "ALBUM".ljust(self.w_alb)
+                    type_h = "TYPE".ljust(self.w_typ)
+                    year_h = "YEAR".ljust(self.w_yea)
+                    quality_h = "QUALITY".ljust(self.w_qua)
                     
                     table_header = (
-                        f"       {artist_h}   {title_h}   {type_h}   {year_h}   QUALITY\n"
-                        f"       {'-' * 88}"
+                        f"       {artist_h}   {title_h}   {album_h}   {type_h}   {year_h}   {quality_h}\n"
+                        f"       {'-' * (self.w_art + self.w_tit + self.w_alb + self.w_typ + self.w_yea + self.w_qua + 15)}"
                     )
                 else:
                     name_h = "NAME".ljust(50)
@@ -713,11 +726,11 @@ class QobuzDL:
                 if len(selected_items) > 0:
                     [final_url_list.append(options[i[1]]["url"]) for i in selected_items]
                     
-                    y_n = pick.pick(["Yes", "No"], "Items were added to queue to be downloaded. Keep searching?")
+                    y_n = pick.pick(["Yes", "No"], "Os itens foram adicionados à fila para serem baixados. Continuar pesquisando?")
                     if y_n[0] == "No":
                         break
                 else:
-                    logger.info(f"{YELLOW}Ok, try again...{RESET}")
+                    logger.info(f"{YELLOW}Ok, tentando novamente...{RESET}")
                     if selected_type == "favorites":
                         break # Exit if nothing is selected in favorites
                     continue
@@ -734,7 +747,7 @@ class QobuzDL:
                 return final_url_list
                 
         except KeyboardInterrupt:
-            logger.info(f"{YELLOW}Bye")
+            logger.info(f"\n{YELLOW}Ctrl+C Used - ABORTED")
             return
 
     async def download_lastfm_pl(self, playlist_url):
