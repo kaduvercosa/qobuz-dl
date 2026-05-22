@@ -464,7 +464,7 @@ class Download:
             # --------------------------------
             is_mp3 = True if int(self.quality) == 5 else False
             
-            await self._download_and_tag(
+            download_sucess = await self._download_and_tag(
                 dirn,
                 1,
                 parse,
@@ -477,17 +477,21 @@ class Download:
             )
             
             await _clean_embed_art(dirn, self.settings)
-            
+            # Só entra no banco de dados se deu tudo certo e. não teve Ctrl+C
+            if download_sucess and not abort_event.is_set():
             # --- DATABASE UPGRADE: Inject artist and album metadata ---
-            db_artist = track_attr.get("artist", "Unknown")
-            db_album = track_attr.get("album", "Unknown")
+                db_artist = track_attr.get("artist", "Unknown")
+                db_album = track_attr.get("album", "Unknown")
             
-            handle_download_id(db_path=self.download_db, item_id=self.item_id, add_id=True, media_type="track",
-                               quality=self.quality, file_format=file_format, quality_met=quality_met,
-                               bit_depth=bit_depth, sampling_rate=sampling_rate, saved_path=dirn,
-                               url=url, release_date=release_date, artist=db_artist, album=db_album)
+                handle_download_id(db_path=self.download_db, item_id=self.item_id, add_id=True, media_type="track",
+                                   quality=self.quality, file_format=file_format, quality_met=quality_met,
+                                   bit_depth=bit_depth, sampling_rate=sampling_rate, saved_path=dirn,
+                                   url=url, release_date=release_date, artist=db_artist, album=db_album)
+            else:
+                await safe_print_async(f"{YELLOW}[*] Faixa Incompleta. Ignorando inclusão no bando de dados.{OFF}")
         else:
             logger.info(f"{OFF}Demo. Skipping")
+
         logger.info(f"{GREEN}Completed{OFF}")
 
     async def _download_and_tag(
