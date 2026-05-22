@@ -15,7 +15,7 @@ from qobuz_dl.bundle import Bundle
 from qobuz_dl.color import GREEN, RED, YELLOW, OFF, CYAN
 from qobuz_dl.commands import qobuz_dl_args
 from qobuz_dl.core import QobuzDL
-from qobuz_dl.downloader import DEFAULT_FOLDER, DEFAULT_TRACK
+from qobuz_dl.downloader import DEFAULT_FOLDER, DEFAULT_TRACK, abort_event
 from qobuz_dl.settings import QobuzDLSettings
 from pathlib import Path
 
@@ -270,12 +270,13 @@ def _remove_leftovers(directory):
 async def _handle_commands(qobuz, arguments):
     def sigint_handler(sig, frame):
         print(f"\n\n\033[91m[!] Download forcibly interrupted by the user.\033[0m")
-        print(f"\033[93mPartially downloaded files will be ignored or overwritten on the next run.\033[0m")
-        try:
-            _remove_leftovers(qobuz.directory)
-        except Exception:
-            pass
-        sys.exit(1)
+        print(f"\033[93mSecuring files and aborting gracefully....\033[0m")
+        
+        # Avisa o restante do código para parar novas requisições
+        abort_event.set()
+        
+        # Levanta a exceção para quebrar o loop assíncrono atual, acionando o "except KeyboardInterrupt" lá do downloader.py
+        raise KeyboardInterrupt
         
     signal.signal(signal.SIGINT, sigint_handler)
 
