@@ -1055,7 +1055,7 @@ async def tqdm_download(url_or_callable, fname, track_name, is_parallel=False):
                 mode = 'wb'
             
             async with aiohttp.ClientSession() as s:
-                async with s.get(url, allow_redirects=True, headers=headers, timeout=aiohttp.ClientTimeout(total=70)) as r:
+                async with s.get(url, allow_redirects=True, headers=headers, timeout=aiohttp.ClientTimeout(sock_read=30.0, connect=10.0)) as r:
                     if r.status == 416: return
                     if r.status not in [200, 206]:
                         raise Exception(f"Status Server: {r.status}")
