@@ -1350,3 +1350,5 @@ async def _clean_embed_art(dirn, settings=None):
         try:
             await asyncio.sleep(0.5) 
             os.remove(embed_file)
+        except OSError:
+            pass
