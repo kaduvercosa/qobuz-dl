@@ -35,7 +35,7 @@ print_lock = None
 _sync_print_lock = threading.Lock()
 
 # Global Abort Event for graceful CTRL+C handling and file unlock
-abort_event = threading.Event()
+abort_event = asyncio.Event()
 
 async def safe_print_async(*args, **kwargs):
     global print_lock
