@@ -1260,8 +1260,8 @@ async def tqdm_download_segments(track_url_dict, fname, track_name, is_parallel=
         if not is_parallel:
             await safe_print_async(f" {G}  > Assembling the final FLAC file...{O}")
             
-        remux = await asyncio.create_subprocess.exec("ffmpeg", "-nostdin", "-v", "error", "-y", "-i", tmp_fname, "-c:a", "copy", "-f", "flac", fname, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE)
-        _, stderr = await remux.comunicate()
+        remux = await asyncio.create_subprocess_exec("ffmpeg", "-nostdin", "-v", "error", "-y", "-i", tmp_fname, "-c:a", "copy", "-f", "flac", fname, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE)
+        _, stderr = await remux.communicate()
         if remux.returncode != 0:
             raise ConnectionError(f"FFmpeg remux failed for {fname}: {stderr.decode()}")
         
