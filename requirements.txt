@@ -11,6 +11,5 @@ questionary
 lyricsgenius
 langdetect
 fasttext-wheel
-numpy<2.0.0
 requests
 deepl
