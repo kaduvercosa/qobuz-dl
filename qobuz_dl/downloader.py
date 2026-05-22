@@ -622,12 +622,12 @@ class Download:
             except Exception as e:
                 last_error = e
 
-        if not success and not abort_event.is_set():
+        if abort_event.is_set():
+            return False
+
+        if not sucess:
             await safe_print_async(f"\n{RED}[!] TRACK {track_no} DEFINITIVELY DISCARDED AFTER ALL DOWNGRADES.{OFF}")
             await safe_print_async(f"{YELLOW}[!] Skipping to the next track...{OFF}\n")
-            return False
-            
-        if abort_event.is_set():
             return False
 
         is_mp3 = True if final_fmt == 5 else False
