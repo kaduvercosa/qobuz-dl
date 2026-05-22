@@ -35,7 +35,7 @@ print_lock = None
 _sync_print_lock = threading.Lock()
 
 # Global Abort Event for graceful CTRL+C handling and file unlock
-abort_event = threading.Event()
+abort_event = asyncio.Event()
 
 async def safe_print_async(*args, **kwargs):
     global print_lock
@@ -464,7 +464,7 @@ class Download:
             # --------------------------------
             is_mp3 = True if int(self.quality) == 5 else False
             
-            download_sucess = await self._download_and_tag(
+            download_success = await self._download_and_tag(
                 dirn,
                 1,
                 parse,
@@ -478,7 +478,7 @@ class Download:
             
             await _clean_embed_art(dirn, self.settings)
             # Só entra no banco de dados se deu tudo certo e. não teve Ctrl+C
-            if download_sucess and not abort_event.is_set():
+            if download_success and not abort_event.is_set():
             # --- DATABASE UPGRADE: Inject artist and album metadata ---
                 db_artist = track_attr.get("artist", "Unknown")
                 db_album = track_attr.get("album", "Unknown")
@@ -625,7 +625,7 @@ class Download:
         if abort_event.is_set():
             return False
 
-        if not sucess:
+        if not success:
             await safe_print_async(f"\n{RED}[!] TRACK {track_no} DEFINITIVELY DISCARDED AFTER ALL DOWNGRADES.{OFF}")
             await safe_print_async(f"{YELLOW}[!] Skipping to the next track...{OFF}\n")
             return False
