@@ -378,7 +378,7 @@ class Download:
                 await safe_print_async(f"\n{RED}[!] CTRL+C Intercepted: Securing files and folders...{OFF}")
                     
             if not aborted_by_user:
-                _clean_embed_art(dirn, self.settings)
+                await _clean_embed_art(dirn, self.settings)
                 if getattr(self, 'fetch_lyrics', False) and not self.no_credits:
                     await self._append_lyrics_to_booklet(dirn, album_title)
                     
@@ -511,7 +511,7 @@ class Download:
                 is_parallel=False
             )
             
-            _clean_embed_art(dirn, self.settings)
+            await _clean_embed_art(dirn, self.settings)
             
             # --- DATABASE UPGRADE: Inject artist and album metadata ---
             db_artist = track_attr.get("artist", "Unknown")
@@ -1135,7 +1135,7 @@ async def tqdm_download(url_or_callable, fname, track_name, is_parallel=False):
             if attempt < max_retries - 1:
                 wait = backoff_delays[attempt]
                 await safe_print_async(f"\n{Y}[!] Server block. Retrying in {wait}s ({attempt+1}/{max_retries}) | Error details: {e}{O}")
-                time.sleep(wait)
+                await asyncio.sleep(wait)
             else:
                 if os.path.exists(fname): os.remove(fname)
                 raise Exception(f"Definitive timeout after {max_retries} attempts. Last error: {e}")
@@ -1274,9 +1274,10 @@ async def tqdm_download_segments(track_url_dict, fname, track_name, is_parallel=
         if not is_parallel:
             await safe_print_async(f" {G}  > Assembling the final FLAC file...{O}")
             
-        remux = subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-y", "-i", tmp_fname, "-c:a", "copy", "-f", "flac", fname], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+        remux = await asyncio.create_subprocess.exec("ffmpeg", "-nostdin", "-v", "error", "-y", "-i", tmp_fname, "-c:a", "copy", "-f", "flac", fname, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE)
+        _, stderr = await remux.comunicate()
         if remux.returncode != 0:
-            raise ConnectionError(f"FFmpeg remux failed for {fname}")
+            raise ConnectionError(f"FFmpeg remux failed for {fname}: {stderr.decode()}")
         
         await safe_print_async(f"{G}  L Completed: {track_name}{O}")
 
@@ -1343,11 +1344,9 @@ async def _download_goodies(album_meta, dirn):
         logger.error(f"{RED}Error downloading goodies: {e}", exc_info=True)
 
 
-def _clean_embed_art(dirn, settings=None):
+async def _clean_embed_art(dirn, settings=None):
     embed_file = os.path.join(dirn, EMB_COVER_NAME)
     if os.path.exists(embed_file):
         try:
-            time.sleep(0.5) 
+            await asyncio.sleep(0.5) 
             os.remove(embed_file)
-        except OSError:
-            pass
