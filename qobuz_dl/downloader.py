@@ -280,19 +280,6 @@ class Download:
         aborted_by_user = False
         abort_event.clear()
 
-        # --- SIGINT HIJACKER (Hacker Fix) ---
-        # Intercept Ctrl+C to prevent core/cli from brutally killing the process,
-        # ensuring we have time to release file locks and rename the folder to [INCOMPLETE].
-        original_sigint = None
-        try:
-            original_sigint = signal.getsignal(signal.SIGINT)
-            def custom_sigint_handler(sig, frame):
-                abort_event.set()
-                raise KeyboardInterrupt
-            signal.signal(signal.SIGINT, custom_sigint_handler)
-        except Exception:
-            pass
-
         try:
             await self._generate_tracklist(album_meta, dirn, album_title, file_format, bit_depth, sampling_rate)
 
@@ -386,14 +373,6 @@ class Download:
             abort_event.set()
             aborted_by_user = True
             await safe_print_async(f"\n{RED}[!] CTRL+C Intercepted: Securing files and folders...{OFF}")
-            
-        finally:
-            # Restore original signal handler so the CLI functions normally afterwards
-            try:
-                if original_sigint:
-                    signal.signal(signal.SIGINT, original_sigint)
-            except Exception:
-                pass
                 
         if aborted_by_user:
             # Crucial: Wait for threads to drop OS file locks before attempting folder rename
