@@ -438,22 +438,8 @@ class Download:
             
             track_title = _get_title(track_meta)
             artist = _safe_get(track_meta, "performer", "name")
-            
-            # HEAD request to get file size before downloading
-            _file_size_str = ""
-            try:
-                async with aiohttp.ClientSession() as _s:
-                    async with _s.head(parse["url"], allow_redirects=True, timeout=aiohttp.ClientTimeout(total=5)) as _r:
-                        _bytes = int(_r.headers.get("content-length", 0))
-                        if _bytes > 0:
-                            if _bytes >= 1_048_576:
-                                _file_size_str = f" [{_bytes/1_048_576:.1f} MB]"
-                            else:
-                                _file_size_str = f" [{_bytes/1024:.0f} KB]"
-            except Exception:
-                pass
 
-            logger.info(f"\n{YELLOW}Downloading: {artist} - {track_title} {_file_size_str}{OFF}")
+            logger.info(f"\n{YELLOW}Downloading: {artist} - {track_title}{OFF}")
             url = track_meta.get("album", {}).get("url", "")
             release_date = track_meta.get("release_date_original", "")
             format_info = await self._get_format(track_meta, is_track_id=True, track_url_dict=parse)
