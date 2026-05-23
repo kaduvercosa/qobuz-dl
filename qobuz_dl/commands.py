@@ -1,5 +1,6 @@
 import argparse
 from qobuz_dl import __version__
+from qobuz_dl.color import MAGENTA, RESET
 
 
 def fun_args(subparsers, default_limit):
@@ -400,7 +401,7 @@ def qobuz_dl_args(
     parser = argparse.ArgumentParser(
         prog="qobuz-dl",
         description=(
-            f"[QOBUZ MASTER EDITION v{__version__}]\n\n"
+            f"{MAGENTA}[QOBUZ MASTER EDITION v{__version__}]\n\n{RESET}"
             "The Ultimate Lossless and Hi-Res music downloader for Qobuz.\n"
             "Veja exemplos e formas de uso em https://github.com/kaduvercosa/qobuz-dl"
         ),
