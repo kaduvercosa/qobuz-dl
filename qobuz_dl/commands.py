@@ -84,6 +84,22 @@ def lyrics_args(subparsers):
     )
     return lyrics
 
+def fix_lyrics_args(subparsers):
+    fix_lyrics = subparsers.add_parser(
+        "fix-lyrics",
+        aliases=["fl"],
+        description="Launch an interactive explorer to manually select and fix desynchronized or wrong lyrics for a specific file in a directory.",
+        help="interactive lyrics fixer mode",
+    )
+    fix_lyrics.add_argument(
+        "DIR",
+        metavar="DIRECTORY",
+        nargs="?",
+        default=".",
+        help="The local directory containing the music files (default: current directory)",
+    )
+    return fix_lyrics
+
 def sync_playlist_args(subparsers):
     sync_pl = subparsers.add_parser(
         "sync-playlist",
@@ -377,49 +393,6 @@ def add_common_arg(custom_parser, default_folder, default_quality):
     )
 
 
-def daemon_args(subparsers):
-    daemon = subparsers.add_parser(
-        "daemon",
-        aliases=["watch"],
-        description="Run the background watcher to check followed artists for new releases and trigger n8n webhooks.",
-        help="Run the background autonomous release watcher",
-    )
-    daemon.add_argument(
-        "--test",
-        action="store_true",
-        help="Run in test mode (bypasses date restrictions and sends a test payload)",
-    )
-
-
-def panel_args(subparsers):
-    panel = subparsers.add_parser(
-        "panel",
-        aliases=["p"],
-        description="Launch the interactive TUI Control Center.",
-        help="Interactive Control Center",
-    )
-
-
-def smart_mix_args(subparsers):
-    sm = subparsers.add_parser(
-        "smart-mix",
-        aliases=["sm"],
-        description="Generates an AI-curated .m3u playlist based on a concept from your downloaded tracks.",
-        help="Generate an AI-curated .m3u playlist from your downloaded tracks",
-    )
-    sm.add_argument(
-        "concept",
-        type=str,
-        help="The concept or mood for the playlist (e.g. 'relaxing songs for reading', 'high energy rock')",
-    )
-    sm.add_argument(
-        "-n", "--limit",
-        type=int,
-        default=30,
-        help="Maximum number of tracks to include in the playlist (default: 30)",
-    )
-
-
 def qobuz_dl_args(
     default_quality=6, default_limit=20, default_folder="QobuzDownloads"
 ):
@@ -467,10 +440,8 @@ def qobuz_dl_args(
     
     # Inizializza il nuovo comando
     lyrics_cmd = lyrics_args(subparsers)
+    fix_lyrics_cmd = fix_lyrics_args(subparsers)
     sync_pl_cmd = sync_playlist_args(subparsers)
-    smart_mix_cmd = smart_mix_args(subparsers)
-    panel_cmd = panel_args(subparsers)
-    daemon_cmd = daemon_args(subparsers)
     
     [
         add_common_arg(i, default_folder, default_quality)

@@ -115,19 +115,26 @@ def _reset_config(config_file):
         fetch_lyrics_opt = input("Choice (1 or 2): ")
         config["qobuz"]["fetch_lyrics"] = "true" if fetch_lyrics_opt.strip() == "1" else "false"
 
-        target_lang = "pt"
+        target_lang = "PT-BR"
         genius_token = ""
+        deepl_api_key = ""
+
         if config["qobuz"]["fetch_lyrics"] == "true":
             print()
-            target_lang_input = input("Target language for translation (e.g. 'pt', 'en', 'es') [default: pt]: ")
+            target_lang_input = input("Target language for DeepL translation (e.g. 'PT-BR', 'EN-US') [default: PT-BR]: ")
             if target_lang_input.strip():
-                target_lang = target_lang_input.strip()
+                target_lang = target_lang_input.strip().upper()
 
-            print(f"\n{YELLOW}[!] To use Genius as a fallback, enter your API Token. Leave blank to only use LRCLIB (Free/No API).{OFF}")
+            print(f"\n{YELLOW}[!] To use DeepL translation, enter your DeepL API Key. Leave blank to disable translation.{OFF}")
+            deepl_input = input("DeepL API Key: ")
+            deepl_api_key = deepl_input.strip()
+
+            print(f"\n{YELLOW}[!] To use Genius as a fallback for missing lyrics, enter your API Token. Leave blank to only use LRCLIB.{OFF}")
             genius_token_input = input("Genius API Token: ")
             genius_token = genius_token_input.strip()
 
         config["qobuz"]["target_lang"] = target_lang
+        config["qobuz"]["deepl_api_key"] = deepl_api_key
         config["qobuz"]["genius_token"] = genius_token
 
         print("\n--- AI Smart Playlists (Optional) ---")
@@ -269,20 +276,6 @@ async def _handle_commands(qobuz, arguments):
                 qobuz.directory,  # <-- MODIFIED: Previously it was arguments.FOLDER
                 auto_confirm=arguments.yes,
             )
-        elif arguments.command in ("smart-mix", "sm"):
-            from qobuz_dl.ai_mixer import generate_smart_mix
-            await generate_smart_mix(
-                qobuz.directory,
-                arguments.concept,
-                arguments.limit,
-                qobuz.settings
-            )
-        elif arguments.command in ("panel", "p"):
-            from qobuz_dl.tui_panel import run_tui_panel
-            await run_tui_panel(qobuz)
-        elif arguments.command in ("daemon", "watch"):
-            from qobuz_dl.daemon import scan_new_releases
-            await scan_new_releases(qobuz, test_mode=getattr(arguments, 'test', False))
         elif arguments.command == "lucky":
             query = " ".join(arguments.QUERY)
             qobuz.lucky_type = arguments.type
@@ -399,7 +392,8 @@ async def amain():
         
         fetch_lyrics = config.getboolean(section, "fetch_lyrics", fallback=False)
         genius_token = config.get(section, "genius_token", fallback=None)
-        target_lang = config.get(section, "target_lang", fallback="pt")
+        deepl_api_key = config.get(section, "deepl_api_key", fallback=None)
+        target_lang = config.get(section, "target_lang", fallback="PT-BR")
         
         # --- FIX: Backward compatibility for default_folder ---
         directory_val = config.get(section, "directory", fallback=None)
@@ -488,7 +482,7 @@ async def amain():
         
         if os.name == "nt":
             sync_dir = os.path.abspath(sync_dir)
-            if not sync_dir.startswith("\\\\?\\")
+            if not sync_dir.startswith("\\\\?\\"):
                 sync_dir = "\\\\?\\" + sync_dir
                 
         sync_database(sync_dir, QOBUZ_DB, sync_client)
@@ -503,16 +497,31 @@ async def amain():
         target_dir = arguments.DIR
         if os.name == "nt":
             target_dir = os.path.abspath(target_dir)
-            if not target_dir.startswith("\\\\?\\")
+            if not target_dir.startswith("\\\\?\\"):
                 target_dir = "\\\\?\\" + target_dir
                 
         try:
             # Captura a flag do terminal usando getattr(retorna False se a flag não for digitada)
             overwrite_flag = getattr(arguments, 'overwrite', False)
-            inject_lyrics_retroactively(target_dir, genius_token=genius_token, overwrite=overwrite_flag, target_lang=target_lang)
+            inject_lyrics_retroactively(target_dir, genius_token=genius_token, deepl_api_key=deepl_api_key, overwrite=overwrite_flag, target_lang=target_lang)
         except KeyboardInterrupt:
             print("\n\n\033[91m[!] Operation manually interrupted by the user (CTRL+C).\033[0m")
             print("\033[93mAlready processed files are safe. Exiting...\033[0m")
+        sys.exit(0)
+
+    elif arguments.command in ("fix-lyrics", "fl"):
+        from qobuz_dl.retro_tagger import interactive_fix_lyrics
+
+        target_dir = arguments.DIR
+        if os.name == "nt":
+            target_dir = os.path.abspath(target_dir)
+            if not target_dir.startswith("\\\\?\\"):
+                target_dir = "\\\\?\\" + target_dir
+
+        try:
+            await interactive_fix_lyrics(target_dir, genius_token=genius_token, deepl_api_key=deepl_api_key, target_lang=target_lang)
+        except KeyboardInterrupt:
+            print("\n\n\033[91m[!] Operation manually interrupted by the user (CTRL+C).\033[0m")
         sys.exit(0)
     # ----------------------------------------------
 
@@ -522,7 +531,7 @@ async def amain():
     # --- WINDOWS LONG PATH BYPASS ---
     if os.name == "nt":
         directory_to_use = os.path.abspath(directory_to_use)
-        if not directory_to_use.startswith("\\\\?\\")
+        if not directory_to_use.startswith("\\\\?\\"):
             directory_to_use = "\\\\?\\" + directory_to_use
     # --------------------------------
 
@@ -556,6 +565,7 @@ async def amain():
         fetch_lyrics=fetch_lyrics,
         no_lrc_files=("--no-lrc-files" in sys.argv) or no_lrc_files_config,
         genius_token=genius_token,
+        deepl_api_key=deepl_api_key,
         target_lang=target_lang,
         force_english=force_english,
         no_credits=no_credits_flag,

@@ -32,6 +32,7 @@ A atualização **v2.2.0** traz melhorias massivas no processamento de metadados
 * **Taggeamento Nativo de Múltiplos Artistas:** Detecta e divide automaticamente artistas principais e convidados. Ao contrário dos baixadores padrão, ele grava múltiplas tags discretas para arquivos FLAC (Comentários Vorbis) e strings padrão separadas por nulos para MP3s (ID3v2), garantindo interpretação impecável por players de ponta como Roon, Plexamp ou Kodi, sem a necessidade de ferramentas externas como o MusicBrainz Picard.
 * **Suporte Nativo ao ReplayGain:** Extrai e incorpora automaticamente as tags `REPLAYGAIN_TRACK_GAIN` e `REPLAYGAIN_TRACK_PEAK` diretamente dos dados ocultos da API do Qobuz. Isso garante um nivelamento de volume perfeito e não destrutivo de fábrica para reprodutores de áudio digital de ponta (DAPs) e servidores audiófilos como o Roon.
 * **Mecanismo Automático de Letras e Tagueador Retroativo:** Busca e injeta letras sincronizadas (`.lrc`) e não sincronizadas usando o LRCLIB (com a API do Genius como alternativa). Inclui um comando independente `lyrics` para escanear e injetar retroativamente letras ausentes em sua biblioteca local existente, sem precisar baixar o áudio novamente. Use a flag `--overwrite` caso queira substituir os textos já existentes (Novidade v2.2.0).
+* **Tradução Automática de Letras (DeepL + Inteligência):** O mecanismo de letras suporta a tradução automática e precisa de letras usando a **API Oficial do DeepL**. Para poupar sua cota, o sistema varre a música antes com `langdetect` e traduz o arquivo inteiro de uma só vez ("Em Lote"), isolando perfeitamente músicas mistas e evitando traduzir faixas que já estão no seu idioma nativo. Você precisa fornecer a API Key do DeepL quando o Qobuz-dl pedir a configuração.
 * **Livrinhos Digitais Aprimorados (Digital Booklets):** Compila automaticamente um arquivo `.txt` maravilhosamente formatado com uma lista de faixas completa, tempo de reprodução, créditos totais, metadados e resenhas. Ao terminar, o mecanismo varre de forma inteligente a pasta, remove as marcações de tempo dos arquivos `.lrc` e anexa as letras em texto puro de todo o álbum diretamente no livrinho. Os arquivos PDF oficiais ("Goodies") também são baixados junto. **Você agora pode usar a flag `--booklet-only` para baixar exclusivamente esses arquivos de metadados, arte da capa e PDFs, pulando graciosamente todas as faixas pesadas de áudio.**
 
 ### 🚀 Mecanismo de Download Resiliente
@@ -181,29 +182,17 @@ A maneira mais fácil e oficial de instalar a Ultimate Edition. O `pip` cuida de
 pip install qobuz-dl-master
 ```
 
-### 🍏 2. Instalação no a-Shell / iSH Shell (iOS / iPadOS)
+### 🍏 2. Instalação no iSH Shell (iOS / iPadOS)
 
-**Para usuários do a-Shell (Recomendado):**
-O a-Shell é mais rápido, mas bloqueia compilações C da biblioteca de criptografia. Siga estes 3 passos:
-1. Abra o a-Shell e instale as dependências forçando bibliotecas pré-compiladas puras:
-```bash
-AIOHTTP_NO_EXTENSIONS=1 pip install qobuz-dl-master
-```
-2. Digite o comando de permissão nativo do a-Shell para autorizar o acesso à sua pasta de músicas e selecione uma pasta no app "Arquivos":
-```bash
-pickFolder
-```
-3. No Qobuz-DL, defina a sua pasta de download como `~/Documents/NOME_DA_SUA_PASTA`.
-
-**Para usuários do iSH Shell:**
-A instalação padrão falhará pela falta de compiladores. Instale os pré-requisitos Alpine antes:
+A instalação padrão falhará pela falta de compiladores. Instale os pré-requisitos Alpine antes para evitar que o Linux tente usar o Rust/C++ ou quebrar ao instalar as bibliotecas principais do qobuz-dl:
 ```bash
 apk update
-apk add nano ffmpeg python3 py3-pip py3-pycryptodome py3-aiohttp
+apk add nano ffmpeg python3 py3-pip py3-pycryptodome py3-aiohttp gcc g++ make
 
-python3 -m pip install --upgrade "typing-extensions>=4.0.0" beautifulsoup4 deep-translator lyricsgenius mutagen
+python3 -m pip install --upgrade "typing-extensions>=4.0.0" beautifulsoup4 langdetect lyricsgenius mutagen
 
-pip install qobuz-dl-master
+# Force break system packages if running a newer Alpine version
+pip install qobuz-dl-master --break-system-packages
 ```
 
 ### 🤖 3. Instalação no Termux (Android)

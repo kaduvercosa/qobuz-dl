@@ -15,7 +15,10 @@ import concurrent.futures
 import aiohttp
 import aiofiles
 import asyncio
-from Cryptodome.Cipher import AES
+try:
+    from Cryptodome.Cipher import AES
+except ImportError:
+    from Crypto.Cipher import AES
 from pathvalidate import sanitize_filename, sanitize_filepath
 from tqdm import tqdm
 
@@ -137,7 +140,8 @@ class Download:
         fetch_lyrics: bool = False,
         no_lrc_files: bool = False,
         genius_token: str = None,
-        target_lang: str = "pt",
+        deepl_api_key: str = None,
+        target_lang: str = "PT-BR",
         no_credits: bool = False,
         settings: QobuzDLSettings = None,
         download_db=None,
@@ -163,7 +167,7 @@ class Download:
         self.no_lrc_files = no_lrc_files
         self.target_lang = target_lang
         if self.fetch_lyrics:
-            self.lyrics_engine = LyricsEngine(genius_token=genius_token, translate=True, target_lang=self.target_lang)
+            self.lyrics_engine = LyricsEngine(genius_token=genius_token, deepl_api_key=deepl_api_key, translate=True, target_lang=self.target_lang)
 
         self.settings = settings or QobuzDLSettings()
         self.download_db = download_db
