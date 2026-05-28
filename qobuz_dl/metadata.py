@@ -89,8 +89,12 @@ def _embed_flac_img(root_dir, audio: FLAC):
         logger.debug("Cover image not found to embed")
         return
     try:
+        # Se a imagem for maior que o limite do FLAC, pula o embed para evitar o crash
         if os.path.getsize(cover_image) > FLAC_MAX_BLOCKSIZE:
-            raise Exception("downloaded cover size too large to embed. turn off `og_cover` to avoid error")
+            size_mb = os.path.getsize(cover_image) / (1024 * 1024)
+            logger.info(f"[!] Capa Original ({size_mb:2f} MB) excedeu o limite do FLAC. Pulando embed..")
+            return
+
         image = Picture()
         image.type = 3
         mime_type, _ = mimetypes.guess_type(cover_image)

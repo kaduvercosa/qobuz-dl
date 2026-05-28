@@ -5,6 +5,7 @@ import time
 import getpass
 import asyncio
 import aiohttp
+import shutil
 
 from pathvalidate import sanitize_filename
 
@@ -548,7 +549,7 @@ class QobuzDL:
                     return []
                 iterable = results[mode_dict["key"]]["items"]
             # --------------------------------------------
-            iterable.sort(key=lambda x: (x.get("title") or x.get("name") or "").lower()) 
+            #iterable.sort(key=lambda x: (x.get("title") or x.get("name") or "").lower()) 
             item_list = []
             
             for i in iterable:
@@ -613,7 +614,7 @@ class QobuzDL:
                 else:
                     url_category = item_type
                     
-                url = "{}{}/{}".format(WEB_URL, url_category, i.get("id", ""))
+                url = f"{WEB_URL}{url_category}/{i.get('id', '')}"
                 item_list.append({"text": text, "url": url} if not lucky else url)
             return item_list
             
@@ -625,7 +626,12 @@ class QobuzDL:
         # --- NEW: Flag to let the engine know we are in a TTY session ---
         self._is_interactive_session = True
         # ----------------------------------------------------------------
-        self.w_art, self.w_tit, self.w_alb, self.w_typ, self.w_yea, self.w_qua = 20, 35, 30, 8, 5, 25
+        terminal_width = shutil.get_terminal_size((120,20)).columns
+        # Se a tela for pequena (< 100), reduz o tamanho das strings ou esconde a coluna de album
+        if terminal_width < 100:
+            self.w_art, self.w_tit, self.w_alb, self.w_typ, self.w_yea, self.w_qua = 15, 25, 10, 5, 5, 20
+        else:
+            self.w_art, self.w_tit, self.w_alb, self.w_typ, self.w_yea, self.w_qua = 20, 35, 30, 8, 5, 25
  
         try:
             import pick
@@ -675,7 +681,9 @@ class QobuzDL:
                     query_title = f"My Favorite {selected_fav.title()}"
                 else:
                     # --- STANDARD FLOW: Type the keyword ---
-                    query = input(f"{CYAN}Enter your search: [Ctrl + c to quit]\n-{DF} ")
+                    query = input(f"{CYAN}Enter your search: [Ctrl + c to quit]\n-{DF} ").strip()
+                    if not query:
+                        continue
                     logger.info(f"\n{YELLOW}Searching...{RESET}")
                     options = await self.search_by_type(query, selected_type, self.interactive_limit)
                     query_title = query.title()
@@ -714,7 +722,7 @@ class QobuzDL:
                     f"{table_header}"
                 )
                 
-                options_texts = [opt.get("text") for opt in options]
+                options_texts = ["[ Fazer nova busca ]", "[ Sair do programa ]"] + [opt.get("text") for opt in options]
                 
                 selected_items = pick.pick(
                     options_texts,
@@ -724,8 +732,21 @@ class QobuzDL:
                 )
                 
                 if len(selected_items) > 0:
-                    [final_url_list.append(options[i[1]]["url"]) for i in selected_items]
+                    selected_strings = [item[0] for item in selected_items]
                     
+                    if "[ Sair do programa ]" in selected_strings:
+                        logger.info(f"\n{YELLOW}Saindo da busca...{RESET}")
+                        return final_url_list# Retorna o que já tiver na fila
+                    
+                    if "[ Fazer nova busca ]" in selected_strings:
+                        continue # Volta para o topo do 'while True'sem adicionar nada 
+                    
+                    # Se chegou aqui, foram selecionados músicas/albúns reais
+                    for i in selected_items:
+                        # Subtrai 2 do indice do pick para bater com o indice da lista 'options'
+                        original_index = i[1] - 2
+                        if original_index >= 0:
+                            final_url_list.append(options[original_index]["url"])
                     y_n = pick.pick(["Yes", "No"], "Os itens foram adicionados à fila para serem baixados. Continuar pesquisando?")
                     if y_n[0] == "No":
                         break
