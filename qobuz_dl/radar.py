@@ -3,13 +3,15 @@ import re
 import configparser
 import asyncio
 import logging
+import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import List, Dict, Tuple, Optional
+from typing import List, Dict, Tuple, Optional, Set
 from pick import pick
 
 from qobuz_dl.qopy import Client
 from qobuz_dl.color import GREEN, YELLOW, RED, CYAN, OFF
+from qobuz_dl.core import classificar_tipo_lancamento
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -23,23 +25,46 @@ logger = logging.getLogger("radar")
 
 
 # ---------------------------------------------------------------------------
-# Helpers de UI
+# Helpers de UI & Formatação
 # ---------------------------------------------------------------------------
 
-def print_separator():
-    print(f"\n{CYAN}{'='*60}{OFF}\n")
+def print_separator() -> None:
+    print(f"\n{CYAN}{'='*75}{OFF}\n")
 
 
 def _pluralizar(n: int, singular: str, plural: str) -> str:
     return f"{n} {singular if n == 1 else plural}"
 
 
+def _data_relativa(data_str: str, hoje: "datetime.date") -> str:
+    """Converte YYYY-MM-DD em texto relativo legível."""
+    try:
+        data  = datetime.strptime(data_str, "%Y-%m-%d").date()
+        delta = (hoje - data).days
+    except ValueError:
+        return data_str
+
+    if delta == 0:  return "hoje"
+    if delta == 1:  return "ontem"
+    if delta <= 6:  return f"há {delta} dias"
+    if delta <= 13: return "há 1 sem"
+    if delta <= 20: return "há 2 sem"
+    if delta <= 27: return "há 3 sem"
+    return f"há {delta} dias"
+
+
 def _progresso(atual: int, total: int, nome: str) -> None:
-    """Imprime linha de progresso sobrescrevendo a anterior."""
-    pct  = int((atual / total) * 20)
+    """Barra de progresso -- silenciosa quando stdout não é TTY."""
+    if not sys.stdout.isatty():
+        return
+    pct   = int((atual / total) * 20)
     barra = f"[{'█' * pct}{'░' * (20 - pct)}]"
-    linha = f"\r{CYAN}{barra} {atual}/{total}{OFF} {nome[:40]:<40}"
-    print(linha, end="", flush=True)
+    print(f"\r{CYAN}{barra} {atual}/{total}{OFF} {nome[:40]:<40}", end="", flush=True)
+
+
+def _truncar(texto: str, limite: int) -> str:
+    """Trunca textos muito longos para manter o alinhamento da tabela."""
+    return texto if len(texto) <= limite else texto[:limite - 3] + "..."
 
 
 # ---------------------------------------------------------------------------
@@ -47,60 +72,45 @@ def _progresso(atual: int, total: int, nome: str) -> None:
 # ---------------------------------------------------------------------------
 
 class RadarConfig:
-    """Lê e valida todas as opções do config.ini relevantes ao radar."""
+    _TIPO_ALIASES: Dict[str, str] = {
+        "album": "album", "álbum": "album", "albun": "album",
+        "ep": "ep",
+        "single": "single",
+        "featured": "featured", "feat": "featured",
+        "live": "live",
+        "compilation": "compilation", "compilação": "compilation",
+    }
 
     def __init__(self, config: configparser.ConfigParser, section: str):
         self.dias_de_busca  = config.getint(section, "dias_de_busca",  fallback=7)
         self.max_concurrent = config.getint(section, "max_concurrent", fallback=10)
 
-        # Filtro de tipo: "album", "ep", "single", "featured" ou combinações separadas por vírgula
-        # Exemplo no config.ini:  tipos_radar = album, ep, single, featured
-        # Deixar em branco = mostrar todos
         tipos_raw = config.get(section, "tipos_radar", fallback="").strip()
+        self.tipos_filtro: Set[str] = set()
         if tipos_raw:
-            self.tipos_filtro = {t.strip().lower() for t in tipos_raw.split(",")}
-        else:
-            self.tipos_filtro = set()  # vazio = sem filtro
+            for t in tipos_raw.split(","):
+                alias = self._TIPO_ALIASES.get(t.strip().lower())
+                if alias:
+                    self.tipos_filtro.add(alias)
 
-        # Títulos a ignorar globalmente (substrings, case-insensitive)
-        # Exemplo:  ignorar_titulos = karaoke, tribute, originally performed
         ignorar_raw = config.get(section, "ignorar_titulos", fallback="").strip()
         self.ignorar_titulos: List[str] = (
             [t.strip().lower() for t in ignorar_raw.split(",") if t.strip()]
             if ignorar_raw else []
         )
 
+    def tipo_permitido(self, tipo: str, papel: str) -> bool:
+        if not self.tipos_filtro:
+            return True
+        tipo_key = self._TIPO_ALIASES.get(tipo.lower(), tipo.lower())
+        return tipo_key in self.tipos_filtro or papel in self.tipos_filtro
+
 
 # ---------------------------------------------------------------------------
-# Classificação de tipo de lançamento
+# Checagem de papel do artista
 # ---------------------------------------------------------------------------
-
-def reconciliar_tipo(album: Dict) -> str:
-    t_count  = album.get("tracks_count", 0)
-    duration = album.get("duration", 0)
-    raw_type = (album.get("release_type") or album.get("product_type") or "").lower()
-
-    if "album"  in raw_type: return "Álbum"
-    if "ep"     in raw_type: return "EP"
-    if "single" in raw_type: return "Single"
-
-    if t_count == 1:                           return "Single"
-    if t_count <= 3 or (0 < duration < 1_740): return "EP"
-    return "Álbum"
-
-
-def _normalizar_titulo(titulo: str) -> str:
-    titulo = (titulo or "").lower().strip()
-    titulo = re.sub(r"[^\w\s]", "", titulo)
-    titulo = re.sub(r"\s+", " ", titulo)
-    return titulo
-
 
 def _checar_papel(album: Dict, artist_id: str) -> Tuple[bool, str]:
-    """
-    Verifica se o artista participa do álbum e retorna (participa, papel).
-    papel: "main" | "featured" | ""
-    """
     artists_field = album.get("artists") or []
 
     if not artists_field:
@@ -113,43 +123,12 @@ def _checar_papel(album: Dict, artist_id: str) -> Tuple[bool, str]:
         if str(a.get("id") or "") != artist_id:
             continue
         roles_raw = " ".join(a.get("roles") or []).lower()
-        if "main" in roles_raw:
-            return True, "main"
-        if "featured" in roles_raw or "feat" in roles_raw:
-            return True, "featured"
-        return True, "main"  # listado mas sem role explícito → main
+        if "main"     in roles_raw: return True, "main"
+        if "featured" in roles_raw: return True, "featured"
+        if "feat"     in roles_raw: return True, "featured"
+        return True, "main"
 
     return False, ""
-
-
-# ---------------------------------------------------------------------------
-# Deduplicação global cross-artista
-# ---------------------------------------------------------------------------
-
-class DeduplicadorGlobal:
-    """
-    Detecta o mesmo lançamento aparecendo via artistas diferentes.
-
-    Exemplo: "The Motto" de Tiësto ft. Ava Max pode aparecer tanto
-    ao buscar Tiësto quanto ao buscar Ava Max. A chave usa o ID do
-    álbum (que é único por lançamento, independente do artista buscado).
-    """
-
-    def __init__(self):
-        self._ids_vistos:   set = set()
-        self._chaves_vistas: set = set()
-
-    def ja_visto_id(self, album_id) -> bool:
-        if album_id in self._ids_vistos:
-            return True
-        self._ids_vistos.add(album_id)
-        return False
-
-    def ja_visto_chave(self, chave: str) -> bool:
-        if chave in self._chaves_vistas:
-            return True
-        self._chaves_vistas.add(chave)
-        return False
 
 
 # ---------------------------------------------------------------------------
@@ -173,16 +152,15 @@ async def setup_client(config: configparser.ConfigParser, section: str) -> Clien
 # ---------------------------------------------------------------------------
 
 async def fetch_artist_latest_releases(
-    api:           Client,
-    artist_id:     str,
-    artist_name:   str,
-    semaphore:     asyncio.Semaphore,
-    cfg:           RadarConfig,
-    dedup:         DeduplicadorGlobal,
-    contador:      List[int],   # [atual, total] -- mutável para progresso
+    api:         Client,
+    artist_id:   str,
+    artist_name: str,
+    semaphore:   asyncio.Semaphore,
+    cfg:         RadarConfig,
+    contador:    List[int],
 ) -> List[Dict]:
-    novidades:     List[Dict] = []
-    chaves_locais: set        = set()   # dedup cross-região dentro do artista
+    novidades:  List[Dict] = []
+    ids_locais: Set        = set()
 
     hoje          = datetime.now(timezone.utc).date()
     data_limite   = hoje - timedelta(days=cfg.dias_de_busca)
@@ -191,93 +169,90 @@ async def fetch_artist_latest_releases(
     async with semaphore:
         try:
             async for chunk in api.get_artist_meta(artist_id):
-                if "albums" not in chunk:
-                    continue
+                
+                # Varre todas as possíveis gavetas que a API do Qobuz usa
+                categorias_api = ["albums", "singles", "eps", "appears_on", "featured_in"]
+                
+                for categoria in categorias_api:
+                    for album in chunk.get(categoria, {}).get("items", []):
+                        album_id = album.get("id")
 
-                for album in chunk.get("albums", {}).get("items", []):
-                    album_id = album.get("id")
+                        if album_id in ids_locais:
+                            continue
+                        ids_locais.add(album_id)
 
-                    # Dedup global por ID (evita reprocessar mesmo objeto)
-                    if dedup.ja_visto_id(album_id):
-                        continue
-
-                    # Papel do artista no lançamento
-                    participa, papel = _checar_papel(album, artist_id)
-                    if not participa:
-                        continue
-
-                    if (album.get("artist") or {}).get("name") == "Various Artists":
-                        continue
-
-                    if not album.get("streamable"):
-                        continue
-
-                    if "tracks_count" not in album and "release_type" not in album:
-                        continue
-
-                    # Filtro de títulos indesejados (config.ini: ignorar_titulos)
-                    titulo_lower = (album.get("title") or "").lower()
-                    if any(ig in titulo_lower for ig in cfg.ignorar_titulos):
-                        continue
-
-                    # Data de lançamento
-                    data_str = str(
-                        album.get("release_date_original")
-                        or album.get("release_date")
-                        or ""
-                    )
-                    match = re.search(r"\d{4}-\d{2}-\d{2}", data_str)
-                    if not match:
-                        continue
-
-                    try:
-                        data_lancamento = datetime.strptime(match.group(), "%Y-%m-%d").date()
-                    except ValueError:
-                        continue
-
-                    if not (data_limite <= data_lancamento <= limite_futuro):
-                        continue
-
-                    tipo = reconciliar_tipo(album)
-
-                    # Filtro de tipo (config.ini: tipos_radar)
-                    if cfg.tipos_filtro:
-                        tipo_chave = tipo.lower().replace("á", "a")  # "álbum" → "album"
-                        papel_chave = papel  # "main" / "featured"
-                        if tipo_chave not in cfg.tipos_filtro and papel_chave not in cfg.tipos_filtro:
+                        participa, papel = _checar_papel(album, artist_id)
+                        if not participa:
                             continue
 
-                    # Dedup cross-região local (mesmo título + artista buscado)
-                    titulo_norm = _normalizar_titulo(album.get("title", ""))
-                    chave_local = f"{artist_id}||{titulo_norm}"
-                    if chave_local in chaves_locais:
-                        continue
-                    chaves_locais.add(chave_local)
+                        if not album.get("streamable"):
+                            continue
 
-                    # Dedup global cross-artista (mesmo álbum via artistas diferentes)
-                    # Usa album_id real pois já foi marcado no dedup.ja_visto_id acima;
-                    # aqui deduplica pela chave semântica título+data para o caso de
-                    # edições regionais com IDs diferentes mas mesmo conteúdo
-                    chave_global = f"global||{titulo_norm}||{match.group()}"
-                    if dedup.ja_visto_chave(chave_global):
-                        continue
+                        if "tracks_count" not in album and "release_type" not in album:
+                            continue
 
-                    novidades.append({
-                        "id":           album_id,
-                        "title":        album.get("title", "Unknown"),
-                        "artist":       artist_name,
-                        "album_artist": (album.get("artist") or {}).get("name", artist_name),
-                        "type":         tipo,
-                        "role":         papel,
-                        "date":         match.group(),
-                    })
+                        titulo_lower = (album.get("title") or "").lower()
+                        if any(ig in titulo_lower for ig in cfg.ignorar_titulos):
+                            continue
+
+                        data_str = str(
+                            album.get("release_date_original")
+                            or album.get("release_date")
+                            or ""
+                        )
+                        match = re.search(r"\d{4}-\d{2}-\d{2}", data_str)
+                        if not match:
+                            continue
+
+                        try:
+                            data_lancamento = datetime.strptime(match.group(), "%Y-%m-%d").date()
+                        except ValueError:
+                            continue
+
+                        if not (data_limite <= data_lancamento <= limite_futuro):
+                            continue
+
+                        tipo_raw = classificar_tipo_lancamento(
+                            raw_type=album.get("release_type") or album.get("product_type"),
+                            title=str(album.get("title", "")),
+                            version=str(album.get("version", "")),
+                            t_count=album.get("tracks_count", 0),
+                            duration=album.get("duration", 0),
+                        )
+                        
+                        # Se for um Various Artists, forçamos o tipo para "VA / Coletânea" visualmente
+                        is_va = (album.get("artist") or {}).get("name") == "Various Artists"
+                        if is_va:
+                            tipo_display = "VA / Coletânea"
+                        else:
+                            tipo_display = {"album": "Álbum", "ep": "EP"}.get(tipo_raw, tipo_raw.title())
+
+                        if not cfg.tipo_permitido(tipo_display, papel):
+                            continue
+
+                        hires = bool(
+                            album.get("hires_streamable")
+                            or album.get("hires")
+                            or (album.get("maximum_bit_depth",    0) or 0) > 16
+                            or (album.get("maximum_sampling_rate", 0) or 0) > 44.1
+                        )
+
+                        novidades.append({
+                            "id":           album_id,
+                            "title":        album.get("title", "Unknown"),
+                            "artist":       artist_name,
+                            "album_artist": (album.get("artist") or {}).get("name", artist_name),
+                            "type":         tipo_display,
+                            "role":         papel,
+                            "date":         match.group(),
+                            "hires":        hires,
+                        })
 
         except asyncio.CancelledError:
             raise
         except Exception as exc:
             logger.warning("Erro ao buscar '%s' (id=%s): %s", artist_name, artist_id, exc)
         finally:
-            # Atualiza progresso independente de sucesso ou erro
             contador[0] += 1
             _progresso(contador[0], contador[1], artist_name)
 
@@ -285,8 +260,38 @@ async def fetch_artist_latest_releases(
 
 
 # ---------------------------------------------------------------------------
-# Ordenação e agrupamento
+# Deduplicação Inteligente & Ordenação
 # ---------------------------------------------------------------------------
+
+def _limpar_titulo_para_comparacao(titulo: str) -> str:
+    """Remove parênteses, colchetes e caracteres especiais para achar duplicatas exatas."""
+    t = (titulo or "").lower()
+    t = re.sub(r"[\(\[].*?[\)\]]", "", t) # Remove (Deluxe), (Remastered), etc.
+    t = re.sub(r"[^\w\s]", "", t)
+    return re.sub(r"\s+", " ", t).strip()
+
+
+def deduplicar_inteligente(lancamentos: List[Dict]) -> List[Dict]:
+    """
+    Agrupa lançamentos pelo mesmo Artista + Título base. 
+    Se houver colisões (ex: versão 16-bit e 24-bit juntas), descarta a pior e mantém a Hi-Res.
+    """
+    unicos = {}
+    
+    for l in lancamentos:
+        chave_artista = _limpar_titulo_para_comparacao(l["album_artist"])
+        chave_titulo  = _limpar_titulo_para_comparacao(l["title"])
+        chave = f"{chave_artista}::{chave_titulo}"
+
+        if chave not in unicos:
+            unicos[chave] = l
+        else:
+            # Se a versão nova for Hi-Res e a guardada não for, substitui pela nova.
+            if l.get("hires") and not unicos[chave].get("hires"):
+                unicos[chave] = l
+                
+    return list(unicos.values())
+
 
 def ordenar_lancamentos(lancamentos: List[Dict]) -> List[Dict]:
     return sorted(
@@ -295,49 +300,59 @@ def ordenar_lancamentos(lancamentos: List[Dict]) -> List[Dict]:
         reverse=True,
     )
 
-
-def agrupar_por_artista(lancamentos: List[Dict]) -> Dict[str, List[Dict]]:
-    grupos: Dict[str, List[Dict]] = {}
-    for l in lancamentos:
-        grupos.setdefault(l["artist"], []).append(l)
-    return grupos
-
-
 # ---------------------------------------------------------------------------
-# Montagem das opções para o pick
+# Montagem das opções para o pick (Tabela Alinhada e Indexada)
 # ---------------------------------------------------------------------------
+
+_PREFIX_TIPO = {
+    "Álbum":  "[Álbum ]",
+    "EP":     "[EP    ]",
+    "Single": "[Single]",
+}
 
 def montar_opcoes(
     lancamentos: List[Dict],
-    fav_ids:     set,
+    fav_ids:     Set[str],
+    hoje:        "datetime.date",
 ) -> Tuple[List[str], List[int]]:
-    grupos  = agrupar_por_artista(lancamentos)
+    
+    # Agrupamento inteligente que preserva o índice original da lista
+    grupos: Dict[str, List[Tuple[int, Dict]]] = {}
+    for original_idx, l in enumerate(lancamentos):
+        grupos.setdefault(l["artist"], []).append((original_idx, l))
+
     labels:  List[str] = []
     indices: List[int] = []
 
-    idx_map = {i: l for i, l in enumerate(lancamentos)}
-
     for artista, items in grupos.items():
-        labels.append(f"── {artista} {'─' * max(0, 35 - len(artista))}")
-        indices.append(-1)
+        # Desempacotamos o índice original e o item
+        novos = sum(1 for _, it in items if str(it["id"]) not in fav_ids)
+        badge = f"  ({novos} {'novo' if novos == 1 else 'novos'})" if novos > 0 else ""
+        labels.append(f"── {artista}{badge} {'─' * max(0, 40 - len(artista))}")
+        indices.append(-1) # -1 indica que é um cabeçalho não clicável
 
-        for item in items:
-            idx    = next(i for i, l in idx_map.items() if l is item)
-            ja_fav = " ★" if str(item["id"]) in fav_ids else ""
-
+        for original_idx, item in items:
+            ja_fav   = str(item["id"]) in fav_ids
+            data_rel = _data_relativa(item["date"], hoje)
+            
+            # Formatação de Colunas Fixas
+            icone = "★" if ja_fav else "►"
+            hires = "HR " if item.get("hires") else "   "
+            
             if item["role"] == "featured":
-                label = (
-                    f"  [feat] {item['album_artist']} - {item['title']} "
-                    f"ft. {item['artist']} ({item['date']}){ja_fav}"
-                )
+                tipo_str = "[Feat  ]"
+                titulo   = _truncar(f"{item['album_artist']} - {item['title']} ft. {item['artist']}", 60)
             else:
-                label = (
-                    f"  [{item['type']}] {item['artist']} - {item['title']} "
-                    f"({item['date']}){ja_fav}"
-                )
+                tipo_str = _PREFIX_TIPO.get(item["type"], f"[{item['type'][:6].ljust(6)}]")
+                titulo   = _truncar(f"{item['artist']} - {item['title']}", 60)
+
+            # Alinhamento perfeito com ljust e rjust
+            label = f"  {icone} {tipo_str:<10} {hires:<3} {titulo:<62} {data_rel:>10}"
 
             labels.append(label)
-            indices.append(idx)
+            
+            # Guardamos o índice real da lista todos_lancamentos
+            indices.append(original_idx)
 
     return labels, indices
 
@@ -348,27 +363,27 @@ def montar_opcoes(
 
 async def adicionar_favoritos(
     api:          Client,
-    selecionados: List[tuple],
+    selecionados: List[Tuple[str, int]],
     todos:        List[Dict],
-    fav_ids:      set,
+    fav_ids:      Set[str],
 ) -> None:
     for item_label, index in selecionados:
         album    = todos[index]
         album_id = str(album["id"])
 
         if album_id in fav_ids:
-            print(f"{YELLOW} [!] Já é favorito: {item_label}{OFF}")
+            print(f"{YELLOW} [!] Já é favorito: {album['artist']} - {album['title']}{OFF}")
             continue
 
         try:
             await api.add_favorite_album(album_id)
-            print(f"{GREEN} [+] Adicionado: {item_label}{OFF}")
+            print(f"{GREEN} [+] Adicionado: {album['artist']} - {album['title']}{OFF}")
             fav_ids.add(album_id)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            logger.error("Erro ao adicionar '%s': %s", item_label, exc)
-            print(f"{RED} [-] Erro ao adicionar: {item_label}{OFF}")
+            logger.error("Erro ao adicionar '%s - %s': %s", album['artist'], album['title'], exc)
+            print(f"{RED} [-] Erro: {album['artist']} - {album['title']}{OFF}")
 
 
 # ---------------------------------------------------------------------------
@@ -382,7 +397,7 @@ async def _async_run_radar() -> None:
         base_path = Path(os.getenv("HOME", str(Path.home()))) / ".config"
 
     config_path = base_path / "qobuz-dl" / "config.ini"
-    config = configparser.ConfigParser()
+    config      = configparser.ConfigParser()
     config.read(config_path)
 
     if not config.sections():
@@ -391,8 +406,8 @@ async def _async_run_radar() -> None:
 
     section = config.sections()[0]
     cfg     = RadarConfig(config, section)
-
-    api = await setup_client(config, section)
+    api     = await setup_client(config, section)
+    hoje    = datetime.now(timezone.utc).date()
 
     try:
         print(
@@ -400,14 +415,14 @@ async def _async_run_radar() -> None:
             f"dos últimos {_pluralizar(cfg.dias_de_busca, 'dia', 'dias')}...{OFF}"
         )
         if cfg.tipos_filtro:
-            print(f"{CYAN}[*] Filtro de tipo ativo: {', '.join(sorted(cfg.tipos_filtro))}{OFF}")
+            print(f"{CYAN}[*] Filtro ativo: {', '.join(sorted(cfg.tipos_filtro))}{OFF}")
 
         fav_data, favs_artists_data = await asyncio.gather(
             api.get_favorites(fav_type="albums",  limit=1_000),
             api.get_favorites(fav_type="artists", limit=500),
         )
 
-        fav_ids = {
+        fav_ids: Set[str] = {
             str(item.get("id"))
             for item in fav_data.get("favorites", {}).get("albums", {}).get("items", [])
         }
@@ -419,42 +434,56 @@ async def _async_run_radar() -> None:
             return
 
         total    = len(artistas)
-        contador = [0, total]   # [atual, total]
-        dedup    = DeduplicadorGlobal()
+        contador = [0, total]
 
         print(f"{CYAN}[*] Verificando {_pluralizar(total, 'artista', 'artistas')}...{OFF}\n")
 
-        semaphore = asyncio.Semaphore(cfg.max_concurrent)
-        tarefas   = [
+        semaphore  = asyncio.Semaphore(cfg.max_concurrent)
+        tarefas    = [
             fetch_artist_latest_releases(
                 api, str(a.get("id")), a.get("name", "Unknown"),
-                semaphore, cfg, dedup, contador,
+                semaphore, cfg, contador,
             )
             for a in artistas
         ]
-        resultados = await asyncio.gather(*tarefas)
+        resultados_brutos = await asyncio.gather(*tarefas)
 
-        # Quebra de linha após a barra de progresso
-        print()
+        if sys.stdout.isatty():
+            print()
 
-        todos_lancamentos = ordenar_lancamentos(
-            [item for sublist in resultados for item in sublist]
-        )
+        # Achata a lista de resultados
+        lista_plana = [item for sublist in resultados_brutos for item in sublist]
+        
+        # Processa a deduplicação e em seguida a ordenação
+        lancamentos_unicos = deduplicar_inteligente(lista_plana)
+        todos_lancamentos = ordenar_lancamentos(lancamentos_unicos)
 
         if not todos_lancamentos:
-            print(f"\n{YELLOW}[!] Sem novidades nos últimos {_pluralizar(cfg.dias_de_busca, 'dia', 'dias')}.{OFF}")
+            print(
+                f"\n{YELLOW}[!] Sem novidades nos últimos "
+                f"{_pluralizar(cfg.dias_de_busca, 'dia', 'dias')}.{OFF}"
+            )
             return
 
-        labels, indices = montar_opcoes(todos_lancamentos, fav_ids)
+        labels, indices = montar_opcoes(todos_lancamentos, fav_ids, hoje)
 
         print_separator()
         total_items = sum(1 for i in indices if i >= 0)
-        print(f"{CYAN}[*] {_pluralizar(total_items, 'lançamento encontrado', 'lançamentos encontrados')}{OFF}")
+        novos_total = sum(
+            1 for i in indices
+            if i >= 0 and str(todos_lancamentos[i]["id"]) not in fav_ids
+        )
+        print(
+            f"{CYAN}[*] {_pluralizar(total_items, 'lançamento encontrado', 'lançamentos encontrados')}"
+            f" -- {GREEN}{_pluralizar(novos_total, 'novo', 'novos')}{OFF}"
+        )
+        print(f"{CYAN}[*] Legenda: ► novo  ★ já favoritado  HR = Hi-Res{OFF}\n")
 
         selected_raw = pick(
             labels,
-            "Seleciona os lançamentos para adicionar aos favoritos:\n"
-            "(★ = já favoritado  |  ESPAÇO = selecionar  |  ENTER = confirmar)",
+            "Selecione os lançamentos para adicionar aos favoritos:\n"
+            "(ESPAÇO = selecionar  |  ENTER = confirmar)\n"
+            "(linhas '──' são cabeçalhos e não podem ser selecionadas)",
             multiselect=True,
             options_map_func=lambda o: o,
         )
@@ -470,9 +499,10 @@ async def _async_run_radar() -> None:
         ]
 
         if not selecionados_validos:
-            print(f"\n{YELLOW}[*] Nenhum lançamento válido selecionado.{OFF}")
+            print(f"\n{YELLOW}[*] Apenas cabeçalhos selecionados -- nada para adicionar.{OFF}")
             return
 
+        print()
         await adicionar_favoritos(api, selecionados_validos, todos_lancamentos, fav_ids)
 
     except (KeyboardInterrupt, asyncio.CancelledError):
@@ -489,8 +519,8 @@ async def _async_run_radar() -> None:
 # ---------------------------------------------------------------------------
 
 def run_radar() -> None:
-    loop = asyncio.get_event_loop()
-    if loop.is_running():
+    try:
+        loop = asyncio.get_running_loop()
         loop.create_task(_async_run_radar())
-    else:
-        loop.run_until_complete(_async_run_radar())
+    except RuntimeError:
+        asyncio.run(_async_run_radar())

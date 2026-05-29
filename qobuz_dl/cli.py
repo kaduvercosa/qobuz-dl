@@ -22,6 +22,9 @@ logging.basicConfig(level=logging.INFO, format="%(message)s")
 # ============================================================
 # PATH CONFIGURATIONS (Using Pathlib)
 # ============================================================
+# ============================================================
+# PATH CONFIGURATIONS (Using Pathlib)
+# ============================================================
 def ensure_long_path(path: Union[str, Path]) -> str:
     """Garante o prefixo de long path do Windows (\\\\?\\) quando necessário."""
     if os.name != "nt":
@@ -34,14 +37,29 @@ def ensure_long_path(path: Union[str, Path]) -> str:
     except Exception:
         return str(path)
 
+# --- INÍCIO DA DETECÇÃO DE SISTEMA (COM SUPORTE A IOS) ---
+import platform
+
+is_ios = sys.platform == "ios"
+# Verificação extra para apps de iOS que podem se identificar apenas como "darwin" (macOS)
+if not is_ios and sys.platform == "darwin":
+    # Checa arquitetura do processador, variáveis de ambiente de apps específicos ou o caminho típico do iOS
+    if platform.machine().startswith(("iPhone", "iPad", "iPod")) or "PYTHONISTA_ROOT" in os.environ or "/var/mobile/" in str(Path.home()):
+        is_ios = True
+
 if os.name == "nt":
     OS_CONFIG = Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming")
+elif is_ios:
+    # No iOS (iPhone/iPad), salva na pasta Documents para evitar PermissionError
+    OS_CONFIG = Path.home() / "Documents"
 else:
     OS_CONFIG = Path(os.environ.get("HOME") or Path.home()) / ".config"
+# --- FIM DA DETECÇÃO ---
 
 CONFIG_PATH = OS_CONFIG / "qobuz-dl"
 CONFIG_FILE = CONFIG_PATH / "config.ini"
 QOBUZ_DB = CONFIG_PATH / "qobuz_dl.db"
+
 
 
 def validate_config_formats(formats_to_check: dict) -> None:
@@ -92,7 +110,7 @@ def validate_config_formats(formats_to_check: dict) -> None:
 
 
 def _reset_config(config_file: Path) -> int:
-    logging.info(f"\n{YELLOW}--- QOBUZ-DL CONFIGURATION WIZARD (2026 Update) ---{OFF}")
+    logging.info(f"\n{GREEN}--- QOBUZ-DL: CONFIGURACAO PADRAO ---{OFF}")
     config = configparser.ConfigParser(interpolation=None)
     config["qobuz"] = {}
     
@@ -112,8 +130,8 @@ def _reset_config(config_file: Path) -> int:
         config["qobuz"]["auth_token"] = auth_token.strip()
 
         print("\nDo you want to automatically download and inject lyrics?")
-        print("  1) Yes, download lyrics\n  2) No, skip lyrics")
-        fetch_lyrics_opt = input("Choice (1 or 2): ")
+        print("  1) SIM, BAIXAR LETRAS\n  2) NAO, PULE AS LETRAS")
+        fetch_lyrics_opt = input("Escolha (1 or 2): ")
         config["qobuz"]["fetch_lyrics"] = "true" if fetch_lyrics_opt.strip() == "1" else "false"
 
         target_lang = "PT-BR"

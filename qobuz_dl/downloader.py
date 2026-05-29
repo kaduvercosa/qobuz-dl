@@ -229,35 +229,41 @@ class Download:
                     except OSError: pass
                 return
              
+            # --- CÓDIGO DE CONCORRÊNCIA OTIMIZADO ---
             sem = asyncio.Semaphore(active_workers)
-            async def bound_download(dirn, count, parse, i, album_meta, is_mp3, multiple, is_parallel):
+            
+            async def bound_process_track(dirn, t_count, track_item, a_meta, is_multi, is_para):
+                """Envolve a chamada de API E o download na mesma barreira do semáforo."""
                 async with sem:
-                    return await self._download_and_tag(dirn, count, parse, i, album_meta, False, is_mp3, multiple, is_parallel)
+                    if abort_event.is_set(): return False
+                    
+                    try:
+                        # A API só é chamada quando o worker está liberado para trabalhar (Evita HTTP 429)
+                        parse = await self.client.get_track_url(track_item["id"], fmt_id=self.quality)
+                    except Exception as e:
+                        await safe_print_async(f"{RED}[!] API Error for track {track_item.get('track_number')} (ID: {track_item['id']}): {e}{OFF}")
+                        return False
+
+                    if "sample" not in parse and parse.get("sampling_rate"):
+                        media_num = track_item.get("media_number") if is_multi else None
+                        return await self._download_and_tag(
+                            dirn, t_count, parse, track_item, a_meta, False, int(self.quality) == 5, media_num, is_para
+                        )
+                    return False
 
             tasks = []
             for continuous_track_index, i in enumerate(album_meta["tracks"]["items"], start=1):
                 if abort_event.is_set(): break
                 if is_multiple: i["track_number"] = continuous_track_index
                 
-                try:
-                    parse = await self.client.get_track_url(i["id"], fmt_id=self.quality)
-                except Exception as e:
-                    await safe_print_async(f"{RED}[!] API Error for track {i.get('track_number')} (ID: {i['id']}): {e}{OFF}")
-                    failed_tracks += 1
-                    count += 1
-                    continue
-
-                if "sample" not in parse and parse["sampling_rate"]:
-                    tasks.append(bound_download(str(working_dirn), count, parse, i, album_meta, int(self.quality) == 5, i.get("media_number") if is_multiple else None, is_parallel))
-                else:
-                    failed_tracks += 1
+                tasks.append(bound_process_track(str(working_dirn), count, i, album_meta, is_multiple, is_parallel))
                 count += 1
 
             try:
                 results = await asyncio.gather(*tasks, return_exceptions=True)
                 for res in results:
                     if isinstance(res, Exception):
-                        await safe_print_async(f"{RED}[!] Track download failed: {res}{OFF}")
+                        await safe_print_async(f"{RED}[!] Track process failed: {res}{OFF}")
                         failed_tracks += 1
                     elif res is False: failed_tracks += 1
             except (KeyboardInterrupt, SystemExit, asyncio.CancelledError):
@@ -745,14 +751,21 @@ async def tqdm_download_segments(track_url: dict, fname: str, track_name: str, i
 
     async def fetch_seg(session, i, bar):
         if abort_event.is_set(): return bytearray()
-        async with session.get(tmpl.replace("$SEGMENT$", str(i)), timeout=15) as r:
-            r.raise_for_status()
-            data = bytearray()
-            async for chunk in r.content.iter_chunked(65536):
-                if abort_event.is_set(): return bytearray()
-                data.extend(chunk)
-                if not is_parallel: bar.update(len(chunk))
-            return data
+        
+        # --- CÓDIGO DE RETRY ADICIONADO PARA RESILIÊNCIA EM SEGMENTOS ---
+        for attempt in range(4):
+            try:
+                async with session.get(tmpl.replace("$SEGMENT$", str(i)), timeout=15) as r:
+                    r.raise_for_status()
+                    data = bytearray()
+                    async for chunk in r.content.iter_chunked(65536):
+                        if abort_event.is_set(): return bytearray()
+                        data.extend(chunk)
+                        if not is_parallel: bar.update(len(chunk))
+                    return data
+            except Exception as e:
+                if attempt == 3: raise
+                await asyncio.sleep(2 ** attempt)
 
     try:
         async with aiohttp.ClientSession() as s:
@@ -776,9 +789,19 @@ async def tqdm_download_segments(track_url: dict, fname: str, track_name: str, i
         if abort_event.is_set(): return
         if not is_parallel: await safe_print_async(f" {GREEN}  > Assembling FLAC...{OFF}")
             
-        proc = await asyncio.create_subprocess_exec("ffmpeg", "-nostdin", "-v", "error", "-y", "-i", tmp_fname, "-c:a", "copy", "-f", "flac", fname, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE)
-        _, stderr = await proc.communicate()
-        if proc.returncode != 0: raise ConnectionError(f"FFmpeg failed: {stderr.decode()}")
+        # --- CÓDIGO DO FFMPEG OTIMIZADO PARA FINALIZAR COM CTRL+C ---
+        proc = await asyncio.create_subprocess_exec(
+            "ffmpeg", "-nostdin", "-v", "error", "-y", "-i", tmp_fname, 
+            "-c:a", "copy", "-f", "flac", fname, 
+            stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE
+        )
+        
+        try:
+            _, stderr = await proc.communicate()
+            if proc.returncode != 0: raise ConnectionError(f"FFmpeg failed: {stderr.decode()}")
+        except asyncio.CancelledError:
+            proc.terminate()
+            raise
         
         await safe_print_async(f"{GREEN}  L Completed: {track_name}{OFF}")
 

@@ -1,18 +1,25 @@
 import argparse
+import re  # [!] Necessário para injetar as cores
 from typing import Any, Union
 
 from qobuz_dl import __version__
-from qobuz_dl.color import GREEN, RESET
-
+from qobuz_dl.color import GREEN, RESET, CYAN, YELLOW  # Adicionei CYAN e YELLOW
 
 def fun_args(subparsers: argparse._SubParsersAction, default_limit: Union[int, str]) -> argparse.ArgumentParser:
     interactive = subparsers.add_parser(
         "interactive",
         description="Interactively search for tracks and albums.",
         help="interactive mode",
-        aliases=["i", "fun"]
+        aliases=["i", "fun"],
+        formatter_class=QobuzHelpFormatter, # [!] Aplica cores e alinhamento
+        add_help=False,                     # [!] Remove o "optional arguments" padrão
+        usage=f"qobuz-dl interactive {CYAN}[options]{RESET}" # [!] Limpa a parede de texto do topo
     )
-    interactive.add_argument(
+    
+    # Criamos um grupo específico com título amarelo
+    grp = interactive.add_argument_group(f'{YELLOW}interactive options{RESET}')
+    grp.add_argument("-h", "--help", action="help", default=argparse.SUPPRESS, help="show this help message and exit")
+    grp.add_argument(
         "-l", "--limit",
         metavar="int",
         default=default_limit,
@@ -26,19 +33,25 @@ def lucky_args(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
         "lucky",
         description="Download the first <n> albums returned from a Qobuz search.",
         help="lucky mode",
+        formatter_class=QobuzHelpFormatter,
+        add_help=False,
+        usage=f"qobuz-dl lucky {CYAN}<QUERY> [options]{RESET}"
     )
-    lucky.add_argument(
+    
+    grp = lucky.add_argument_group(f'{YELLOW}lucky options{RESET}')
+    grp.add_argument("-h", "--help", action="help", default=argparse.SUPPRESS, help="show this help message and exit")
+    grp.add_argument(
         "-t", "--type",
         default="album",
         help="type of items to search (artist, album, track, playlist) (default: album)",
     )
-    lucky.add_argument(
+    grp.add_argument(
         "-n", "--number",
         metavar="int",
         default=1,
         help="number of results to download (default: 1)",
     )
-    lucky.add_argument("QUERY", nargs="+", help="search query")
+    grp.add_argument("QUERY", nargs="+", help="search query")
     return lucky
 
 
@@ -47,14 +60,20 @@ def dl_args(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParser:
         "dl",
         description="Download by album/track/artist/label/playlist/last.fm-playlist URL.",
         help="input mode",
+        formatter_class=QobuzHelpFormatter,
+        add_help=False,
+        usage=f"qobuz-dl dl {CYAN}<SOURCE> [options]{RESET}"
     )
-    download.add_argument(
+    
+    grp = download.add_argument_group(f'{YELLOW}download options{RESET}')
+    grp.add_argument("-h", "--help", action="help", default=argparse.SUPPRESS, help="show this help message and exit")
+    grp.add_argument(
         "SOURCE",
         metavar="SOURCE",
         nargs="+",
         help="one or more URLs (space separated) or a text file",
     )
-    download.add_argument(
+    grp.add_argument(
         "-b", "--blacklist",
         help="Path to a text file containing keywords to blacklist and skip",
         type=str,
@@ -68,13 +87,19 @@ def lyrics_args(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPars
         "lyrics",
         description="Retroactively scan a directory and inject missing lyrics into existing audio files.",
         help="lyrics injection mode",
+        formatter_class=QobuzHelpFormatter,
+        add_help=False,
+        usage=f"qobuz-dl lyrics {CYAN}<DIR> [options]{RESET}"
     )
-    lyrics.add_argument(
+    
+    grp = lyrics.add_argument_group(f'{YELLOW}lyrics options{RESET}')
+    grp.add_argument("-h", "--help", action="help", default=argparse.SUPPRESS, help="show this help message and exit")
+    grp.add_argument(
         "DIR",
         metavar="DIRECTORY",
         help="The local directory containing the music files to be scanned",
     )
-    lyrics.add_argument(
+    grp.add_argument(
         "--overwrite",
         action="store_true",
         help="overwrite existing lyrics and translations in the files",
@@ -86,10 +111,16 @@ def fix_lyrics_args(subparsers: argparse._SubParsersAction) -> argparse.Argument
     fix_lyrics = subparsers.add_parser(
         "fix-lyrics",
         aliases=["fl"],
-        description="Launch an interactive explorer to manually select and fix desynchronized or wrong lyrics for a specific file in a directory.",
+        description="Launch an interactive explorer to manually select and fix desynchronized or wrong lyrics.",
         help="interactive lyrics fixer mode",
+        formatter_class=QobuzHelpFormatter,
+        add_help=False,
+        usage=f"qobuz-dl fix-lyrics {CYAN}[DIR]{RESET}"
     )
-    fix_lyrics.add_argument(
+    
+    grp = fix_lyrics.add_argument_group(f'{YELLOW}fix-lyrics options{RESET}')
+    grp.add_argument("-h", "--help", action="help", default=argparse.SUPPRESS, help="show this help message and exit")
+    grp.add_argument(
         "DIR",
         metavar="DIRECTORY",
         nargs="?",
@@ -103,23 +134,25 @@ def sync_playlist_args(subparsers: argparse._SubParsersAction) -> argparse.Argum
     sync_pl = subparsers.add_parser(
         "sync-playlist",
         aliases=["sp"],
-        description=(
-            "Synchronize a local folder with a Qobuz playlist. "
-            "Downloads missing tracks and removes tracks no longer in the playlist."
-        ),
+        description="Synchronize a local folder with a Qobuz playlist. Downloads missing tracks and removes tracks no longer in the playlist.",
         help="sync a local folder with a Qobuz playlist",
+        formatter_class=QobuzHelpFormatter,
+        add_help=False,
+        usage=f"qobuz-dl sync-playlist {CYAN}<URL> [options]{RESET}"
     )
-    sync_pl.add_argument(
+    
+    grp = sync_pl.add_argument_group(f'{YELLOW}sync-playlist options{RESET}')
+    grp.add_argument("-h", "--help", action="help", default=argparse.SUPPRESS, help="show this help message and exit")
+    grp.add_argument(
         "URL",
         help="Qobuz playlist URL (e.g. https://play.qobuz.com/playlist/12345)",
     )
-    sync_pl.add_argument(
+    grp.add_argument(
         "--yes", "-y",
         action="store_true",
         help="Skip confirmation prompt before deleting/downloading",
     )
     return sync_pl
-
 
 def add_common_arg(custom_parser: argparse.ArgumentParser, default_folder: str, default_quality: Union[int, str]) -> None:
     """Adiciona os argumentos partilhados por múltiplos comandos."""
@@ -307,33 +340,74 @@ def add_common_arg(custom_parser: argparse.ArgumentParser, default_folder: str, 
         metavar="N",
         help="maximum number of parallel downloads (default: 3)",
     )
+    
+class QobuzHelpFormatter(argparse.RawTextHelpFormatter):
+    """Custom formatter para corrigir alinhamento e injetar cores nos comandos nativamente."""
+    
+    def __init__(self, prog, indent_increment=2, max_help_position=45, width=None):
+        # O max_help_position=45 é o que impede o "interactive (i, fun)" de quebrar a linha!
+        super().__init__(prog, indent_increment, max_help_position, width)
 
+    def _format_action(self, action):
+        # 1. O argparse calcula as strings sem cor para não estragar a contagem de caracteres
+        result = super()._format_action(action)
+        
+        # 2. Regex para fatiar a string gerada em 4 partes:
+        # Grupo 1: (\s+)    -> A margem esquerda (espaços iniciais)
+        # Grupo 2: (.*?)    -> O nome do comando ou argumento (ex: "-h, --help" ou "dl")
+        # Grupo 3: (\s{2,}) -> Os 2 ou mais espaços que separam o comando da descrição
+        # Grupo 4: (.*)     -> O texto de ajuda (descrição)
+        match = re.match(r'^(\s+)(.*?)(\s{2,})(.*)', result, flags=re.DOTALL)
+        
+        if match:
+            indent = match.group(1)      
+            invocation = match.group(2)  
+            padding = match.group(3)     
+            help_text = match.group(4)   
+            
+            # Se a coluna do comando não estiver vazia, injetamos o CYAN nela!
+            if invocation.strip():
+                result = f"{indent}{CYAN}{invocation}{RESET}{padding}{help_text}"
+                
+        return result
 
 def qobuz_dl_args(default_quality: Union[int, str] = 6, default_limit: Union[int, str] = 20, default_folder: str = "QobuzDownloads") -> argparse.ArgumentParser:
+    
+    # [!] Definimos o usage manualmente para limpar o topo e podermos tirar o metavar
+    custom_usage = f"qobuz-dl [-h] [-r] [-p] [--sync-db [PATH]] [-sc] {CYAN}<command>{RESET} ..."
+    
     parser = argparse.ArgumentParser(
         prog="qobuz-dl",
+        usage=custom_usage,
         description=(
             f"{GREEN}[QOBUZ MASTER EDITION v{__version__}]\n\n{RESET}"
             "The Ultimate Lossless and Hi-Res music downloader for Qobuz.\n"
             "Veja exemplos e formas de uso em https://github.com/kaduvercosa/qobuz-dl"
         ),
-        formatter_class=argparse.RawTextHelpFormatter,
+        formatter_class=QobuzHelpFormatter, # [!] Chamando nosso formatter colorido!
+        add_help=False
     )
-    parser.add_argument("-r", "--reset", action="store_true", help="create/reset config file")
-    parser.add_argument("-p", "--purge", action="store_true", help="purge/delete downloaded-IDs database")
-    parser.add_argument(
+    
+    # --- GLOBAL OPTIONS ---
+    global_group = parser.add_argument_group(f'{YELLOW}global options{RESET}') # Título amarelo
+    global_group.add_argument("-h", "--help", action="help", default=argparse.SUPPRESS, help="show this help message and exit")
+    global_group.add_argument("-r", "--reset", action="store_true", help="create/reset config file")
+    global_group.add_argument("-p", "--purge", action="store_true", help="purge/delete downloaded-IDs database")
+    global_group.add_argument(
         "--sync-db",
         metavar="PATH",
         nargs="?",
         const="DEFAULT",
         help="scan local directory to restore missing Qobuz IDs into the database",
     )
-    parser.add_argument("-sc", "--show-config", action="store_true", help="show configuration")
+    global_group.add_argument("-sc", "--show-config", action="store_true", help="show configuration")
 
+    # --- COMMANDS ---
     subparsers = parser.add_subparsers(
-        title="commands",
-        description="run qobuz-dl <command> --help for more info\n(e.g. qobuz-dl interactive --help)",
+        title=f"{YELLOW}commands{RESET}", # Título amarelo
+        description="run qobuz-dl <command> --help for more info (e.g. qobuz-dl dl --help)",
         dest="command",
+        # [!] O metavar FOI REMOVIDO DAQUI para ele não aparecer escrito em cima do 'interactive'
     )
 
     interactive = fun_args(subparsers, default_limit)
@@ -343,7 +417,20 @@ def qobuz_dl_args(default_quality: Union[int, str] = 6, default_limit: Union[int
     fix_lyrics_cmd = fix_lyrics_args(subparsers)
     sync_pl_cmd = sync_playlist_args(subparsers)
     
-    # Injeta os argumentos comuns a todos os sub-comandos aplicáveis
+        # Comandos "Standalone" (Interceptados pelo sys.argv antes do argparse)
+    subparsers.add_parser(
+        "radar",
+        description="Autonomous radar to fetch and download new releases based on config.",
+        help="scan and download new releases (radar mode)"
+    )
+    
+    subparsers.add_parser(
+        "stats",
+        description="Generate and display detailed statistics of your local downloaded library.",
+        help="show local library statistics and analytics"
+    )
+
+    
     for cmd in (interactive, download, lucky, sync_pl_cmd):
         add_common_arg(cmd, default_folder, default_quality)
 
