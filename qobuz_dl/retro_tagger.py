@@ -2,12 +2,15 @@ import os
 import time
 import logging
 from pathlib import Path
-from mutagen.flac import FLAC
-import mutagen.id3 as id3
-from mutagen.id3 import ID3NoHeaderError
 from threading import Lock
 import asyncio
 import aiohttp
+from typing import Tuple, Dict, Any, List
+
+from mutagen.flac import FLAC
+from mutagen.mp3 import MP3
+import mutagen.id3 as id3
+from mutagen.id3 import ID3NoHeaderError
 
 from qobuz_dl.lyrics_engine import LyricsEngine
 from qobuz_dl.color import CYAN, GREEN, YELLOW, RED, OFF
@@ -20,13 +23,14 @@ logger = logging.getLogger(__name__)
 
 print_lock = Lock()
 
-def safe_print(message):
+def safe_print(message: str) -> None:
+    """Garante que as mensagens no terminal não se sobrepõem quando usamos concorrência."""
     with print_lock:
         print(message, flush=True)
 
 class ScanState:
-    """Classe dedicada para evitar qualquer possibilidade de KeyError em dicionários assíncronos."""
-    def __init__(self, total_files):
+    """Classe dedicada para rastrear o progresso e evitar erros de dicionário em concorrência."""
+    def __init__(self, total_files: int):
         self.processed = total_files
         self.files_done = 0
         self.injected = 0
@@ -35,92 +39,100 @@ class ScanState:
         self.elapsed_times = []
         self.scan_start = time.monotonic()
 
+
+# =========================
+# HELPER: METADATA EXTRACTION
+# =========================
+
+def _extract_metadata(file_path: Path) -> Dict[str, Any]:
+    """
+    Lê as tags do ficheiro de áudio e centraliza a extração de dados.
+    Evita repetição de código nas funções principais.
+    """
+    data = {
+        "title": "", 
+        "artist": "", 
+        "album_artist": "", 
+        "album": "", 
+        "has_lyrics": False, 
+        "duration": 0.0
+    }
+    
+    try:
+        if file_path.suffix.lower() == ".flac":
+            audio = FLAC(file_path)
+            data["title"] = audio.get("TITLE", [""])[0]
+            data["artist"] = audio.get("ARTIST", [""])[0]
+            data["album_artist"] = audio.get("ALBUMARTIST", [""])[0]
+            data["album"] = audio.get("ALBUM", [""])[0]
+            data["has_lyrics"] = bool(audio.get("LYRICS") or audio.get("UNSYNCEDLYRICS") or audio.get("LYRICS_SYNCED"))
+            data["duration"] = audio.info.length
+
+        elif file_path.suffix.lower() == ".mp3":
+            try:
+                audio_id3 = id3.ID3(file_path)
+            except ID3NoHeaderError:
+                audio_id3 = id3.ID3()
+                
+            mp3_audio = MP3(file_path)
+            data["title"] = audio_id3.get("TIT2").text[0] if audio_id3.get("TIT2") else ""
+            data["artist"] = audio_id3.get("TPE1").text[0] if audio_id3.get("TPE1") else ""
+            data["album_artist"] = audio_id3.get("TPE2").text[0] if audio_id3.get("TPE2") else ""
+            data["album"] = audio_id3.get("TALB").text[0] if audio_id3.get("TALB") else ""
+            data["has_lyrics"] = bool(audio_id3.getall("USLT") or audio_id3.getall("SYLT"))
+            data["duration"] = mp3_audio.info.length
+
+    except Exception as e:
+        logger.debug(f"Erro ao ler metadados de {file_path.name}: {e}")
+
+    return data
+
+
 # =========================
 # PROCESS SINGLE FILE
 # =========================
 
-async def _process_single_file(semaphore, file_path_str, engine, state, overwrite=False, current_idx=0, total_files=0, max_workers=3):
+async def _process_single_file(semaphore: asyncio.Semaphore, file_path: Path, engine: Any, 
+                               state: ScanState, overwrite: bool = False, current_idx: int = 0, 
+                               total_files: int = 0, max_workers: int = 3) -> None:
     async with semaphore:
         status_result = "skipped"
         msg = ""
         elapsed = None
-        search_artist = "Unknown"
-        title = "Unknown"
 
         try:
-            file_path_lower = file_path_str.lower()
-
-            # Cores para a UI
-            C = "\033[96m"  # Cyan
-            G = "\033[92m"  # Green
-            Y = "\033[93m"  # Yellow
-            O = "\033[0m"   # Off/Reset
-            RED_COLOR = "\033[91m"  # Red
-
-            # =========================
-            # FLAC
-            # =========================
-            if file_path_lower.endswith(".flac"):
-                audio = FLAC(file_path_str)
-                if audio.get("LYRICS") or audio.get("UNSYNCEDLYRICS") or audio.get("LYRICS_SYNCED"):
-                    has_lyrics = True
-                else:
-                    has_lyrics = False
-
-                title = audio.get("TITLE", [""])[0]
-                artist = audio.get("ARTIST", [""])[0]
-                album_artist = audio.get("ALBUMARTIST", [""])[0]
-                album = audio.get("ALBUM", [""])[0]
-
-            # =========================
-            # MP3
-            # =========================
-            elif file_path_lower.endswith(".mp3"):
-                try:
-                    audio_id3 = id3.ID3(file_path_str)
-                except ID3NoHeaderError:
-                    return
-
-                if audio_id3.getall("USLT") or audio_id3.getall("SYLT"):
-                    has_lyrics = True
-                else:
-                    has_lyrics = False
-
-                title = audio_id3.get("TIT2").text[0] if audio_id3.get("TIT2") else ""
-                artist = audio_id3.get("TPE1").text[0] if audio_id3.get("TPE1") else ""
-                album_artist = audio_id3.get("TPE2").text[0] if audio_id3.get("TPE2") else ""
-                album = audio_id3.get("TALB").text[0] if audio_id3.get("TALB") else ""
-
-            # =========================
-            # VALIDATION & LOGIC
-            # =========================
-
+            # Usamos a nova função centralizada
+            meta = _extract_metadata(file_path)
+            title = meta["title"]
+            artist = meta["artist"]
+            album_artist = meta["album_artist"]
+            has_lyrics = meta["has_lyrics"]
+            
             if not title or not artist:
                 return
 
             search_artist = album_artist if album_artist and album_artist.lower() != "various artists" else artist
 
             if not overwrite and has_lyrics:
-                msg = f"{Y}  [*] Ignorado (Já Marcado): {title} - {search_artist}{O}"
+                msg = f"{YELLOW}  [*] Ignorado (Já Marcado): {title} - {search_artist}{OFF}"
                 return
 
             # =========================
             # SEARCH & INJECT
             # =========================
-            safe_print(f"{C}[{current_idx}/{total_files}] Buscando: {title} - {search_artist}...{O}")
+            safe_print(f"{CYAN}[{current_idx}/{total_files}] Buscando: {title} - {search_artist}...{OFF}")
             task_start = time.monotonic()
 
             res_tuple = await engine.fetch_and_inject(
-                file_path=file_path_str,
+                file_path=str(file_path),
                 album_artist=search_artist,
                 track=title,
-                album=album,
+                album=meta["album"],
                 save_lrc=True,
                 overwrite=overwrite
             )
 
             elapsed = time.monotonic() - task_start
-
             success = res_tuple[0]
             trans_count = res_tuple[1] if len(res_tuple) > 1 else 0
             total_lines = res_tuple[2] if len(res_tuple) > 2 else 0
@@ -129,43 +141,33 @@ async def _process_single_file(semaphore, file_path_str, engine, state, overwrit
             if success:
                 status_result = "injected"
                 if resp_code == "Local":
-                    msg = f"{C}[*] Letra Já Existente (Local): {title} - {search_artist}{O}"
+                    msg = f"{CYAN}[*] Letra Já Existente (Local): {title} - {search_artist}{OFF}"
                 else:
                     if total_lines > 0 and trans_count > 0:
                         trans_type = "Total" if trans_count >= total_lines else "Parcial"
                         trad_str = f"{trans_count}/{total_lines} - ({trans_type})"
-                    elif total_lines > 0:
-                        trad_str = "Não"
                     else:
                         trad_str = "Não"
-                    msg = f"{O}  [*] Letra Encontrada: {title} - {search_artist} | Tradução: {trad_str} | Response_Code: {resp_code} | Tempo: {elapsed:.1f}s{O}"
+                    msg = f"{OFF}  [*] Letra Encontrada: {title} - {search_artist} | Tradução: {trad_str} | Response_Code: {resp_code} | Tempo: {elapsed:.1f}s{OFF}"
             else:
                 status_result = "skipped"
-                resp_str = resp_code if resp_code else "Não"
-                msg = f"{Y}  [!] Falha ao obter letra para: {title} - {search_artist} | Code: {resp_str} | Tempo: {elapsed:.1f}s{O}"
+                msg = f"{YELLOW}  [!] Falha ao obter letra para: {title} - {search_artist} | Code: {resp_code or 'Não'} | Tempo: {elapsed:.1f}s{OFF}"
 
         except asyncio.CancelledError:
-            # Captura cancelamentos (Ctrl+C ou timeout) silenciosamente
             raise
         except Exception as e:
             logger.error(f"Error in _process_single_file: {e}", exc_info=True)
             status_result = "error"
-            msg = f"{RED_COLOR}[!] Error processing {file_path_str}: {e}{O}"
+            msg = f"{RED}[!] Error processing {file_path.name}: {e}{OFF}"
 
         finally:
-            # Atualiza o estado global imediatamente antes de sair do semáforo
-            # Usando atributos da classe, KeyError não existe mais.
             state.files_done += 1
-            
             if elapsed is not None:
                 state.elapsed_times.append(elapsed)
 
-            if status_result == "injected":
-                state.injected += 1
-            elif status_result == "error":
-                state.errors += 1
-            else:
-                state.skipped += 1
+            if status_result == "injected": state.injected += 1
+            elif status_result == "error": state.errors += 1
+            else: state.skipped += 1
 
             # Calcula o ETA
             remaining = state.processed - state.files_done
@@ -173,26 +175,14 @@ async def _process_single_file(semaphore, file_path_str, engine, state, overwrit
             if state.elapsed_times and remaining > 0:
                 avg_time = sum(state.elapsed_times) / len(state.elapsed_times)
                 eta_sec = (remaining * avg_time) / max_workers
-                if eta_sec >= 60:
-                    eta_str = f"{int(eta_sec // 60)}m{int(eta_sec % 60):02d}s"
-                else:
-                    eta_str = f"{eta_sec:.0f}s"
-                eta_info = f"{CYAN}[ETA: ~{eta_str} restantes para {remaining} arquivo(s)]{O}"
+                eta_str = f"{int(eta_sec // 60)}m{int(eta_sec % 60):02d}s" if eta_sec >= 60 else f"{eta_sec:.0f}s"
+                eta_info = f"{CYAN}[ETA: ~{eta_str} restantes para {remaining} arquivo(s)]{OFF}"
             elif remaining == 0:
                 total_sec = time.monotonic() - state.scan_start
-                if total_sec >= 60:
-                    total_str = f"{int(total_sec // 60)}m{int(total_sec % 60):02d}s"
-                else:
-                    total_str = f"{total_sec:.0f}s"
-                eta_info = f"{G}  [Concluído em {total_str}]{O}"
+                total_str = f"{int(total_sec // 60)}m{int(total_sec % 60):02d}s" if total_sec >= 60 else f"{total_sec:.0f}s"
+                eta_info = f"{GREEN}  [Concluído em {total_str}]{OFF}"
 
-            # Exibe o bloco visual (garante ordem cronológica)
-            output_parts = []
-            if msg:
-                output_parts.append(msg)
-            if eta_info:
-                output_parts.append(eta_info)
-
+            output_parts = [m for m in (msg, eta_info) if m]
             if output_parts:
                 safe_print("\n".join(output_parts))
 
@@ -201,13 +191,9 @@ async def _process_single_file(semaphore, file_path_str, engine, state, overwrit
 # MAIN RETRO SCAN
 # =========================
 
-async def inject_lyrics_retroactively(
-    directory_path,
-    genius_token=None,
-    deepl_api_key=None,
-    overwrite=False,
-    target_lang="PT-BR"
-):
+async def inject_lyrics_retroactively(directory_path: str, genius_token: str = None, 
+                                      deepl_api_key: str = None, overwrite: bool = False, 
+                                      target_lang: str = "PT-BR") -> None:
     safe_print(f"\n{CYAN}[*] Starting retroactive lyrics scan in: {directory_path}{OFF}\n")
 
     if overwrite:
@@ -220,36 +206,19 @@ async def inject_lyrics_retroactively(
 
     engine = LyricsEngine(genius_token=genius_token, deepl_api_key=deepl_api_key, translate=True, target_lang=target_lang)
 
-    all_files = []
-    for ext in [".flac", ".mp3"]:
-        all_files.extend(list(target_dir.rglob(f"*{ext}")))
-        all_files.extend(list(target_dir.rglob(f"*{ext.upper()}")))
+    # Usa rglob para encontrar ficheiros de forma eficiente
+    all_files = [p for p in target_dir.rglob('*') if p.is_file() and p.suffix.lower() in {'.flac', '.mp3'}]
 
-    all_files = list(set(all_files))
-
-    # Objeto de estado seguro (evita KeyError)
     state = ScanState(len(all_files))
-
     safe_print(f"{CYAN}[*] Found {state.processed} compatible audio files. Processing...{OFF}\n")
 
     max_workers = 3
     semaphore = asyncio.Semaphore(max_workers)
 
-    tasks = []
-    for idx, path in enumerate(all_files, 1):
-        task = asyncio.create_task(
-            _process_single_file(
-                semaphore,
-                str(path),
-                engine,
-                state,
-                overwrite,
-                idx,
-                state.processed,
-                max_workers
-            )
-        )
-        tasks.append(task)
+    tasks = [
+        asyncio.create_task(_process_single_file(semaphore, path, engine, state, overwrite, idx, state.processed, max_workers))
+        for idx, path in enumerate(all_files, 1)
+    ]
 
     try:
         await asyncio.gather(*tasks)
@@ -262,7 +231,7 @@ async def inject_lyrics_retroactively(
     safe_print(f"\n{GREEN}[+] Retroactive Scan and Injection Completed!{OFF}")
     safe_print(f"{CYAN}  - TOTAL DE ARQUIVOS ANALISADOS: {state.processed}{OFF}")
     safe_print(f"{OFF}  - ARQUIVOS EDITADOS/TAGGEADOS: {state.injected}{OFF}")
-    safe_print(f"{YELLOW}  - ARQUIVOS PULADOS (dados já etiquetados ou ausentes): {state.skipped}{OFF}")
+    safe_print(f"{YELLOW}  - ARQUIVOS PULADOS: {state.skipped}{OFF}")
 
     if state.errors > 0:
         safe_print(f"{RED}  - Errors encountered: {state.errors}{OFF}")
@@ -273,12 +242,8 @@ async def inject_lyrics_retroactively(
 # INTERACTIVE FIX LYRICS
 # =========================
 
-async def interactive_fix_lyrics(
-    directory_path,
-    genius_token=None,
-    deepl_api_key=None,
-    target_lang="PT-BR"
-):
+async def interactive_fix_lyrics(directory_path: str, genius_token: str = None, 
+                                 deepl_api_key: str = None, target_lang: str = "PT-BR") -> None:
     from pick import pick
 
     target_dir = Path(directory_path)
@@ -288,13 +253,7 @@ async def interactive_fix_lyrics(
 
     engine = LyricsEngine(genius_token=genius_token, deepl_api_key=deepl_api_key, translate=True, target_lang=target_lang)
 
-    all_files = []
-    for ext in [".flac", ".mp3"]:
-        all_files.extend(list(target_dir.rglob(f"*{ext}")))
-        all_files.extend(list(target_dir.rglob(f"*{ext.upper()}")))
-
-    all_files = list(set(all_files))
-    all_files.sort()
+    all_files = sorted([p for p in target_dir.rglob('*') if p.is_file() and p.suffix.lower() in {'.flac', '.mp3'}])
 
     if not all_files:
         print(f"{RED}[!] No compatible audio files found in '{directory_path}'.{OFF}")
@@ -306,41 +265,19 @@ async def interactive_fix_lyrics(
     print(f"{CYAN}[*] Scanning {len(all_files)} files to build the interactive menu...{OFF}")
 
     for path in all_files:
-        path_str = str(path)
-        path_lower = path_str.lower()
-        title, artist, album, album_artist = "", "", "", ""
-        duration = 0
-
-        try:
-            if path_lower.endswith(".flac"):
-                audio = FLAC(path_str)
-                title = audio.get("TITLE", [""])[0]
-                artist = audio.get("ARTIST", [""])[0]
-                duration = audio.info.length
-                album = audio.get("ALBUM", [""])[0]
-                album_artist = audio.get("ALBUMARTIST", [""])[0]
-            elif path_lower.endswith(".mp3"):
-                from mutagen.mp3 import MP3
-                mp3_audio = MP3(path_str)
-                tags = mp3_audio.tags or id3.ID3()
-                title = tags.get("TIT2").text[0] if tags.get("TIT2") else ""
-                artist = tags.get("TPE1").text[0] if tags.get("TPE1") else ""
-                duration = mp3_audio.info.length
-                album = tags.get("TALB").text[0] if tags.get("TALB") else ""
-                album_artist = tags.get("TPE2").text[0] if tags.get("TPE2") else ""
-        except Exception:
-            continue
-
-        if title and artist:
-            display_str = f"{title} - {artist}{path.suffix}"
+        # Usa a função centralizada de metadados
+        meta = _extract_metadata(path)
+        
+        if meta["title"] and meta["artist"]:
+            display_str = f"{meta['title']} - {meta['artist']}{path.suffix}"
             file_options.append(display_str)
             file_mapping[display_str] = {
-                "path": path_str,
-                "title": title,
-                "artist": artist,
-                "duration": duration,
-                "album": album,
-                "album_artist": album_artist
+                "path": str(path),
+                "title": meta["title"],
+                "artist": meta["artist"],
+                "duration": meta["duration"],
+                "album": meta["album"],
+                "album_artist": meta["album_artist"]
             }
 
     if not file_options:
@@ -370,7 +307,7 @@ async def interactive_fix_lyrics(
         print(f"\n{GREEN}[+] Batch fix completed! Returning to track list...{OFF}")
         await asyncio.sleep(1.5)
 
-async def _handle_manual_lyric_search(track_info, engine):
+async def _handle_manual_lyric_search(track_info: dict, engine: Any) -> None:
     from pick import pick
 
     search_artist = track_info["album_artist"] if track_info["album_artist"] and track_info["album_artist"].lower() != "various artists" else track_info["artist"]
@@ -382,7 +319,6 @@ async def _handle_manual_lyric_search(track_info, engine):
     print(f"\n{CYAN}[*] Searching alternatives for: {search_artist} - {track_title}...{OFF}")
 
     results = []
-
     lrclib_url = "https://lrclib.net/api/search"
     headers = {"User-Agent": "qobuz-dl-master/2.5 (https://github.com/kaduvercosa/qobuz-dl)"}
     params = {"track_name": track_title, "artist_name": search_artist}
@@ -407,39 +343,24 @@ async def _handle_manual_lyric_search(track_info, engine):
         text = await engine._fetch_musixmatch_lyrics(search_artist, track_title)
         if text:
             results.append({
-                "provider": "Musixmatch",
-                "duration": real_duration,
-                "syncedLyrics": text,
-                "plainLyrics": None,
-                "artistName": search_artist,
-                "trackName": track_title,
-                "albumName": "Musixmatch"
+                "provider": "Musixmatch", "duration": real_duration, "syncedLyrics": text,
+                "plainLyrics": None, "artistName": search_artist, "trackName": track_title, "albumName": "Musixmatch"
             })
 
     async def fetch_lyricsplus():
         text = await engine._fetch_lyrics_plus(search_artist, track_title)
         if text:
             results.append({
-                "provider": "LyricsPlus",
-                "duration": real_duration,
-                "syncedLyrics": text,
-                "plainLyrics": None,
-                "artistName": search_artist,
-                "trackName": track_title,
-                "albumName": "LyricsPlus"
+                "provider": "LyricsPlus", "duration": real_duration, "syncedLyrics": text,
+                "plainLyrics": None, "artistName": search_artist, "trackName": track_title, "albumName": "LyricsPlus"
             })
 
     async def fetch_netease():
         text = await engine._fetch_netease_lyrics(search_artist, track_title)
         if text:
             results.append({
-                "provider": "Netease",
-                "duration": real_duration,
-                "syncedLyrics": text,
-                "plainLyrics": None,
-                "artistName": search_artist,
-                "trackName": track_title,
-                "albumName": "Netease"
+                "provider": "Netease", "duration": real_duration, "syncedLyrics": text,
+                "plainLyrics": None, "artistName": search_artist, "trackName": track_title, "albumName": "Netease"
             })
 
     async def fetch_genius():
@@ -447,13 +368,8 @@ async def _handle_manual_lyric_search(track_info, engine):
             song = await asyncio.to_thread(engine.genius.search_song, track_title, search_artist)
             if song and song.lyrics:
                 results.append({
-                    "provider": "Genius",
-                    "duration": 0,
-                    "syncedLyrics": None,
-                    "plainLyrics": song.lyrics,
-                    "artistName": search_artist,
-                    "trackName": track_title,
-                    "albumName": "Genius"
+                    "provider": "Genius", "duration": 0, "syncedLyrics": None,
+                    "plainLyrics": song.lyrics, "artistName": search_artist, "trackName": track_title, "albumName": "Genius"
                 })
 
     try:
@@ -472,18 +388,15 @@ async def _handle_manual_lyric_search(track_info, engine):
 
     def sort_key(r):
         dur = r.get("duration", 0)
-        if dur == 0: return float('inf')
-        return abs(dur - real_duration)
+        return float('inf') if dur == 0 else abs(dur - real_duration)
 
     results.sort(key=sort_key)
 
     for res in results:
         duration_sec = res.get("duration", 0)
         if duration_sec > 0:
-            minutes = int(duration_sec // 60)
-            seconds = int(duration_sec % 60)
+            minutes, seconds = int(duration_sec // 60), int(duration_sec % 60)
             duration_str = f"[{minutes:02d}:{seconds:02d}]"
-
             diff = abs(duration_sec - real_duration)
             diff_str = f"(Match! {diff:.0f}s dif)" if diff <= 2 else f"({diff:.0f}s dif)"
         else:
@@ -491,17 +404,14 @@ async def _handle_manual_lyric_search(track_info, engine):
             diff_str = ""
 
         sync_status = "[Synced]" if res.get("syncedLyrics") else "[Unsynced]"
-        provider = res.get("provider")
-
-        display = f"{duration_str} | {provider} | {diff_str} {res.get('artistName')} - {res.get('trackName')} {sync_status} (Album: {res.get('albumName')})"
-        display = display.replace("  ", " ")
+        display = f"{duration_str} | {res.get('provider')} | {diff_str} {res.get('artistName')} - {res.get('trackName')} {sync_status} (Album: {res.get('albumName')})".replace("  ", " ")
         options.append(display)
         option_mapping[display] = res
 
     options.append(">> Cancel / Back to Track List")
 
     title_prompt = f"Target Duration: [{real_mins:02d}:{real_secs:02d}] | File: {track_title}\nChoose the alternative lyric:"
-    selected_option, index = pick(options, title_prompt, indicator="* ")
+    selected_option, _ = pick(options, title_prompt, indicator="* ")
 
     if selected_option == ">> Cancel / Back to Track List":
         return
@@ -515,23 +425,12 @@ async def _handle_manual_lyric_search(track_info, engine):
         is_synced=bool(chosen_lyric_data.get("syncedLyrics"))
     )
 
-    if isinstance(result, tuple):
-        success, trans_count, total_lines = result
-    else:
-        success, trans_count, total_lines = result, 0, 0
+    success, trans_count, total_lines = result if isinstance(result, tuple) else (result, 0, 0)
 
     if success:
         provider = chosen_lyric_data.get("provider", "Unknown")
-        if total_lines > 0 and trans_count > 0:
-            trans_type = "Total" if trans_count >= total_lines else "Parcial"
-            trad_str = f"{trans_count}/{total_lines} - ({trans_type})"
-        elif total_lines > 0:
-            trad_str = "Não"
-        else:
-            trad_str = "Não"
-
-        O = "\033[0m"
-        print(f"{O}  [*] Letra Encontrada: {track_title} - {search_artist} | Tradução: {trad_str} | Response_Code: {provider}{O}")
+        trad_str = f"{trans_count}/{total_lines} - ({'Total' if trans_count >= total_lines else 'Parcial'})" if (total_lines > 0 and trans_count > 0) else "Não"
+        print(f"{OFF}  [*] Letra Encontrada: {track_title} - {search_artist} | Tradução: {trad_str} | Response_Code: {provider}{OFF}")
         print(f"{GREEN}[+] Lyrics successfully replaced!{OFF}")
     else:
         print(f"{RED}[!] Failed to inject lyrics.{OFF}")

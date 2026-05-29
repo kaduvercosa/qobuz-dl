@@ -1,31 +1,32 @@
 import logging
 import sqlite3
+from pathlib import Path
+from collections import Counter
+from typing import Optional, Dict, Any
 
 from qobuz_dl.color import YELLOW, RED, OFF
 
 logger = logging.getLogger(__name__)
 
-
-def create_db(db_path):
+def create_db(db_path: str) -> str:
+    """
+    Cria a base de dados SQLite ou atualiza o esquema (schema) se for uma versão antiga.
+    """
     with sqlite3.connect(db_path) as conn:
         cursor = conn.cursor()
         
-        # Check if the table already exists
+        # Verifica se a tabela já existe
         cursor.execute("SELECT count(name) FROM sqlite_master WHERE type='table' AND name='downloads'")
         
         if cursor.fetchone()[0] == 1:
-            # Table exists. Read current columns
+            # A tabela existe. Lê as colunas atuais
             cursor.execute("PRAGMA table_info(downloads)")
             columns = [info[1] for info in cursor.fetchall()]
             
-            # Legacy migration (v1 to v2)
+            # Migração Legada (v1 para v2)
             if 'quality' not in columns:
                 logger.info(f"{YELLOW}Migrating old database to the new format...{OFF}")
-                
-                # Rename the old table
                 conn.execute("ALTER TABLE downloads RENAME TO downloads_old")
-                
-                # Create the new table with updated schema including artist and album
                 conn.execute("""
                 CREATE TABLE downloads (
                   "id" text NOT NULL,
@@ -44,18 +45,15 @@ def create_db(db_path):
                   PRIMARY KEY ("id", "quality")
                 );
                 """)
-                
-                # Copy old historical IDs
                 try:
                     conn.execute("INSERT INTO downloads (id) SELECT id FROM downloads_old")
                 except sqlite3.Error as e:
                     logger.error(f"{RED}Failed to migrate old data: {e}{OFF}")
                 
-                # Drop the temporary old table
                 conn.execute("DROP TABLE downloads_old")
                 logger.info(f"{YELLOW}Database successfully updated!{OFF}")
                 
-            # New Migration (v2 to v2.1.4): Add artist and album if missing
+            # Nova Migração (v2 para v2.1.4): Adiciona artista e álbum se faltarem
             elif 'artist' not in columns:
                 logger.info(f"{YELLOW}Upgrading database schema: Adding artist and album columns...{OFF}")
                 try:
@@ -66,7 +64,7 @@ def create_db(db_path):
                     logger.error(f"{RED}Failed to add new columns: {e}{OFF}")
                 
         else:
-            # Table does not exist, create it from scratch
+            # A tabela não existe, cria do zero
             try:
                 conn.execute("""
                 CREATE TABLE downloads (
@@ -93,26 +91,30 @@ def create_db(db_path):
         return db_path
 
 
-def handle_download_id(db_path, item_id, add_id=False, media_type='album', quality=27, file_format='FLAC',
-                       quality_met=0, bit_depth=None, sampling_rate=None, saved_path='', status='downloaded',
-                       url='', release_date='', artist='', album=''):
+def handle_download_id(db_path: str, item_id: str, add_id: bool = False, media_type: str = 'album', 
+                       quality: int = 27, file_format: str = 'FLAC', quality_met: int = 0, 
+                       bit_depth: str = None, sampling_rate: str = None, saved_path: str = '', 
+                       status: str = 'downloaded', url: str = '', release_date: str = '', 
+                       artist: str = '', album: str = '') -> Optional[tuple]:
+    """
+    Grava ou verifica se um ID de download já existe na base de dados.
+    """
     if not db_path:
-        return
+        return None
 
     with sqlite3.connect(db_path) as conn:
         if add_id:
             try:
-                # Inject artist and album dynamically into the database
                 conn.execute(
                     """
                     INSERT INTO downloads (id, media_type, quality, file_format, quality_met, bit_depth, 
-                    sampling_rate, saved_path, url, release_date, status, artist, album) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    sampling_rate, saved_path, url, release_date, status, artist, album) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (item_id, media_type, quality, file_format, quality_met, bit_depth, sampling_rate,
                      saved_path, url, release_date, status, artist, album),
                 )
                 conn.commit()
             except sqlite3.IntegrityError:
-                # Provide clean visual feedback instead of an error
                 logger.info(f"{YELLOW}[i] Already in database, skipping.{OFF}")
             except sqlite3.Error as e:
                 logger.error(f"{RED}Unexpected DB error: {e}{OFF}")
@@ -123,34 +125,29 @@ def handle_download_id(db_path, item_id, add_id=False, media_type='album', quali
             ).fetchone()
  
  
-def get_stats(db_path):
-    """Returns a comprehensive set of statistics from the database."""
+def get_stats(db_path: str) -> Optional[Dict[str, Any]]:
+    """
+    Retorna um conjunto de estatísticas com base no histórico gravado na base de dados.
+    """
     if not db_path:
         return None
     try:
         with sqlite3.connect(db_path) as conn:
             cursor = conn.cursor()
-
             stats = {}
 
-            # Total tracks downloaded
             cursor.execute("SELECT COUNT(*) FROM downloads WHERE media_type = 'track'")
             stats['total_tracks'] = cursor.fetchone()[0]
 
-            # Total albums downloaded
             cursor.execute("SELECT COUNT(*) FROM downloads WHERE media_type = 'album'")
             stats['total_albums'] = cursor.fetchone()[0]
 
-            # Quality distribution
             cursor.execute("SELECT quality, COUNT(*) FROM downloads GROUP BY quality")
-            quality_counts = cursor.fetchall()
-            stats['quality_distribution'] = {str(q): count for q, count in quality_counts}
+            stats['quality_distribution'] = {str(q): count for q, count in cursor.fetchall()}
 
-            # Unique artists count
             cursor.execute("SELECT COUNT(DISTINCT artist) FROM downloads WHERE artist != ''")
             stats['total_artists'] = cursor.fetchone()[0]
 
-            # Top 5 artists
             cursor.execute("SELECT artist, COUNT(*) as count FROM downloads WHERE artist != '' GROUP BY artist ORDER BY count DESC LIMIT 5")
             stats['top_artists'] = cursor.fetchall()
 
@@ -158,17 +155,12 @@ def get_stats(db_path):
     except sqlite3.Error:
         return None
 
-def get_folder_stats(directory):
-    """
-    Scans the actual download directory and builds real-time statistics
-    directly from the audio files on disk, reading embedded tags via mutagen.
 
-    Unlike get_stats() which reads from the database (a historical record),
-    this function reflects the true current state of the collection:
-    deleted or moved files are not counted, and quality is read from the
-    actual audio stream metadata rather than what was recorded at download time.
+def get_folder_stats(directory: str) -> Dict[str, Any]:
     """
-    import os
+    Lê diretamente os ficheiros de áudio reais na pasta (via mutagen) para gerar estatísticas.
+    Usa o collections.Counter para contagem eficiente.
+    """
     from mutagen.flac import FLAC
     from mutagen.id3 import ID3, ID3NoHeaderError
 
@@ -176,83 +168,69 @@ def get_folder_stats(directory):
         'total_tracks': 0,
         'total_albums': 0,
         'total_artists': 0,
-        'quality_distribution': {},
-        'top_artists': [],
         'total_size_bytes': 0,
     }
 
-    artist_counts = {}
-    # Each directory that contains at least one audio file counts as one album folder.
+    # Usamos o Counter, que é otimizado para contar ocorrências matemáticas
+    artist_counts = Counter()
+    quality_counts = Counter()
+    
     album_dirs = set()
+    dir_path = Path(directory)
 
-    for root, _, files in os.walk(directory):
-        for fname in files:
-            fpath = os.path.join(root, fname)
-            lower = fname.lower()
+    for fpath in dir_path.rglob('*'):
+        if not fpath.is_file() or fpath.suffix.lower() not in {'.flac', '.mp3'}:
+            continue
 
-            if not lower.endswith(('.flac', '.mp3')):
-                continue
+        stats['total_tracks'] += 1
+        try:
+            stats['total_size_bytes'] += fpath.stat().st_size
+        except OSError:
+            pass
+            
+        album_dirs.add(str(fpath.parent))
 
-            stats['total_tracks'] += 1
-            try:
-                stats['total_size_bytes'] += os.path.getsize(fpath)
-            except OSError:
-                pass
-            album_dirs.add(root)
+        try:
+            if fpath.suffix.lower() == '.flac':
+                audio = FLAC(fpath)
+                artist = (
+                    audio.get('albumartist')
+                    or audio.get('album_artist')
+                    or audio.get('artist')
+                    or ['Unknown']
+                )[0]
 
-            try:
-                if lower.endswith('.flac'):
-                    audio = FLAC(fpath)
+                bd = getattr(audio.info, 'bits_per_sample', 16)
+                sr = getattr(audio.info, 'sample_rate', 44100)
 
-                    # Prefer album artist for grouping (avoids counting "Various Artists"
-                    # compilations under each individual performer).
-                    artist = (
-                        audio.get('albumartist')
-                        or audio.get('album_artist')
-                        or audio.get('artist')
-                        or ['Unknown']
-                    )[0]
+                if bd >= 24 and sr > 96000:
+                    q_label = "Hi-Res+ (24b/>96kHz)"
+                elif bd >= 24:
+                    q_label = "Hi-Res (24b/\u226496kHz)"
+                else:
+                    q_label = "CD (16b/44.1kHz)"
 
-                    # mutagen exposes the real technical metadata via audio.info,
-                    # which is read directly from the FLAC stream header — reliable
-                    # regardless of what tags were manually written.
-                    bd = getattr(audio.info, 'bits_per_sample', 16)
-                    sr = getattr(audio.info, 'sample_rate', 44100)
+            else:  # .mp3
+                try:
+                    audio = ID3(fpath)
+                    frame = audio.get('TPE2') or audio.get('TPE1')
+                    artist = frame.text[0] if frame else 'Unknown'
+                except ID3NoHeaderError:
+                    artist = 'Unknown'
+                q_label = "MP3 (320kbps)"
 
-                    # Map to the same quality tiers Qobuz uses internally
-                    # (quality IDs 27, 7, 6) so the output is familiar.
-                    if bd >= 24 and sr > 96000:
-                        q_label = "Hi-Res+ (24b/>96kHz)"
-                    elif bd >= 24:
-                        q_label = "Hi-Res (24b/\u226496kHz)"
-                    else:
-                        q_label = "CD (16b/44.1kHz)"
+            # O Counter simplifica imenso a contagem!
+            artist_counts[artist] += 1
+            quality_counts[q_label] += 1
 
-                else:  # .mp3
-                    try:
-                        audio = ID3(fpath)
-                        # TPE2 = Album Artist (preferred), TPE1 = Track Artist
-                        frame = audio.get('TPE2') or audio.get('TPE1')
-                        artist = frame.text[0] if frame else 'Unknown'
-                    except ID3NoHeaderError:
-                        artist = 'Unknown'
-                    q_label = "MP3 (320kbps)"
-
-                artist_counts[artist] = artist_counts.get(artist, 0) + 1
-                stats['quality_distribution'][q_label] = (
-                    stats['quality_distribution'].get(q_label, 0) + 1
-                )
-
-            except Exception:
-                # Corrupt or unreadable file: count it but mark quality as unknown
-                # so the total track count remains accurate.
-                stats['quality_distribution']['Unknown'] = (
-                    stats['quality_distribution'].get('Unknown', 0) + 1
-                )
+        except Exception:
+            quality_counts['Unknown'] += 1
 
     stats['total_albums'] = len(album_dirs)
     stats['total_artists'] = len(artist_counts)
-    # Top 5 artists by track count, descending
-    stats['top_artists'] = sorted(artist_counts.items(), key=lambda x: -x[1])[:5]
+    stats['quality_distribution'] = dict(quality_counts)
+    
+    # most_common(5) substitui toda a tua lógica de lambda sortings
+    stats['top_artists'] = artist_counts.most_common(5)
 
     return stats

@@ -1,9 +1,11 @@
 import argparse
+from typing import Any, Union
+
 from qobuz_dl import __version__
-from qobuz_dl.color import MAGENTA, RESET
+from qobuz_dl.color import GREEN, RESET
 
 
-def fun_args(subparsers, default_limit):
+def fun_args(subparsers: argparse._SubParsersAction, default_limit: Union[int, str]) -> argparse.ArgumentParser:
     interactive = subparsers.add_parser(
         "interactive",
         description="Interactively search for tracks and albums.",
@@ -11,8 +13,7 @@ def fun_args(subparsers, default_limit):
         aliases=["i", "fun"]
     )
     interactive.add_argument(
-        "-l",
-        "--limit",
+        "-l", "--limit",
         metavar="int",
         default=default_limit,
         help="limit of search results (default: 20)",
@@ -20,21 +21,19 @@ def fun_args(subparsers, default_limit):
     return interactive
 
 
-def lucky_args(subparsers):
+def lucky_args(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParser:
     lucky = subparsers.add_parser(
         "lucky",
         description="Download the first <n> albums returned from a Qobuz search.",
         help="lucky mode",
     )
     lucky.add_argument(
-        "-t",
-        "--type",
+        "-t", "--type",
         default="album",
         help="type of items to search (artist, album, track, playlist) (default: album)",
     )
     lucky.add_argument(
-        "-n",
-        "--number",
+        "-n", "--number",
         metavar="int",
         default=1,
         help="number of results to download (default: 1)",
@@ -43,7 +42,7 @@ def lucky_args(subparsers):
     return lucky
 
 
-def dl_args(subparsers):
+def dl_args(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParser:
     download = subparsers.add_parser(
         "dl",
         description="Download by album/track/artist/label/playlist/last.fm-playlist URL.",
@@ -53,22 +52,18 @@ def dl_args(subparsers):
         "SOURCE",
         metavar="SOURCE",
         nargs="+",
-        help=("one or more URLs (space separated) or a text file"),
+        help="one or more URLs (space separated) or a text file",
     )
-    
-    # --- START BLACKLIST FLAG ---
     download.add_argument(
-        "-b",
-        "--blacklist",
+        "-b", "--blacklist",
         help="Path to a text file containing keywords to blacklist and skip",
         type=str,
         default=None,
     )
-    # --- END BLACKLIST FLAG ---
-    
     return download
 
-def lyrics_args(subparsers):
+
+def lyrics_args(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParser:
     lyrics = subparsers.add_parser(
         "lyrics",
         description="Retroactively scan a directory and inject missing lyrics into existing audio files.",
@@ -80,13 +75,14 @@ def lyrics_args(subparsers):
         help="The local directory containing the music files to be scanned",
     )
     lyrics.add_argument(
-    		"--overwrite",
+        "--overwrite",
         action="store_true",
         help="overwrite existing lyrics and translations in the files",
     )
     return lyrics
 
-def fix_lyrics_args(subparsers):
+
+def fix_lyrics_args(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParser:
     fix_lyrics = subparsers.add_parser(
         "fix-lyrics",
         aliases=["fl"],
@@ -102,12 +98,15 @@ def fix_lyrics_args(subparsers):
     )
     return fix_lyrics
 
-def sync_playlist_args(subparsers):
+
+def sync_playlist_args(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParser:
     sync_pl = subparsers.add_parser(
         "sync-playlist",
         aliases=["sp"],
-        description="Synchronize a local folder with a Qobuz playlist. "
-                    "Downloads missing tracks and removes tracks no longer in the playlist.",
+        description=(
+            "Synchronize a local folder with a Qobuz playlist. "
+            "Downloads missing tracks and removes tracks no longer in the playlist."
+        ),
         help="sync a local folder with a Qobuz playlist",
     )
     sync_pl.add_argument(
@@ -121,10 +120,11 @@ def sync_playlist_args(subparsers):
     )
     return sync_pl
 
-def add_common_arg(custom_parser, default_folder, default_quality):
+
+def add_common_arg(custom_parser: argparse.ArgumentParser, default_folder: str, default_quality: Union[int, str]) -> None:
+    """Adiciona os argumentos partilhados por múltiplos comandos."""
     custom_parser.add_argument(
-        "-d",
-        "--directory",
+        "-d", "--directory",
         metavar="PATH",
         default=default_folder,
         help=f'directory for downloads (default: "{default_folder}")',
@@ -137,8 +137,7 @@ def add_common_arg(custom_parser, default_folder, default_quality):
         help="do not save synchronized lyrics to external .lrc files",
     )
     custom_parser.add_argument(
-        "-q",
-        "--quality",
+        "-q", "--quality",
         metavar="int",
         type=int,
         default=default_quality,
@@ -151,7 +150,7 @@ def add_common_arg(custom_parser, default_folder, default_quality):
     custom_parser.add_argument(
         "--albums-only",
         action="store_true",
-        help=("don't download singles, EPs and VA releases"),
+        help="don't download singles, EPs and VA releases",
     )
     custom_parser.add_argument(
         "--no-m3u",
@@ -167,53 +166,41 @@ def add_common_arg(custom_parser, default_folder, default_quality):
         "--no-db", action="store_true", help="don't call the database"
     )
     custom_parser.add_argument(
-        "-ff",
-        "--folder-format",
+        "-ff", "--folder-format",
         metavar="PATTERN",
-        help="""pattern for formatting folder names, e.g
-        "{album_artist} - {album_title} ({year}) {{{barcode}}}". available keys: 
-        album_id, album_url, album_title, album_title, album_artist, album_genre, 
-        album_composer, label, copyright, upc, barcode, release_date, year, media_type,
-        format, bit_depth, sampling_rate, album_version, disc_count, track_count.
-        Note1: {album_title}, {track_title} will contain version information if available.
-        Note2: {album_title_base}, {track_title_base} will contain only the title,
-        Note3: {track_title}, {track_title_base} is only available if the given url is a track url.
-        Note4: You can use '/' to create subdirectories, for example:
-        "{album_artist}/{album_artist} - {album_title} ({year})" will create
-        "Taylor Swift/Taylor Swift - folklore (2020)".
-        Cannot contain characters used by the system, which includes :<>""",
+        help=(
+            'pattern for formatting folder names, e.g "{album_artist} - {album_title} ({year})".\n'
+            'available keys: album_id, album_url, album_title, album_artist, album_genre, \n'
+            'album_composer, label, copyright, upc, barcode, release_date, year, media_type, \n'
+            'format, bit_depth, sampling_rate, album_version, disc_count, track_count.\n'
+            'Note: You can use "/" to create subdirectories.'
+        ),
     )
     custom_parser.add_argument(
-        "-fbff",
-        "--fallback-folder-format",
+        "-fbff", "--fallback-folder-format",
         metavar="PATTERN", 
-        help="""fallback pattern for formatting folder names when the main pattern fails.
-        Uses same keys as --folder-format. e.g: "{album_artist} - {album_title}"
-        Note: You can also use '/' to create subdirectories in the fallback pattern.""",
+        help=(
+            'fallback pattern for formatting folder names when the main pattern fails.\n'
+            'Uses same keys as --folder-format.'
+        ),
     )
     custom_parser.add_argument(
-        "-tf",
-        "--track-format",
+        "-tf", "--track-format",
         metavar="PATTERN",
-        help="""pattern for formatting track names. e.g
-        "{track_number} - {track_title}" 
-        available keys:
-        album_title, album_title_base, album_artist, track_id, track_artist, track_composer, 
-        track_number, isrc, bit_depth, sampling_rate, track_title, track_title_base
-        version, year, disc_number, release_date.
-        Note1: {album_title}, {track_title} will contain version information if available.
-        Note2: {album_title_base}, {track_title_base} will contain only the title.
-        Cannot contain characters used by the system, which includes /:<>
-        """,
+        help=(
+            'pattern for formatting track names. e.g "{track_number} - {track_title}"\n'
+            'available keys: album_title, album_title_base, album_artist, track_id, track_artist, \n'
+            'track_composer, track_number, isrc, bit_depth, sampling_rate, track_title, \n'
+            'version, year, disc_number, release_date.'
+        ),
     )
     custom_parser.add_argument(
-        "-s",
-        "--smart-discography",
+        "-s", "--smart-discography",
         action="store_true",
-        help="""Try to filter out spam-like albums when requesting an artist's
-        discography, and other optimizations. Filters albums not made by requested
-        artist, and deluxe/live/collection albums. Gives preference to remastered
-        albums, high bit depth/dynamic range, and low sampling rates (to save space).""",
+        help=(
+            "Try to filter out spam-like albums when requesting an artist's discography. "
+            "Filters albums not made by requested artist, and deluxe/live/collection albums."
+        ),
     )
     
     # --- HUMAN BEHAVIOR DELAY ---
@@ -245,8 +232,6 @@ def add_common_arg(custom_parser, default_folder, default_quality):
         action="store_true",
         help="disable the generation of the Digital Booklet.txt (Credits & Review) file",
     )
-
-    # Add override flag to force credits generation if no_credits is set to true in config.ini
     custom_parser.add_argument(
         "--with-credits",
         action="store_true",
@@ -255,103 +240,33 @@ def add_common_arg(custom_parser, default_folder, default_quality):
 
     # Adding tag-related parameters
     tag_group = custom_parser.add_argument_group('tag options')
-    tag_group.add_argument(
-        "--no-album-artist-tag", 
-        action="store_true",
-        help="don't add album artist tag"
-    )
-    tag_group.add_argument(
-        "--no-album-title-tag",
-        action="store_true", 
-        help="don't add album title tag"
-    )
-    tag_group.add_argument(
-        "--no-track-artist-tag",
-        action="store_true",
-        help="don't add track artist tag"
-    )
-    tag_group.add_argument(
-        "--no-track-title-tag",
-        action="store_true",
-        help="don't add track title tag"
-    )
-    tag_group.add_argument(
-        "--no-release-date-tag",
-        action="store_true",
-        help="don't add release date tag"
-    )
-    tag_group.add_argument(
-        "--no-media-type-tag",
-        action="store_true",
-        help="don't add media type tag"
-    )
-    tag_group.add_argument(
-        "--no-genre-tag",
-        action="store_true",
-        help="don't add genre tag"
-    )
-    tag_group.add_argument(
-        "--no-track-number-tag",
-        action="store_true",
-        help="don't add track number tag"
-    )
-    tag_group.add_argument(
-        "--no-track-total-tag",
-        action="store_true",
-        help="don't add total tracks tag"
-    )
-    tag_group.add_argument(
-        "--no-disc-number-tag",
-        action="store_true",
-        help="don't add disc number tag"
-    )
-    tag_group.add_argument(
-        "--no-disc-total-tag",
-        action="store_true",
-        help="don't add total discs tag"
-    )
-    tag_group.add_argument(
-        "--no-composer-tag",
-        action="store_true",
-        help="don't add composer tag"
-    )
-    tag_group.add_argument(
-        "--no-explicit-tag",
-        action="store_true",
-        help="don't add explicit advisory tag"
-    )
-    tag_group.add_argument(
-        "--no-copyright-tag",
-        action="store_true",
-        help="don't add copyright tag"
-    )
-    tag_group.add_argument(
-        "--no-label-tag",
-        action="store_true",
-        help="don't add label tag"
-    )
-    tag_group.add_argument(
-        "--no-upc-tag",
-        action="store_true",
-        help="don't add UPC/barcode tag"
-    )
-    tag_group.add_argument(
-        "--no-isrc-tag",
-        action="store_true",
-        help="don't add ISRC tag"
-    )
+    tag_group.add_argument("--no-album-artist-tag", action="store_true", help="don't add album artist tag")
+    tag_group.add_argument("--no-album-title-tag", action="store_true", help="don't add album title tag")
+    tag_group.add_argument("--no-track-artist-tag", action="store_true", help="don't add track artist tag")
+    tag_group.add_argument("--no-track-title-tag", action="store_true", help="don't add track title tag")
+    tag_group.add_argument("--no-release-date-tag", action="store_true", help="don't add release date tag")
+    tag_group.add_argument("--no-media-type-tag", action="store_true", help="don't add media type tag")
+    tag_group.add_argument("--no-genre-tag", action="store_true", help="don't add genre tag")
+    tag_group.add_argument("--no-track-number-tag", action="store_true", help="don't add track number tag")
+    tag_group.add_argument("--no-track-total-tag", action="store_true", help="don't add total tracks tag")
+    tag_group.add_argument("--no-disc-number-tag", action="store_true", help="don't add disc number tag")
+    tag_group.add_argument("--no-disc-total-tag", action="store_true", help="don't add total discs tag")
+    tag_group.add_argument("--no-composer-tag", action="store_true", help="don't add composer tag")
+    tag_group.add_argument("--no-explicit-tag", action="store_true", help="don't add explicit advisory tag")
+    tag_group.add_argument("--no-copyright-tag", action="store_true", help="don't add copyright tag")
+    tag_group.add_argument("--no-label-tag", action="store_true", help="don't add label tag")
+    tag_group.add_argument("--no-upc-tag", action="store_true", help="don't add UPC/barcode tag")
+    tag_group.add_argument("--no-isrc-tag", action="store_true", help="don't add ISRC tag")
+
+    # Adding artwork-related parameters
     artwork_group = custom_parser.add_argument_group('cover artwork options')
-    artwork_group.add_argument(
-        "-e", "--embed-art", action="store_true", help="embed cover art into audio files"
-    )
+    artwork_group.add_argument("-e", "--embed-art", action="store_true", help="embed cover art into audio files")
     artwork_group.add_argument(
         "--og-cover",
         action="store_true",
-        help="download cover art in its original quality (bigger file). No longer available, recommended use: --embedded-art-size and --saved-art-size",
+        help="download cover art in original quality (Deprecated: use --embedded-art-size and --saved-art-size)",
     )
-    artwork_group.add_argument(
-        "--no-cover", action="store_true", help="don't download cover art"
-    )
+    artwork_group.add_argument("--no-cover", action="store_true", help="don't download cover art")
     artwork_group.add_argument(
         "--embedded-art-size",
         choices=["50", "100", "150", "300", "600", "max", "org"],
@@ -364,15 +279,14 @@ def add_common_arg(custom_parser, default_folder, default_quality):
         default="org",
         help="size of saved artwork (default: org)"
     )
+
+    # Adding multiple disc options
     multiple_disc_group = custom_parser.add_argument_group('multiple disc options')
     multiple_disc_group.add_argument(
         "--multiple-disc-prefix",
         default="CD",
         metavar="PREFIX",
-        help="""Setting folder prefix for multiple discs album (default: CD)
-        If the album has multiple discs(media_count > 1), the album's tracks will be saved by folder.
-        The names of the folders: '{prefix} {media_number}', eg: 'CD 01'
-        """
+        help="Setting folder prefix for multiple discs album (default: CD)"
     )
     multiple_disc_group.add_argument(
         "--multiple-disc-one-dir",
@@ -395,27 +309,18 @@ def add_common_arg(custom_parser, default_folder, default_quality):
     )
 
 
-def qobuz_dl_args(
-    default_quality=6, default_limit=20, default_folder="QobuzDownloads"
-):
+def qobuz_dl_args(default_quality: Union[int, str] = 6, default_limit: Union[int, str] = 20, default_folder: str = "QobuzDownloads") -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="qobuz-dl",
         description=(
-            f"{MAGENTA}[QOBUZ MASTER EDITION v{__version__}]\n\n{RESET}"
+            f"{GREEN}[QOBUZ MASTER EDITION v{__version__}]\n\n{RESET}"
             "The Ultimate Lossless and Hi-Res music downloader for Qobuz.\n"
             "Veja exemplos e formas de uso em https://github.com/kaduvercosa/qobuz-dl"
         ),
         formatter_class=argparse.RawTextHelpFormatter,
     )
-    parser.add_argument(
-        "-r", "--reset", action="store_true", help="create/reset config file"
-    )
-    parser.add_argument(
-        "-p",
-        "--purge",
-        action="store_true",
-        help="purge/delete downloaded-IDs database",
-    )
+    parser.add_argument("-r", "--reset", action="store_true", help="create/reset config file")
+    parser.add_argument("-p", "--purge", action="store_true", help="purge/delete downloaded-IDs database")
     parser.add_argument(
         "--sync-db",
         metavar="PATH",
@@ -423,12 +328,7 @@ def qobuz_dl_args(
         const="DEFAULT",
         help="scan local directory to restore missing Qobuz IDs into the database",
     )
-    parser.add_argument(
-        "-sc",
-        "--show-config",
-        action="store_true",
-        help="show configuration",
-    )
+    parser.add_argument("-sc", "--show-config", action="store_true", help="show configuration")
 
     subparsers = parser.add_subparsers(
         title="commands",
@@ -439,15 +339,12 @@ def qobuz_dl_args(
     interactive = fun_args(subparsers, default_limit)
     download = dl_args(subparsers)
     lucky = lucky_args(subparsers)
-    
-    # Inizializza il nuovo comando
     lyrics_cmd = lyrics_args(subparsers)
     fix_lyrics_cmd = fix_lyrics_args(subparsers)
     sync_pl_cmd = sync_playlist_args(subparsers)
     
-    [
-        add_common_arg(i, default_folder, default_quality)
-        for i in (interactive, download, lucky, sync_pl_cmd)
-    ]
+    # Injeta os argumentos comuns a todos os sub-comandos aplicáveis
+    for cmd in (interactive, download, lucky, sync_pl_cmd):
+        add_common_arg(cmd, default_folder, default_quality)
 
     return parser

@@ -4,12 +4,11 @@ import string
 import re
 import configparser
 import logging
-import glob
 import os
-import getpass
-import hashlib
 import signal
 import aiohttp
+from pathlib import Path
+from typing import Union
 
 from qobuz_dl.bundle import Bundle
 from qobuz_dl.color import GREEN, RED, YELLOW, OFF, CYAN
@@ -17,41 +16,35 @@ from qobuz_dl.commands import qobuz_dl_args
 from qobuz_dl.core import QobuzDL
 from qobuz_dl.downloader import DEFAULT_FOLDER, DEFAULT_TRACK, abort_event
 from qobuz_dl.settings import QobuzDLSettings
-from pathlib import Path
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(message)s",
-)
+logging.basicConfig(level=logging.INFO, format="%(message)s")
 
 # ============================================================
-# HELPER: Windows Long Path Support (evita duplicação)
+# PATH CONFIGURATIONS (Using Pathlib)
 # ============================================================
-def ensure_long_path(path: str) -> str:
-    # """Garante o prefixo de long path do Windows (\\\\?\\) quando necessário."""
+def ensure_long_path(path: Union[str, Path]) -> str:
+    """Garante o prefixo de long path do Windows (\\\\?\\) quando necessário."""
     if os.name != "nt":
-        return path
+        return str(path)
     try:
-        abs_path = os.path.abspath(os.path.expanduser(path))
+        abs_path = str(Path(path).expanduser().resolve())
         if not abs_path.startswith("\\\\?\\"):
             return "\\\\?\\" + abs_path
         return abs_path
     except Exception:
-        return path
-
+        return str(path)
 
 if os.name == "nt":
-    OS_CONFIG = os.environ.get("APPDATA") or str(Path.home() / "AppData" / "Roaming")
+    OS_CONFIG = Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming")
 else:
-    home = os.environ.get("HOME") or str(Path.home())
-    OS_CONFIG = os.path.join(home, ".config")
+    OS_CONFIG = Path(os.environ.get("HOME") or Path.home()) / ".config"
 
-CONFIG_PATH = os.path.join(OS_CONFIG, "qobuz-dl")
-CONFIG_FILE = os.path.join(CONFIG_PATH, "config.ini")
-QOBUZ_DB = os.path.join(CONFIG_PATH, "qobuz_dl.db")
+CONFIG_PATH = OS_CONFIG / "qobuz-dl"
+CONFIG_FILE = CONFIG_PATH / "config.ini"
+QOBUZ_DB = CONFIG_PATH / "qobuz_dl.db"
 
 
-def validate_config_formats(formats_to_check):
+def validate_config_formats(formats_to_check: dict) -> None:
     """
     Scans the configuration format strings for unknown variables to prevent
     silent KeyErrors during the download process. Includes typo suggestions.
@@ -69,11 +62,6 @@ def validate_config_formats(formats_to_check):
 
     has_errors = False
     
-    C_RED = '\033[91m'
-    C_YEL = '\033[93m'
-    C_GRE = '\033[92m'
-    C_OFF = '\033[0m'
-
     for config_name, format_string in formats_to_check.items():
         if not format_string:
             continue
@@ -85,28 +73,27 @@ def validate_config_formats(formats_to_check):
                 base_var = var.split(':')[0].split('!')[0]
                 
                 if base_var not in VALID_KEYS:
-                    print(f"{C_YEL}[!] Config Warning: Unknown variable '{{{base_var}}}' detected in '{config_name}'.{C_OFF}")
+                    print(f"{YELLOW}[!] Config Warning: Unknown variable '{{{base_var}}}' detected in '{config_name}'.{OFF}")
                     
                     similar_keys = difflib.get_close_matches(base_var, VALID_KEYS, n=1, cutoff=0.6)
                     if similar_keys:
-                        print(f"    {C_GRE}-> Did you mean '{{{similar_keys[0]}}}'?{C_OFF}")
+                        print(f"    {GREEN}-> Did you mean '{{{similar_keys[0]}}}'?{OFF}")
                     
-                    print(f"    {C_RED}-> This will cause the entire format string to be discarded during download.{C_OFF}")
+                    print(f"    {RED}-> This will cause the entire format string to be discarded during download.{OFF}")
                     has_errors = True
                     
         except ValueError as e:
-            print(f"{C_RED}[!] Config Error: Syntax error in '{config_name}' -> {e}{C_OFF}")
+            print(f"{RED}[!] Config Error: Syntax error in '{config_name}' -> {e}{OFF}")
             has_errors = True
 
     if has_errors:
-        print(f"\n{C_YEL}[*] Tip: Please check your config.ini file or your command line arguments and fix any typos before downloading.{C_OFF}\n")
+        print(f"\n{YELLOW}[*] Tip: Please check your config.ini file or your command line arguments and fix any typos before downloading.{OFF}\n")
         sys.exit(1)
 
 
-def _reset_config(config_file):
+def _reset_config(config_file: Path) -> int:
     logging.info(f"\n{YELLOW}--- QOBUZ-DL CONFIGURATION WIZARD (2026 Update) ---{OFF}")
     config = configparser.ConfigParser(interpolation=None)
-    
     config["qobuz"] = {}
     
     try:
@@ -116,8 +103,8 @@ def _reset_config(config_file):
         config["qobuz"]["email"] = email.strip()
 
         print(f"\n{YELLOW}[!] ATTENTION: Qobuz API blocked direct password login for 3rd party apps.{OFF}")
-        print(f"{YELLOW}[!] You must use your browser Auth Token (F12 > Storage > Local Storage > localuser > token).{OFF}")
-        print()
+        print(f"{YELLOW}[!] You must use your browser Auth Token (F12 > Storage > Local Storage > localuser > token).{OFF}\n")
+        
         auth_token = input("Paste your browser token here: ")
         if not auth_token: sys.exit(1)
 
@@ -125,8 +112,7 @@ def _reset_config(config_file):
         config["qobuz"]["auth_token"] = auth_token.strip()
 
         print("\nDo you want to automatically download and inject lyrics?")
-        print("  1) Yes, download lyrics")
-        print("  2) No, skip lyrics")
+        print("  1) Yes, download lyrics\n  2) No, skip lyrics")
         fetch_lyrics_opt = input("Choice (1 or 2): ")
         config["qobuz"]["fetch_lyrics"] = "true" if fetch_lyrics_opt.strip() == "1" else "false"
 
@@ -137,78 +123,79 @@ def _reset_config(config_file):
         if config["qobuz"]["fetch_lyrics"] == "true":
             print()
             target_lang_input = input("Target language for DeepL translation (e.g. 'PT-BR', 'EN-US') [default: PT-BR]: ")
-            if target_lang_input.strip():
-                target_lang = target_lang_input.strip().upper()
+            if target_lang_input.strip(): target_lang = target_lang_input.strip().upper()
 
             print(f"\n{YELLOW}[!] To use DeepL translation, enter your DeepL API Key. Leave blank to disable translation.{OFF}")
-            deepl_input = input("DeepL API Key: ")
-            deepl_api_key = deepl_input.strip()
+            deepl_api_key = input("DeepL API Key: ").strip()
 
-            print(f"\n{YELLOW}[!] To use Genius as a fallback for missing lyrics, enter your API Token. Leave blank to only use LRCLIB.{OFF}")
-            genius_token_input = input("Genius API Token: ")
-            genius_token = genius_token_input.strip()
+            print(f"\n{YELLOW}[!] To use Genius as a fallback, enter your API Token. Leave blank to only use LRCLIB.{OFF}")
+            genius_token = input("Genius API Token: ").strip()
 
         config["qobuz"]["target_lang"] = target_lang
         config["qobuz"]["deepl_api_key"] = deepl_api_key
         config["qobuz"]["genius_token"] = genius_token
 
         print("\n--- AI Smart Playlists (Optional) ---")
-        print("To generate AI-curated .m3u playlists, you can provide an API key.")
-        print("  1) OpenAI (ChatGPT)")
-        print("  2) Google Gemini")
-        print("  3) Skip")
-        ai_choice = input("Choice (1, 2 or 3) [default: 3]: ")
+        print("  1) OpenAI (ChatGPT)\n  2) Google Gemini\n  3) Skip")
+        ai_choice = input("Choice (1, 2 or 3) [default: 3]: ").strip()
 
         config["qobuz"]["ai_provider"] = "openai"
         config["qobuz"]["openai_api_key"] = ""
         config["qobuz"]["gemini_api_key"] = ""
 
-        if ai_choice.strip() == "1":
-            config["qobuz"]["ai_provider"] = "openai"
-            config["qobuz"]["openai_api_key"] = input("OpenAI API Key (sk-...): ").strip()
-        elif ai_choice.strip() == "2":
+        if ai_choice == "1": config["qobuz"]["openai_api_key"] = input("OpenAI API Key (sk-...): ").strip()
+        elif ai_choice == "2": 
             config["qobuz"]["ai_provider"] = "gemini"
             config["qobuz"]["gemini_api_key"] = input("Gemini API Key: ").strip()
 
         print("\n--- Autonomous Watcher / Webhooks (Optional) ---")
-        print("To receive real-time notifications about new releases from your favorite artists.")
-        webhook_url = input("Enter your n8n / Make.com Webhook URL (Leave blank to skip): ").strip()
-        config["qobuz"]["webhook_url"] = webhook_url
+        config["qobuz"]["webhook_url"] = input("Enter your n8n / Make.com Webhook URL (Leave blank to skip): ").strip()
+
+        # --- NOVA SEÇÃO DO RADAR ---
+        print("\n--- Radar (New Releases) ---")
+        dias_busca = input("Days to search back for new releases (Radar) [default: 7]: ").strip()
+        config["qobuz"]["dias_de_busca"] = dias_busca if dias_busca else "7"
+        # ---------------------------
 
         print()
-        directory = input(f"Download folder [default: Qobuz Downloads]: ")
-        if not directory.strip(): directory = "Qobuz Downloads"
-        config["qobuz"]["directory"] = directory.strip()
+        directory = input(f"Download folder [default: Qobuz Downloads]: ").strip()
+        config["qobuz"]["directory"] = directory if directory else "Qobuz Downloads"
 
         print()
-        folder_format = input(f"Folder format [default: {DEFAULT_FOLDER}]: ")
-        if not folder_format.strip(): folder_format = DEFAULT_FOLDER
-        config["qobuz"]["folder_format"] = folder_format.strip()
+        folder_format = input(f"Folder format [default: {DEFAULT_FOLDER}]: ").strip()
+        config["qobuz"]["folder_format"] = folder_format if folder_format else DEFAULT_FOLDER
 
         print("\nDownload quality:")
-        print("  27) 24-Bit / >96 kHz (Hi-Res)")
-        print("  7)  24-Bit / <96 kHz (Hi-Res)")
-        print("  6)  16-Bit / 44.1 kHz (CD / FLAC)")
-        print("  5)  320 kbps (MP3)")
-        quality = input("Choice (27, 7, 6, 5) [default: 7]: ")
-        if not quality.strip(): quality = "7"
-        config["qobuz"]["default_quality"] = quality.strip()
+        print("  27) 24-Bit / >96 kHz (Hi-Res)\n  7)  24-Bit / <96 kHz (Hi-Res)")
+        print("  6)  16-Bit / 44.1 kHz (CD / FLAC)\n  5)  320 kbps (MP3)")
+        quality = input("Choice (27, 7, 6, 5) [default: 7]: ").strip()
+        config["qobuz"]["default_quality"] = quality if quality else "7"
 
     except KeyboardInterrupt:
         print("\nWizard aborted.")
         sys.exit(1)
 
-    config["qobuz"]["default_limit"] = "500"
-    config["qobuz"]["no_m3u"] = "false"
-    config["qobuz"]["albums_only"] = "false"
-    config["qobuz"]["no_fallback"] = "false"
-    config["qobuz"]["og_cover"] = "true"
-    config["qobuz"]["embed_art"] = "true"
-    config["qobuz"]["no_cover"] = "false"
-    config["qobuz"]["no_database"] = "false"
-    config["qobuz"]["no_lrc_files"] = "false"
-    config["qobuz"]["legacy_charmap"] = "false"
-    config["qobuz"]["blacklist"] = "blacklist.txt"
+    config["qobuz"].update({
+        "default_limit": "500", "no_m3u": "false", "albums_only": "false", 
+        "no_fallback": "false", "og_cover": "true", "embed_art": "true", 
+        "no_cover": "false", "no_database": "false", "no_lrc_files": "false", 
+        "legacy_charmap": "false", "blacklist": "blacklist.txt",
+        "track_format": "{track_number} - {track_title}",
+        "fallback_folder_format": "{artist} - {album}",
+        "smart_discography": "false", "no_album_artist_tag": "false",
+        "no_album_title_tag": "false", "no_track_artist_tag": "false",
+        "no_track_title_tag": "false", "no_release_date_tag": "false",
+        "no_media_type_tag": "false", "no_genre_tag": "false",
+        "no_track_number_tag": "false", "no_track_total_tag": "false",
+        "no_disc_number_tag": "false", "no_disc_total_tag": "false",
+        "no_composer_tag": "false", "no_explicit_tag": "false",
+        "no_copyright_tag": "false", "no_label_tag": "false",
+        "no_credits": "false", "no_upc_tag": "false", "no_isrc_tag": "false",
+        "embedded_art_size": "org", "saved_art_size": "org",
+        "multiple_disc_prefix": "CD", "multiple_disc_one_dir": "false",
+        "multiple_disc_track_format": "{disc_number}.{track_number} - {track_title}",
+        "max_workers": "2", "user_auth_token": ""
+    })
 
     print()
     logging.info(f"{YELLOW}Getting tokens. Please wait...{OFF}")
@@ -216,66 +203,27 @@ def _reset_config(config_file):
     config["qobuz"]["app_id"] = str(bundle.get_app_id())
     config["qobuz"]["secrets"] = ",".join(bundle.get_secrets().values())
 
-    config["qobuz"]["track_format"] = "{track_number} - {track_title}"
-    config["qobuz"]["fallback_folder_format"] = "{artist} - {album}"
-    config["qobuz"]["smart_discography"] = "false"
-
-    config["qobuz"]["no_album_artist_tag"] = "false"
-    config["qobuz"]["no_album_title_tag"] = "false"
-    config["qobuz"]["no_track_artist_tag"] = "false"
-    config["qobuz"]["no_track_title_tag"] = "false"
-    config["qobuz"]["no_release_date_tag"] = "false"
-    config["qobuz"]["no_media_type_tag"] = "false"
-    config["qobuz"]["no_genre_tag"] = "false"
-    config["qobuz"]["no_track_number_tag"] = "false"
-    config["qobuz"]["no_track_total_tag"] = "false"
-    config["qobuz"]["no_disc_number_tag"] = "false"
-    config["qobuz"]["no_disc_total_tag"] = "false"
-    config["qobuz"]["no_composer_tag"] = "false"
-    
-    config["qobuz"]["no_explicit_tag"] = "false"
-    config["qobuz"]["no_copyright_tag"] = "false"
-    config["qobuz"]["no_label_tag"] = "false"
-    
-    config["qobuz"]["no_credits"] = "false"
-    
-    config["qobuz"]["no_upc_tag"] = "false"
-    config["qobuz"]["no_isrc_tag"] = "false"
-          
-    config["qobuz"]["embedded_art_size"] = "org"
-    config["qobuz"]["saved_art_size"] = "org"
-    
-    config["qobuz"]["multiple_disc_prefix"] = "CD"
-    config["qobuz"]["multiple_disc_one_dir"] = "false"
-    config["qobuz"]["multiple_disc_track_format"] = "{disc_number}.{track_number} - {track_title}"
-    
-    config["qobuz"]["max_workers"] = "3"
-    config["qobuz"]["user_auth_token"] = ""
-    
     with open(config_file, "w") as configfile:
         config.write(configfile)
         
     logging.info(f"\n{GREEN}[+] Configuration successfully saved in {config_file}!{OFF}")
-    
+    return 0
+
 
 def _remove_leftovers(directory):
-    directory = os.path.join(directory, "**", ".*.tmp")
-    for i in glob.glob(directory, recursive=True):
+    """Limpa ficheiros temporários .tmp que possam ter ficado em caso de erro."""
+    for tmp_file in Path(directory).rglob(".*.tmp"):
         try:
-            os.remove(i)
-        except:
+            tmp_file.unlink(missing_ok=True)
+        except Exception:
             pass
 
 
 async def _handle_commands(qobuz, arguments):
     def sigint_handler(sig, frame):
-        print(f"\n\n\033[91m[!] Download forcibly interrupted by the user.\033[0m")
-        print(f"\033[93mSecuring files and aborting gracefully....\033[0m")
-        
-        # Avisa o restante do código para parar novas requisições
+        print(f"\n\n{RED}[!] Download forcibly interrupted by the user.{OFF}")
+        print(f"{YELLOW}Securing files and aborting gracefully....{OFF}")
         abort_event.set()
-        
-        # Levanta a exceção para quebrar o loop assíncrono atual, acionando o "except KeyboardInterrupt" lá do downloader.py
         raise KeyboardInterrupt
         
     signal.signal(signal.SIGINT, sigint_handler)
@@ -285,12 +233,7 @@ async def _handle_commands(qobuz, arguments):
             await qobuz.download_list_of_urls(arguments.SOURCE)
         elif arguments.command in ("sync-playlist", "sp"):
             from qobuz_dl.sync_playlist import sync_playlist
-            await sync_playlist(
-                qobuz,
-                arguments.URL,
-                qobuz.directory,
-                auto_confirm=arguments.yes,
-            )
+            await sync_playlist(qobuz, arguments.URL, qobuz.directory, auto_confirm=arguments.yes)
         elif arguments.command == "lucky":
             query = " ".join(arguments.QUERY)
             qobuz.lucky_type = arguments.type
@@ -299,7 +242,6 @@ async def _handle_commands(qobuz, arguments):
         else:
             qobuz.interactive_limit = arguments.limit
             await qobuz.interactive()
-
     except KeyboardInterrupt:
         pass
     finally:
@@ -307,8 +249,8 @@ async def _handle_commands(qobuz, arguments):
 
 
 def _initial_checks():
-    if not os.path.isdir(CONFIG_PATH) or not os.path.isfile(CONFIG_FILE):
-        os.makedirs(CONFIG_PATH, exist_ok=True)
+    if not CONFIG_PATH.is_dir() or not CONFIG_FILE.is_file():
+        CONFIG_PATH.mkdir(parents=True, exist_ok=True)
         _reset_config(CONFIG_FILE)
 
     if len(sys.argv) < 2:
@@ -317,21 +259,18 @@ def _initial_checks():
 
 async def check_for_updates():
     import datetime
-
-    check_file = os.path.join(CONFIG_PATH, "last_update_check")
+    check_file = CONFIG_PATH / "last_update_check"
 
     try:
-        with open(check_file, "r") as f:
-            last_check_str = f.read().strip()
-        last_check = datetime.date.fromisoformat(last_check_str)
-        if last_check >= datetime.date.today():
-            return
+        if check_file.is_file():
+            last_check_str = check_file.read_text().strip()
+            if datetime.date.fromisoformat(last_check_str) >= datetime.date.today():
+                return
     except Exception:
         pass
 
     try:
         from qobuz_dl import __version__
-        
         url = "https://api.github.com/repos/kaduvercosa/qobuz-dl/releases/latest"
         async with aiohttp.ClientSession() as session:
             async with session.get(url, timeout=2) as response:
@@ -339,27 +278,17 @@ async def check_for_updates():
                 data = await response.json()
         
         latest_version_str = data.get("tag_name", "").replace("v", "")
-        current_version_str = __version__
         
         def parse_version(v: str):
-            parts = re.findall(r'\d+', v)
-            return tuple(int(p) for p in parts[:3])
+            return tuple(int(p) for p in re.findall(r'\d+', v)[:3])
         
-        latest_tuple = parse_version(latest_version_str)
-        current_tuple = parse_version(current_version_str)
-        
-        if latest_tuple > current_tuple:
+        if parse_version(latest_version_str) > parse_version(__version__):
             print(f"\n{YELLOW}[*] UPDATE AVAILABLE: Master Edition v{latest_version_str} is out!{OFF}")
             print(f"{YELLOW}    - PyPI: run 'pip install -U qobuz-dl-master'{OFF}")
             print(f"{YELLOW}    - Docker: pull the latest image{OFF}")
             print(f"{YELLOW}    - Standalone: download the new release from GitHub{OFF}\n")
 
-        try:
-            with open(check_file, "w") as f:
-                f.write(str(datetime.date.today()))
-        except Exception:
-            pass
-            
+        check_file.write_text(str(datetime.date.today()))
     except Exception:
         pass
 
@@ -368,28 +297,24 @@ async def amain():
     await check_for_updates()
 
     if len(sys.argv) > 1 and sys.argv[1] == "radar":
-        from qobuz_dl.radar import run_radar
+        from qobuz_dl.radar import _async_run_radar
         try:
-            run_radar()
+            await _async_run_radar()
         except KeyboardInterrupt:
-            print("\n\n\033[91m[!] Radar manually interrupted by the user (CTRL+C).\033[0m")
+            print(f"\n\n{RED}[!] Radar manualmente interrompido.. (CTRL+C).{OFF}")
         sys.exit(0)
 
     if len(sys.argv) > 1 and sys.argv[1] == "stats":
         from qobuz_dl.db import get_folder_stats
-
         _cfg = configparser.ConfigParser(interpolation=None)
         _cfg.read(CONFIG_FILE)
         _sec = "qobuz" if _cfg.has_section("qobuz") else "DEFAULT"
-        scan_dir = os.path.expanduser(
-            _cfg.get(_sec, "directory", fallback=None)
-            or _cfg.get(_sec, "default_folder", fallback="Qobuz Downloads")
-        )
+        scan_dir = os.path.expanduser(_cfg.get(_sec, "directory", fallback=None) or _cfg.get(_sec, "default_folder", fallback="Qobuz Downloads"))
 
-        print(f"\n{CYAN}--- QOBUZ-DL MASTER — LIBRARY STATISTICS ---{OFF}")
+        print(f"\n{CYAN}--- QOBUZ-DL MASTER -- LIBRARY STATISTICS ---{OFF}")
         print(f"{YELLOW}Scanning: {scan_dir}{OFF}\n")
 
-        if not os.path.isdir(scan_dir):
+        if not Path(scan_dir).is_dir():
             print(f"{RED}[!] Directory not found: {scan_dir}{OFF}")
             print(f"{YELLOW}    Make sure your download folder exists and is correctly set in config.ini{OFF}\n")
             sys.exit(1)
@@ -400,27 +325,22 @@ async def amain():
             print(f"{YELLOW}No audio files found. Start downloading to populate your library!{OFF}")
         else:
             size_bytes = stats['total_size_bytes']
-            if size_bytes >= 1_073_741_824:
-                size_str = f"{size_bytes / 1_073_741_824:.2f} GB"
-            else:
-                size_str = f"{size_bytes / 1_048_576:.1f} MB"
+            size_str = f"{size_bytes / 1_073_741_824:.2f} GB" if size_bytes >= 1_073_741_824 else f"{size_bytes / 1_048_576:.1f} MB"
 
             print(f"Total Tracks on Disk:  {GREEN}{stats['total_tracks']}{OFF}")
             print(f"Total Album Folders:   {GREEN}{stats['total_albums']}{OFF}")
             print(f"Total Unique Artists:  {GREEN}{stats['total_artists']}{OFF}")
             print(f"Library Size:          {GREEN}{size_str}{OFF}\n")
 
-            quality_dist = stats.get('quality_distribution', {})
-            if quality_dist:
+            if stats.get('quality_distribution'):
                 print(f"{YELLOW}Quality Distribution:{OFF}")
-                for q_label, count in sorted(quality_dist.items(), reverse=True):
+                for q_label, count in sorted(stats['quality_distribution'].items(), reverse=True):
                     print(f"  {q_label}: {count} tracks")
                 print()
 
-            top_artists = stats.get('top_artists', [])
-            if top_artists:
+            if stats.get('top_artists'):
                 print(f"{YELLOW}Top Artists:{OFF}")
-                for i, (artist, count) in enumerate(top_artists, 1):
+                for i, (artist, count) in enumerate(stats['top_artists'], 1):
                     print(f"  {i}. {artist} ({count} tracks)")
 
         print(f"\n{CYAN}--------------------------------------------{OFF}\n")
@@ -431,7 +351,6 @@ async def amain():
 
     try:
         section = "qobuz" if config.has_section("qobuz") else "DEFAULT"
-        
         email = config.get(section, "email")
         token = config.get(section, "auth_token", fallback="")
         password = token if token else config.get(section, "password")
@@ -447,41 +366,21 @@ async def amain():
         else:
             legacy_val = config.get(section, "default_folder", fallback=None)
             if legacy_val is not None:
-                print(f"\033[93m[!] Notice: 'default_folder' in config.ini is deprecated. Please rename it to 'directory' for future updates.\033[0m")
+                print(f"{YELLOW}[!] Notice: 'default_folder' in config.ini is deprecated. Please rename it to 'directory' for future updates.{OFF}")
                 default_folder = legacy_val
             else:
                 default_folder = "Qobuz Downloads"
 
         default_limit = config.get(section, "default_limit")
         default_quality = config.get(section, "default_quality")
-        
-        no_m3u = config.getboolean(section, "no_m3u", fallback=False)
         no_lrc_files_config = config.getboolean(section, "no_lrc_files", fallback=False)
-        albums_only = config.getboolean(section, "albums_only", fallback=False)
-        no_fallback = config.getboolean(section, "no_fallback", fallback=False)
-        og_cover = config.getboolean(section, "og_cover", fallback=True)
-        embed_art = config.getboolean(section, "embed_art", fallback=True)
-        no_cover = config.getboolean(section, "no_cover", fallback=False)
-        no_database = config.getboolean(section, "no_database", fallback=False)
-        legacy_charmap = config.getboolean(section, "legacy_charmap", fallback=False)
-        
         no_credits_config = config.getboolean(section, "no_credits", fallback=False)
         blacklist_config = config.get(section, "blacklist", fallback="blacklist.txt")
-        
         app_id = config.get(section, "app_id")
-        secrets_raw = config.get(section, "secrets", fallback="")
-        secrets = [s.strip() for s in secrets_raw.split(",") if s.strip()]
+        secrets = [s.strip() for s in config.get(section, "secrets", fallback="").split(",") if s.strip()]
         
-        smart_discography = config.getboolean(section, "smart_discography", fallback=False)
-        folder_format = config.get(section, "folder_format", fallback=DEFAULT_FOLDER)
-        track_format = config.get(section, "track_format", fallback=DEFAULT_TRACK)
-
-        arguments = qobuz_dl_args(
-            default_quality, default_limit, default_folder
-        ).parse_args()
-        
-        if getattr(arguments, 'no_lyrics', False):
-            fetch_lyrics = False
+        arguments = qobuz_dl_args(default_quality, default_limit, default_folder).parse_args()
+        if getattr(arguments, 'no_lyrics', False): fetch_lyrics = False
             
         force_english = not getattr(arguments, 'native_lang', False)
         no_credits_flag = getattr(arguments, 'no_credits', False) or no_credits_config 
@@ -489,13 +388,7 @@ async def amain():
     except (configparser.Error, KeyError) as error:
         arguments = qobuz_dl_args().parse_args()
         if not arguments.reset:
-            RED_C = '\033[91m'
-            YELLOW_C = '\033[93m'
-            OFF_C = '\033[0m'
-            sys.exit(
-                f"{RED_C}Invalid or corrupted configuration ({error}).\n{OFF_C}"
-                f"{YELLOW_C}Run 'python -m qobuz_dl -r' to fix this.{OFF_C}"
-            )
+            sys.exit(f"{RED}Invalid or corrupted configuration ({error}).\n{OFF}{YELLOW}Run 'python -m qobuz_dl -r' to fix this.{OFF}")
 
     if arguments.reset:
         sys.exit(_reset_config(CONFIG_FILE))
@@ -508,7 +401,7 @@ async def amain():
 
     if arguments.purge:
         try:
-            os.remove(QOBUZ_DB)
+            QOBUZ_DB.unlink()
         except FileNotFoundError:
             pass
         sys.exit(f"{GREEN}Database has been purged.{OFF}")
@@ -516,69 +409,54 @@ async def amain():
     if getattr(arguments, 'sync_db', None):
         from qobuz_dl.sync import sync_database
         from qobuz_dl.qopy import Client
-                
         sync_client = Client(email, password, app_id, secrets, user_auth_token=token, force_english=force_english)
+        sync_dir = ensure_long_path(default_folder if arguments.sync_db == "DEFAULT" else arguments.sync_db)
         
-        sync_dir = default_folder if arguments.sync_db == "DEFAULT" else arguments.sync_db
-        sync_dir = ensure_long_path(sync_dir)
-                
-        sync_database(sync_dir, QOBUZ_DB, sync_client)
+        # [!] Correção Crítica: O sync_database é agora uma função assíncrona!
+        await sync_database(sync_dir, str(QOBUZ_DB), sync_client)
+        
         sys.exit(f"\n{GREEN}Database synchronization finished successfully.{OFF}")
 
     if arguments.command == "lyrics":
         from qobuz_dl.retro_tagger import inject_lyrics_retroactively
-        
-        target_dir = arguments.DIR
-        target_dir = ensure_long_path(target_dir)
-        
         try:
-            overwrite_flag = getattr(arguments, 'overwrite', False)
-            await inject_lyrics_retroactively(target_dir, genius_token=genius_token, deepl_api_key=deepl_api_key, overwrite=overwrite_flag, target_lang=target_lang)
+            await inject_lyrics_retroactively(ensure_long_path(arguments.DIR), genius_token=genius_token, deepl_api_key=deepl_api_key, overwrite=getattr(arguments, 'overwrite', False), target_lang=target_lang)
         except KeyboardInterrupt:
-            print("\n\n\033[91m[!] Operation manually interrupted by the user (CTRL+C).\033[0m")
-            print("\033[93mAlready processed files are safe. Exiting...\033[0m")
+            print(f"\n\n{RED}[!] Operation manually interrupted by the user (CTRL+C).{OFF}\n{YELLOW}Already processed files are safe. Exiting...{OFF}")
         sys.exit(0)
 
     elif arguments.command in ("fix-lyrics", "fl"):
         from qobuz_dl.retro_tagger import interactive_fix_lyrics
-
-        target_dir = arguments.DIR
-        target_dir = ensure_long_path(target_dir)
-
         try:
-            await interactive_fix_lyrics(target_dir, genius_token=genius_token, deepl_api_key=deepl_api_key, target_lang=target_lang)
+            await interactive_fix_lyrics(ensure_long_path(arguments.DIR), genius_token=genius_token, deepl_api_key=deepl_api_key, target_lang=target_lang)
         except KeyboardInterrupt:
-            print("\n\n\033[91m[!] Operation manually interrupted by the user (CTRL+C).\033[0m")
+            print(f"\n\n{RED}[!] Operation manually interrupted by the user (CTRL+C).{OFF}")
         sys.exit(0)
 
-    directory_to_use = arguments.directory if hasattr(arguments, 'directory') and arguments.directory else default_folder
-    directory_to_use = os.path.expanduser(directory_to_use)
-    directory_to_use = ensure_long_path(directory_to_use)
-
+    directory_to_use = ensure_long_path(os.path.expanduser(arguments.directory if hasattr(arguments, 'directory') and arguments.directory else default_folder))
     settings = QobuzDLSettings.from_arguments_configparser(arguments, config)
-    settings.legacy_charmap = legacy_charmap
+    settings.legacy_charmap = config.getboolean(section, "legacy_charmap", fallback=False)
     
-    formats_to_validate = {
-        "folder_format": getattr(arguments, 'folder_format', None) or folder_format,
-        "track_format": getattr(arguments, 'track_format', None) or track_format,
+    validate_config_formats({
+        "folder_format": getattr(arguments, 'folder_format', None) or config.get(section, "folder_format", fallback=DEFAULT_FOLDER),
+        "track_format": getattr(arguments, 'track_format', None) or config.get(section, "track_format", fallback=DEFAULT_TRACK),
         "fallback_folder_format": config.get(section, "fallback_folder_format", fallback="{artist} - {album}"),
         "multiple_disc_track_format": config.get(section, "multiple_disc_track_format", fallback="{disc_number}.{track_number} - {track_title}")
-    }
-    validate_config_formats(formats_to_validate)
+    })
 
     qobuz = QobuzDL(
         directory_to_use,
         getattr(arguments, 'quality', None) or default_quality,
-        getattr(arguments, 'embed_art', False) or embed_art,
-        ignore_singles_eps=getattr(arguments, 'albums_only', False) or albums_only,
-        no_m3u_for_playlists=getattr(arguments, 'no_m3u', False) or no_m3u,
-        quality_fallback=not getattr(arguments, 'no_fallback', False) or not no_fallback,
-        cover_og_quality=getattr(arguments, 'og_cover', False) or og_cover,
-        no_cover=getattr(arguments, 'no_cover', False) or no_cover,
-        downloads_db=None if no_database or getattr(arguments, 'no_db', False) else QOBUZ_DB,
-        folder_format=getattr(arguments, 'folder_format', None) or folder_format,
-        track_format=getattr(arguments, 'track_format', None) or track_format,
-        smart_discography=getattr(arguments, 'smart_discography', False) or smart_discography,
+        getattr(arguments, 'embed_art', False) or config.getboolean(section, "embed_art", fallback=True),
+        ignore_singles_eps=getattr(arguments, 'albums_only', False) or config.getboolean(section, "albums_only", fallback=False),
+        no_m3u_for_playlists=getattr(arguments, 'no_m3u', False) or config.getboolean(section, "no_m3u", fallback=False),
+        quality_fallback=not getattr(arguments, 'no_fallback', False) or not config.getboolean(section, "no_fallback", fallback=False),
+        cover_og_quality=getattr(arguments, 'og_cover', False) or config.getboolean(section, "og_cover", fallback=True),
+        no_cover=getattr(arguments, 'no_cover', False) or config.getboolean(section, "no_cover", fallback=False),
+        downloads_db=None if config.getboolean(section, "no_database", fallback=False) or getattr(arguments, 'no_db', False) else str(QOBUZ_DB),
+        folder_format=getattr(arguments, 'folder_format', None) or config.get(section, "folder_format", fallback=DEFAULT_FOLDER),
+        track_format=getattr(arguments, 'track_format', None) or config.get(section, "track_format", fallback=DEFAULT_TRACK),
+        smart_discography=getattr(arguments, 'smart_discography', False) or config.getboolean(section, "smart_discography", fallback=False),
         fetch_lyrics=fetch_lyrics,
         no_lrc_files=("--no-lrc-files" in sys.argv) or no_lrc_files_config,
         genius_token=genius_token,
@@ -602,9 +480,6 @@ async def amain():
 
 def main():
     import asyncio
-
-    import sys
-
     if len(sys.argv) > 1 and sys.argv[1].lower() == "-r":
         sys.exit(_reset_config(CONFIG_FILE))
 
@@ -614,7 +489,6 @@ def main():
         asyncio.run(amain())
     except KeyboardInterrupt:
         pass
-
 
 if __name__ == "__main__":
     main()

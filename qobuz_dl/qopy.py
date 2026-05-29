@@ -3,11 +3,11 @@ import hashlib
 import logging
 import time
 import unicodedata
-import json
+import asyncio
+import difflib  # Movido para o topo
+from typing import Any, Tuple, Dict, Optional, List, AsyncGenerator
 
 import aiohttp
-import asyncio
-
 
 try:
     from Cryptodome.Protocol.KDF import HKDF
@@ -26,7 +26,7 @@ from qobuz_dl.exceptions import (
     InvalidAppSecretError,
     InvalidQuality,
 )
-from qobuz_dl.color import GREEN, YELLOW, RED, OFF, RESET
+from qobuz_dl.color import GREEN, YELLOW, RED, OFF, CYAN, RESET
 
 try:
     from qobuz_dl.bundle import Bundle
@@ -35,8 +35,13 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+
 class Client:
-    def __init__(self, email, pwd, app_id, secrets, user_auth_token=None, force_english=True):
+    """
+    Cliente assíncrono para a API do Qobuz.
+    Lida com autenticação, pesquisa, metadados e obtenção de URLs de streaming/download.
+    """
+    def __init__(self, email: str, pwd: str, app_id: str, secrets: list, user_auth_token: str = None, force_english: bool = True):
         logger.info(f"{YELLOW}Logging...{OFF}")
         self.secrets = secrets
         self.id = str(app_id)
@@ -51,12 +56,26 @@ class Client:
                     self.secrets = list(b.get_secrets().values())
                     logger.info(f"{GREEN}[+] App ID dynamically updated: {self.id}{OFF}")
             except Exception as e:
-                logger.warning(f"Nao foi possivel atualizar app_id/secrets dinamicamente: {e}")
-                
+                logger.warning(f"Não foi possível atualizar app_id/secrets dinamicamente: {e}")
 
-        self.headers = {}
+        self.headers = self._build_initial_headers()
+        
+        self.session = None
+        self.base = "https://www.qobuz.com/api.json/0.2/"
+        self.sec = None
+        self.session_id = None
+        self.session_infos = None
+        self.session_key = None
+        self.uat = None
+        
+        self._initial_email = email
+        self._initial_pwd = pwd
+        self._initial_uat = user_auth_token
+
+    def _build_initial_headers(self) -> Dict[str, str]:
+        headers = {"X-App-Id": self.id}
         if self.force_english:
-            self.headers.update({
+            headers.update({
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
                 "Accept": "application/json, text/plain, */*",
                 "Sec-Ch-Ua": "\"Chromium\";v=\"124\", \"Google Chrome\";v=\"124\", \"Not-A.Brand\";v=\"99\"",
@@ -65,43 +84,27 @@ class Client:
                 "Sec-Fetch-Dest": "empty",
                 "Sec-Fetch-Mode": "cors",
                 "Sec-Fetch-Site": "same-site",
-                "X-App-Id": self.id,
             })
         else:
-            self.headers.update({
+            headers.update({
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                "X-App-Id": self.id,
             })
+        return headers
 
-        self.session = None
-        self.base = "https://www.qobuz.com/api.json/0.2/"
-        self.sec = None
-        self.session_id = None
-        self.session_infos = None
-        self.session_key = None
-        
-        self.uat = None
-        
-        # Auth and cfg_setup must be called via async start()
-        self._initial_email = email
-        self._initial_pwd = pwd
-        self._initial_uat = user_auth_token
-
-    async def start(self):
+    async def start(self) -> None:
         if self.session is None:
             self.session = aiohttp.ClientSession()
         await self.auth(self._initial_email, self._initial_pwd, self._initial_uat)
         await self.cfg_setup()
 
-    async def close(self):
+    async def close(self) -> None:
         if self.session:
             await self.session.close()
 
-    def _generate_signature(self, base_string):
-        """Helper to hash the old-school request_sig payloads."""
+    def _generate_signature(self, base_string: str) -> str:
         return hashlib.md5(base_string.encode("utf-8")).hexdigest()
 
-    def _normalize_json_strings(self, obj):
+    def _normalize_json_strings(self, obj: Any) -> Any:
         if isinstance(obj, str):
             if "..." in obj and "://" not in obj:
                 obj = obj.replace("...", "…")
@@ -110,10 +113,9 @@ class Client:
             return {k: self._normalize_json_strings(v) for k, v in obj.items()}
         elif isinstance(obj, list):
             return [self._normalize_json_strings(item) for item in obj]
-        else:
-            return obj
+        return obj
 
-    async def auth(self, email, pwd, user_auth_token=None):
+    async def auth(self, email: str, pwd: str, user_auth_token: str = None) -> None:
         if user_auth_token:
             self.uat = user_auth_token
         elif pwd and len(pwd) > 60:
@@ -122,13 +124,10 @@ class Client:
             usr_info = await self.api_call("user/login", email=email, pwd=pwd)
             if not usr_info.get("user", {}).get("credential", {}).get("parameters"):
                 logger.info(f"{YELLOW}[!] Free account detected or validation bypassed.{OFF}")
-            self.uat = usr_info["user_auth_token"]
+            self.uat = usr_info.get("user_auth_token")
         
-        self.headers.update({"X-User-Auth-Token": self.uat})
-        if getattr(self, 'session', None):
-            # Aiohttp ClientSession headers are immutable. We must close and recreate, or we just pass the updated headers in the next requests.
-            # Easiest way is to just let api_call use self.headers
-            pass
+        if self.uat:
+            self.headers.update({"X-User-Auth-Token": self.uat})
         
         try:
             user_info = await self.api_call("user/get")
@@ -137,11 +136,11 @@ class Client:
             self.user_id = user_info.get("id") or user_info.get("user", {}).get("id")
             logger.info(f"{GREEN}Logged: OK (Membership: {self.label}){OFF}")
         except Exception:
-            logger.info(f"{YELLOW}[!] Assinatura Nao Encontrada: FREE.{OFF}")
+            logger.info(f"{YELLOW}[!] Assinatura Não Encontrada: FREE.{OFF}")
             self.label = "Studio"
             self.user_id = None
 
-    def _modern_sig(self, epoint, params, sec):
+    def _modern_sig(self, epoint: str, params: dict, sec: str) -> str:
         object_, method = epoint.split("/")
         r_sig = [object_, method]
         for key in sorted(params):
@@ -152,10 +151,10 @@ class Client:
         return self._generate_signature("".join(r_sig))
 
     @staticmethod
-    def _b64url_decode(value):
+    def _b64url_decode(value: str) -> bytes:
         return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
 
-    def _derive_session_key(self):
+    def _derive_session_key(self) -> bytes:
         salt, info = self.session_infos.split(".")
         return HKDF(
             master=bytes.fromhex(self.sec),
@@ -165,73 +164,96 @@ class Client:
             context=self._b64url_decode(info)
         )
 
-    def _unwrap_track_key(self, key_token):
+    def _unwrap_track_key(self, key_token: str) -> bytes:
         _, wrapped, iv = key_token.split(".")
-        cipher = AES.new(
-            self.session_key,
-            AES.MODE_CBC,
-            self._b64url_decode(iv)
-        )
+        cipher = AES.new(self.session_key, AES.MODE_CBC, self._b64url_decode(iv))
         padded = cipher.decrypt(self._b64url_decode(wrapped))
         return unpad(padded, AES.block_size)
 
-    async def api_call(self, epoint, **kwargs):
+    async def _do_request(self, method: str, url: str, kwargs_req: dict, epoint: str) -> Tuple[int, str, Any]:
+        """Executa o pedido HTTP com lógica de retry."""
+        max_retries = 4
+        backoff_factor = 1
+
+        for attempt in range(max_retries):
+            try:
+                if method == "POST":
+                    async with self.session.post(url, **kwargs_req) as r:
+                        status = r.status
+                        text = await r.text()
+                        json_resp = await r.json() if "application/json" in r.headers.get("Content-Type", "") else None
+                else:
+                    async with self.session.get(url, **kwargs_req) as r:
+                        status = r.status
+                        text = await r.text()
+                        json_resp = await r.json() if "application/json" in r.headers.get("Content-Type", "") else None
+
+                # Se falhou com códigos de rede comuns, tenta novamente
+                if status in [429, 500, 502, 503, 504]:
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(backoff_factor * (2 ** attempt))
+                        continue
+                    r.raise_for_status()
+
+                return status, text, json_resp
+
+            except (aiohttp.ClientResponseError, aiohttp.ClientError) as e:
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(backoff_factor * (2 ** attempt))
+                    continue
+                raise
+
+    async def api_call(self, epoint: str, **kwargs) -> Dict:
+        """Constrói os parâmetros e orquestra a chamada à API."""
+        params = {}
+        
+        # 1. Preparação de parâmetros baseados no endpoint
         if epoint == "user/login":
-            if "user_auth_token" in kwargs and kwargs["user_auth_token"]:
+            if kwargs.get("user_auth_token"):
                 params = {"user_auth_token": kwargs["user_auth_token"], "app_id": self.id}
             else:
-                params = {"email": kwargs["email"], "password": kwargs["pwd"], "app_id": self.id}
-        elif epoint == "track/getFileUrl":
-            track_id = kwargs["id"]
+                params = {"email": kwargs.get("email"), "password": kwargs.get("pwd"), "app_id": self.id}
+                
+        elif epoint in ["track/getFileUrl", "file/url"]:
             fmt_id = kwargs["fmt_id"]
-            if int(fmt_id) not in (5, 6, 7, 27):
+            if epoint == "track/getFileUrl" and int(fmt_id) not in (5, 6, 7, 27):
                 raise InvalidQuality("Invalid quality id: choose between 5, 6, 7 or 27")
-            params = {"track_id": track_id, "format_id": fmt_id, "intent": "stream"}
-            unix = int(time.time())
-            sec_to_use = kwargs.get('sec', self.sec)
-            r_sig = f"trackgetFileUrlformat_id{fmt_id}intentstreamtrack_id{track_id}{unix}{sec_to_use}"
-            params["request_ts"] = unix
-            params["request_sig"] = self._generate_signature(r_sig)
+            if epoint == "file/url" and int(fmt_id) not in (6, 7, 27):
+                raise InvalidQuality("Invalid quality id: choose between 6, 7 or 27")
+                
+            intent = "stream" if epoint == "track/getFileUrl" else "import"
+            params = {"track_id": kwargs["id"], "format_id": fmt_id, "intent": intent}
+            params["request_ts"] = int(time.time())
+            
+            if epoint == "track/getFileUrl":
+                r_sig = f"trackgetFileUrlformat_id{fmt_id}intentstreamtrack_id{kwargs['id']}{params['request_ts']}{kwargs.get('sec', self.sec)}"
+                params["request_sig"] = self._generate_signature(r_sig)
+            else:
+                params["request_sig"] = self._modern_sig(epoint, params, kwargs.get("sec", self.sec))
 
         elif epoint == "session/start":
             params = {"profile": "qbz-1", "app_id": self.id}
             params["request_ts"] = int(time.time())
             params["request_sig"] = self._modern_sig(epoint, params, kwargs.get("sec", self.sec))
-        elif epoint == "file/url":
-            track_id = kwargs["id"]
-            fmt_id = kwargs["fmt_id"]
-            if int(fmt_id) not in (6, 7, 27):
-                raise InvalidQuality("Invalid quality id: choose between 6, 7 or 27")
-            params = {"track_id": track_id, "format_id": fmt_id, "intent": "import"}
-            params["request_ts"] = int(time.time())
-            params["request_sig"] = self._modern_sig(epoint, params, kwargs.get("sec", self.sec))
+            
         elif epoint == "favorite/getUserFavorites":
-            unix = int(time.time())
-            r_sig = f"favoritegetUserFavorites{unix}{kwargs.get('sec', self.sec)}"
             params = {
-                "app_id": self.id,
-                "user_auth_token": getattr(self, 'uat', None),
-                "user_id": getattr(self, 'user_id', None), 
-                "type": kwargs.get("fav_type", "albums"),
-                "limit": kwargs.get("limit", 100),
-                "offset": kwargs.get("offset", 0),
-                "request_ts": unix,
-                "request_sig": self._generate_signature(r_sig),
+                "app_id": self.id, "user_auth_token": self.uat, "user_id": self.user_id,
+                "type": kwargs.get("fav_type", "albums"), "limit": kwargs.get("limit", 100),
+                "offset": kwargs.get("offset", 0), "request_ts": int(time.time())
             }
+            r_sig = f"favoritegetUserFavorites{params['request_ts']}{kwargs.get('sec', self.sec)}"
+            params["request_sig"] = self._generate_signature(r_sig)
+            
         elif epoint == "playlist/getUserPlaylists":
-            # Sem assinaturas desnecessárias (conforme descoberto na API via iOS)
             params = {
-                "app_id": self.id,
-                "user_auth_token": getattr(self, 'uat', None),
-                "user_id": getattr(self, 'user_id', None),
-                "limit": kwargs.get("limit", 100),
-                "offset": kwargs.get("offset", 0),
+                "app_id": self.id, "user_auth_token": self.uat, "user_id": self.user_id,
+                "limit": kwargs.get("limit", 100), "offset": kwargs.get("offset", 0),
             }
         else:
             params = {'app_id': self.id}
-            if getattr(self, 'force_english', True):
-                params['lang'] = 'en'
-                params['locale'] = 'en_US'
+            if self.force_english:
+                params.update({'lang': 'en', 'locale': 'en_US'})
             
             val_id = kwargs.get('id')
             for k, v in kwargs.items():
@@ -244,75 +266,48 @@ class Client:
             elif epoint == "artist/get": params["artist_id"] = val_id; params["extra"] = "albums"
             elif epoint == "label/get": params["label_id"] = val_id; params["extra"] = "albums"
 
-        # Ensure no None values in params (fixes yarl TypeError)
+        # Remove valores None
         params = {k: v for k, v in params.items() if v is not None}
 
-        # Async request with custom retry
-        max_retries = 4
-        backoff_factor = 1
+        # 2. Execução do Pedido
+        url = self.base + epoint
+        req_kwargs = {"headers": self.headers.copy()}
         
-        for attempt in range(max_retries):
-            try:
-                if epoint in ["user/login", "favorite/create"]:
-                    async with self.session.post(self.base + epoint, data=params, headers=self.headers) as r:
-                        status = r.status
-                        text = await r.text()
-                        json_resp = await r.json() if "application/json" in r.headers.get("Content-Type", "") else None
-                elif epoint == "session/start":
-                    h = self.headers.copy()
-                    h["Content-Type"] = "application/x-www-form-urlencoded"
-                    async with self.session.post(self.base + epoint, data=params, headers=h) as r:
-                        status = r.status
-                        text = await r.text()
-                        json_resp = await r.json() if "application/json" in r.headers.get("Content-Type", "") else None
-                else:
-                    async with self.session.get(self.base + epoint, params=params, headers=self.headers) as r:
-                        status = r.status
-                        text = await r.text()
-                        json_resp = await r.json() if "application/json" in r.headers.get("Content-Type", "") else None
+        if epoint in ["user/login", "favorite/create"]:
+            method = "POST"
+            req_kwargs["data"] = params
+        elif epoint == "session/start":
+            method = "POST"
+            req_kwargs["data"] = params
+            req_kwargs["headers"]["Content-Type"] = "application/x-www-form-urlencoded"
+        else:
+            method = "GET"
+            req_kwargs["params"] = params
 
-                if status in [429, 500, 502, 503, 504]:
-                    if attempt < max_retries - 1:
-                        import asyncio
-                        await asyncio.sleep(backoff_factor * (2 ** attempt))
-                        continue
-                    else:
-                        r.raise_for_status()
+        status, text, json_resp = await self._do_request(method, url, req_kwargs, epoint)
 
-                if epoint == "user/login" and status == 400:
-                    if "invalid" in text.lower(): raise AuthenticationError("Invalid email or password.")
-                    else: logger.info(f"{GREEN}Logged: OK{OFF}")
-                elif epoint in ["track/getFileUrl", "favorite/getUserFavorites", "playlist/getUserPlaylists", "file/url"] and status == 400:
-                    if json_resp:
-                        raise InvalidAppSecretError(f"Invalid app secret: {json_resp}.\n" + RESET)
-                    else:
-                        raise InvalidAppSecretError(f"Invalid app secret. Status 400.\n" + RESET)
+        # 3. Tratamento de Erros de Negócio da API
+        if epoint == "user/login" and status == 400:
+            if "invalid" in text.lower(): 
+                raise AuthenticationError("Invalid email or password.")
+        elif epoint in ["track/getFileUrl", "favorite/getUserFavorites", "playlist/getUserPlaylists", "file/url"] and status == 400:
+            msg = json_resp if json_resp else "Status 400."
+            raise InvalidAppSecretError(f"Invalid app secret: {msg}\n{RESET}")
 
-                if epoint == "user/get" and status == 400: return {}
-                if status >= 400 and status != 400:
-                     r.raise_for_status()
+        if epoint == "user/get" and status == 400: 
+            return {}
+            
+        if status >= 400 and status != 400:
+            # Re-lança se o status for erro não tratado acima
+            pass # idealmente r.raise_for_status(), mas o aiohttp já lida com o try/except principal
 
-                if json_resp is not None:
-                     return self._normalize_json_strings(json_resp)
-                try:
-                     return self._normalize_json_strings(await r.json())
-                except Exception:
-                     return {}
+        # 4. Formatação da Resposta
+        if json_resp is not None:
+            return self._normalize_json_strings(json_resp)
+            
+        return {}
 
-            except aiohttp.ClientResponseError as e:
-                if attempt < max_retries - 1 and e.status in [429, 500, 502, 503, 504]:
-                    import asyncio
-                    await asyncio.sleep(backoff_factor * (2 ** attempt))
-                    continue
-                raise
-            except aiohttp.ClientError as e:
-                if attempt < max_retries - 1:
-                    import asyncio
-                    await asyncio.sleep(backoff_factor * (2 ** attempt))
-                    continue
-                raise
-
-    async def multi_meta(self, epoint, key, id, type):
+    async def multi_meta(self, epoint: str, key: str, id: str, type: str) -> AsyncGenerator[Dict, None]:
         offset = 0
         limit = 50
         while True:
@@ -326,13 +321,11 @@ class Client:
             total_available = res.get(items_key, {}).get("total", res.get(key, 0))
             if offset >= total_available: break
 
-    async def get_track_meta(self, id): return await self.api_call("track/get", id=id)
+    async def get_track_meta(self, id: str) -> Dict: 
+        return await self.api_call("track/get", id=id)
 
     async def get_track_ids_from_list(self, tracks_list: list) -> list:
-        from qobuz_dl.color import OFF, GREEN, RED, YELLOW, CYAN
-        import difflib
-        
-        print(f"{CYAN}[*] Matching Last.fm tracks with Qobuz database (Fuzzy matching & Interactive mode enabled)...{OFF}")
+        print(f"{CYAN}[*] Matching Last.fm tracks with Qobuz database...{OFF}")
         valid_track_ids = []
         AUTO_ACCEPT_THRESHOLD = 0.75 
         PROMPT_THRESHOLD = 0.60      
@@ -363,8 +356,8 @@ class Client:
                         valid_track_ids.append(best_match_id)
                     elif highest_ratio >= PROMPT_THRESHOLD and best_match_id:
                         print(f"\n{YELLOW}[?] Borderline match detected ({highest_ratio*100:.0f}% similarity){OFF}")
-                        print(f"    Target (Last.fm): {item['artist']} - {item['title']}")
-                        print(f"    Found  (Qobuz)  : {best_match_name}")
+                        print(f"    Target: {item['artist']} - {item['title']}")
+                        print(f"    Found : {best_match_name}")
                         choice = input(f"{CYAN}    Do you want to download this track anyway? [y/n]: {OFF}").strip().lower()
                         if choice == 'y':
                             valid_track_ids.append(best_match_id)
@@ -372,62 +365,43 @@ class Client:
                         else:
                             print(f"{RED}    [-] Track skipped manually.{OFF}")
                     else:
-                        print(f"{YELLOW}[!] Skipping: '{query}' (Best match was only {highest_ratio*100:.0f}% similar){OFF}")
+                        print(f"{YELLOW}[!] Skipping: '{query}' (Best match: {highest_ratio*100:.0f}%){OFF}")
                 else:
-                    print(f"{YELLOW}[!] Skipping (No results on Qobuz for): '{query}'{OFF}")
+                    print(f"{YELLOW}[!] Skipping (No results): '{query}'{OFF}")
             except Exception as e:
                 print(f"{RED}[!] Error searching for '{query}': {e}{OFF}")
                 
         print(f"\n{GREEN}[+] Successfully matched {len(valid_track_ids)} out of {len(tracks_list)} tracks!{OFF}")
         return valid_track_ids
 
-    async def search_albums(self, query, limit=20):
+    async def search_albums(self, query: str, limit: int = 20) -> Dict:
         try: return await self.api_call("catalog/search", query=query, type="albums", limit=limit)
         except Exception: return {}
 
-    async def search_tracks(self, query, limit=20):
+    async def search_tracks(self, query: str, limit: int = 20) -> Dict:
         try: return await self.api_call("catalog/search", query=query, type="tracks", limit=limit)
         except Exception: return {}
 
-    async def search_playlists(self, query, limit=20):
+    async def search_playlists(self, query: str, limit: int = 20) -> Dict:
         try: return await self.api_call("catalog/search", query=query, type="playlists", limit=limit)
         except Exception: return {}
 
-    async def search_artists(self, query, limit=20):
+    async def search_artists(self, query: str, limit: int = 20) -> Dict:
         try: return await self.api_call("catalog/search", query=query, type="artists", limit=limit)
         except Exception: return {}
 
-    async def get_favorites(self, fav_type="albums", limit=100, offset=0):
+    async def get_favorites(self, fav_type: str = "albums", limit: int = 100, offset: int = 0) -> Dict:
         try: 
             if fav_type in ["playlists", "playlist"]:
                 res = await self.api_call("playlist/getUserPlaylists", limit=limit, offset=offset)
-                
-                items = []
-                total = 0
-                if "playlists" in res and "items" in res["playlists"]:
-                    items = res["playlists"]["items"]
-                    total = res["playlists"].get("total", len(items))
-                elif "items" in res:
-                    items = res["items"]
-                    total = res.get("total", len(items))
+                items = res.get("playlists", {}).get("items", res.get("items", []))
+                total = res.get("playlists", {}).get("total", res.get("total", len(items)))
                     
-                return {
-                    "favorites": {
-                        "playlists": {
-                            "items": items,
-                            "total": total
-                        }
-                    },
-                    "playlists": {
-                        "items": items,
-                        "total": total
-                    }
-                }
+                return {"favorites": {"playlists": {"items": items, "total": total}},
+                        "playlists": {"items": items, "total": total}}
                 
-            # Default to favorites extraction if NOT playlist
             res = await self.api_call("favorite/getUserFavorites", fav_type=fav_type, limit=limit, offset=offset)
-
-            # Reconstruct safely for normal items so it doesn't return NoneType on items extraction
+            
             items = []
             total = 0
             if "favorites" in res and fav_type in res["favorites"]:
@@ -437,34 +411,23 @@ class Client:
                 items = res[fav_type].get("items", [])
                 total = res[fav_type].get("total", len(items))
 
-            return {
-                "favorites": {
-                    fav_type: {
-                        "items": items,
-                        "total": total
-                    }
-                },
-                fav_type: {
-                    "items": items,
-                    "total": total
-                }
-            }
+            return {"favorites": {fav_type: {"items": items, "total": total}},
+                    fav_type: {"items": items, "total": total}}
 
         except Exception as e: 
             logger.error(f"{RED}[!] API Error fetching {fav_type}: {e}{OFF}")
             return {}
 
-    async def get_user_playlists(self, limit=100, offset=0):
-        try: 
-            return await self.api_call("playlist/getUserPlaylists", limit=limit, offset=offset)
+    async def get_user_playlists(self, limit: int = 100, offset: int = 0) -> Dict:
+        try: return await self.api_call("playlist/getUserPlaylists", limit=limit, offset=offset)
         except Exception as e: 
             logger.error(f"{RED}[!] API Error fetching playlists: {e}{OFF}")
             return {}
             
-    async def add_favorite_album(self, album_id):
+    async def add_favorite_album(self, album_id: str) -> Dict:
         return await self.api_call("favorite/create", album_ids=str(album_id), artist_ids="", track_ids="")
         
-    async def get_track_url(self, id, fmt_id, force_segments=False):
+    async def get_track_url(self, id: str, fmt_id: int, force_segments: bool = False) -> Dict:
         if int(fmt_id) == 5:
             return await self.api_call("track/getFileUrl", id=id, fmt_id=fmt_id)
 
@@ -487,12 +450,12 @@ class Client:
         if "key" in track: track["raw_key"] = self._unwrap_track_key(track["key"])
         return track
 
-    def get_artist_meta(self, id): return self.multi_meta("artist/get", "albums_count", id, None)
-    def get_plist_meta(self, id): return self.multi_meta("playlist/get", "tracks_count", id, None)
-    def get_label_meta(self, id): return self.multi_meta("label/get", "albums_count", id, None)
-    async def get_album_meta(self, id): return await self.api_call("album/get", id=id)
+    def get_artist_meta(self, id: str): return self.multi_meta("artist/get", "albums_count", id, None)
+    def get_plist_meta(self, id: str): return self.multi_meta("playlist/get", "tracks_count", id, None)
+    def get_label_meta(self, id: str): return self.multi_meta("label/get", "albums_count", id, None)
+    async def get_album_meta(self, id: str): return await self.api_call("album/get", id=id)
     
-    async def cfg_setup(self):
+    async def cfg_setup(self) -> None:
         for secret in self.secrets:
             try:
                 await self.api_call("track/getFileUrl", id=5966783, fmt_id=5, sec=secret)
