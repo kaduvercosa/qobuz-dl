@@ -254,12 +254,12 @@ A maneira mais fácil e oficial de instalar a Ultimate Edition. O `pip` cuida de
 ## Instalação
 
 ### Via PyPI (Recomendado)
->>>>>>> 76c7cf3e7fb22c6c157c0896e32e246525f3b2e2
+
 ```bash
 pip install qobuz-dl-master
 ```
 
-<<<<<<< HEAD
+
 ### 🍏 2. Instalação no iSH Shell (iOS / iPadOS)
 
 A instalação padrão falhará pela falta de compiladores. Instale os pré-requisitos Alpine antes para evitar que o Linux tente usar o Rust/C++ ou quebrar ao instalar as bibliotecas principais do qobuz-dl:
@@ -328,7 +328,7 @@ qobuz-dl -r
 qobuz-dl dl https://play.qobuz.com/album/0060254723893
 qobuz-dl dl https://play.qobuz.com/artist/123456
 qobuz-dl dl https://play.qobuz.com/playlist/12345678
->>>>>>> 76c7cf3e7fb22c6c157c0896e32e246525f3b2e2
+
 ```
 
 Múltiplas URLs de uma vez:
