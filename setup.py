@@ -33,7 +33,12 @@ requirements = [
     "pycryptodome",
     "questionary",
     "lyricsgenius",
+<<<<<<< HEAD
     "langdetect"
+=======
+    "langdetect",
+    "deepl"  # FIX: DeepL API Oficial para traduções de letras
+>>>>>>> 76c7cf3e7fb22c6c157c0896e32e246525f3b2e2
 ]
 
 setup(

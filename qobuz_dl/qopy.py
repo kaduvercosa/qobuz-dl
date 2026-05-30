@@ -4,7 +4,11 @@ import logging
 import time
 import unicodedata
 import asyncio
+<<<<<<< HEAD
 import difflib
+=======
+import difflib  # Movido para o topo
+>>>>>>> 76c7cf3e7fb22c6c157c0896e32e246525f3b2e2
 from typing import Any, Tuple, Dict, Optional, List, AsyncGenerator
 
 import aiohttp
@@ -57,6 +61,7 @@ class Client:
                     logger.info(f"{GREEN}[+] App ID dynamically updated: {self.id}{OFF}")
             except Exception as e:
                 logger.warning(f"Não foi possível atualizar app_id/secrets dinamicamente: {e}")
+<<<<<<< HEAD
 
         self.headers = self._build_initial_headers()
         
@@ -72,6 +77,23 @@ class Client:
         self._initial_pwd = pwd
         self._initial_uat = user_auth_token
 
+=======
+
+        self.headers = self._build_initial_headers()
+        
+        self.session = None
+        self.base = "https://www.qobuz.com/api.json/0.2/"
+        self.sec = None
+        self.session_id = None
+        self.session_infos = None
+        self.session_key = None
+        self.uat = None
+        
+        self._initial_email = email
+        self._initial_pwd = pwd
+        self._initial_uat = user_auth_token
+
+>>>>>>> 76c7cf3e7fb22c6c157c0896e32e246525f3b2e2
     def _build_initial_headers(self) -> Dict[str, str]:
         headers = {"X-App-Id": self.id}
         if self.force_english:
@@ -188,6 +210,10 @@ class Client:
                         text = await r.text()
                         json_resp = await r.json() if "application/json" in r.headers.get("Content-Type", "") else None
 
+<<<<<<< HEAD
+=======
+                # Se falhou com códigos de rede comuns, tenta novamente
+>>>>>>> 76c7cf3e7fb22c6c157c0896e32e246525f3b2e2
                 if status in [429, 500, 502, 503, 504]:
                     if attempt < max_retries - 1:
                         await asyncio.sleep(backoff_factor * (2 ** attempt))
@@ -206,6 +232,10 @@ class Client:
         """Constrói os parâmetros e orquestra a chamada à API."""
         params = {}
         
+<<<<<<< HEAD
+=======
+        # 1. Preparação de parâmetros baseados no endpoint
+>>>>>>> 76c7cf3e7fb22c6c157c0896e32e246525f3b2e2
         if epoint == "user/login":
             if kwargs.get("user_auth_token"):
                 params = {"user_auth_token": kwargs["user_auth_token"], "app_id": self.id}
@@ -264,12 +294,23 @@ class Client:
             elif epoint == "artist/get": params["artist_id"] = val_id; params["extra"] = "albums"
             elif epoint == "label/get": params["label_id"] = val_id; params["extra"] = "albums"
 
+<<<<<<< HEAD
         params = {k: v for k, v in params.items() if v is not None}
 
         url = self.base + epoint
         req_kwargs = {"headers": self.headers.copy()}
         
         if epoint in ["user/login", "favorite/create", "playlist/addTracks", "playlist/create"]:
+=======
+        # Remove valores None
+        params = {k: v for k, v in params.items() if v is not None}
+
+        # 2. Execução do Pedido
+        url = self.base + epoint
+        req_kwargs = {"headers": self.headers.copy()}
+        
+        if epoint in ["user/login", "favorite/create"]:
+>>>>>>> 76c7cf3e7fb22c6c157c0896e32e246525f3b2e2
             method = "POST"
             req_kwargs["data"] = params
         elif epoint == "session/start":
@@ -282,6 +323,10 @@ class Client:
 
         status, text, json_resp = await self._do_request(method, url, req_kwargs, epoint)
 
+<<<<<<< HEAD
+=======
+        # 3. Tratamento de Erros de Negócio da API
+>>>>>>> 76c7cf3e7fb22c6c157c0896e32e246525f3b2e2
         if epoint == "user/login" and status == 400:
             if "invalid" in text.lower(): 
                 raise AuthenticationError("Invalid email or password.")
@@ -291,12 +336,26 @@ class Client:
 
         if epoint == "user/get" and status == 400: 
             return {}
+<<<<<<< HEAD
 
         if json_resp is not None:
             return self._normalize_json_strings(json_resp)
             
         return {}
 
+=======
+            
+        if status >= 400 and status != 400:
+            # Re-lança se o status for erro não tratado acima
+            pass # idealmente r.raise_for_status(), mas o aiohttp já lida com o try/except principal
+
+        # 4. Formatação da Resposta
+        if json_resp is not None:
+            return self._normalize_json_strings(json_resp)
+            
+        return {}
+
+>>>>>>> 76c7cf3e7fb22c6c157c0896e32e246525f3b2e2
     async def multi_meta(self, epoint: str, key: str, id: str, type: str) -> AsyncGenerator[Dict, None]:
         offset = 0
         limit = 50
@@ -417,6 +476,7 @@ class Client:
     async def add_favorite_album(self, album_id: str) -> Dict:
         return await self.api_call("favorite/create", album_ids=str(album_id), artist_ids="", track_ids="")
         
+<<<<<<< HEAD
     async def add_playlist_tracks(self, playlist_id: str, track_ids: str) -> Dict:
         return await self.api_call("playlist/addTracks", playlist_id=str(playlist_id), track_ids=str(track_ids))
         
@@ -424,6 +484,8 @@ class Client:
         """Cria uma nova playlist na conta do usuário."""
         return await self.api_call("playlist/create", name=name)
         
+=======
+>>>>>>> 76c7cf3e7fb22c6c157c0896e32e246525f3b2e2
     async def get_track_url(self, id: str, fmt_id: int, force_segments: bool = False) -> Dict:
         if int(fmt_id) == 5:
             return await self.api_call("track/getFileUrl", id=id, fmt_id=fmt_id)

@@ -1,0 +1,61 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "qobuz-dl-master"
+dynamic = ["version"]
+description = "The Ultimate Lossless and Hi-Res music downloader for Qobuz with ReplayGain and Classical metadata"
+readme = "README.md"
+requires-python = ">=3.6"
+license = { text = "GPL-3.0-or-later" }
+
+authors = [
+    { name = "Eduardo (kaduvercosa)", email = "kaduvercosa@users.noreply.github.com" }
+]
+
+keywords = [
+    "qobuz",
+    "music",
+    "downloader",
+    "flac",
+    "hi-res",
+    "lossless"
+]
+
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: GNU General Public License (GPL)",
+    "Operating System :: OS Independent"
+]
+
+dependencies = [
+    "pathvalidate",
+    "aiohttp",
+    "aiofiles",
+    "mutagen",
+    "tqdm",
+    "pick==1.6.0",
+    "beautifulsoup4",
+    "colorama",
+    "pycryptodome",
+    "questionary",
+    "lyricsgenius",
+    "langdetect",
+    "deepl"
+]
+
+[project.urls]
+Homepage = "https://github.com/kaduvercosa/qobuz-dl"
+Repository = "https://github.com/kaduvercosa/qobuz-dl"
+Issues = "https://github.com/kaduvercosa/qobuz-dl/issues"
+
+[project.scripts]
+qobuz-dl = "qobuz_dl:main"
+qdl = "qobuz_dl:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "qobuz_dl.__version__" }
+
+[tool.setuptools.packages.find]
+include = ["qobuz_dl*"]

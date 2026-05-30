@@ -417,13 +417,18 @@ def qobuz_dl_args(default_quality: Union[int, str] = 6, default_limit: Union[int
     fix_lyrics_cmd = fix_lyrics_args(subparsers)
     sync_pl_cmd = sync_playlist_args(subparsers)
     
+<<<<<<< HEAD
     # Comandos "Standalone" (Interceptados pelo sys.argv antes do argparse)
+=======
+        # Comandos "Standalone" (Interceptados pelo sys.argv antes do argparse)
+>>>>>>> 76c7cf3e7fb22c6c157c0896e32e246525f3b2e2
     subparsers.add_parser(
         "radar",
         description="Autonomous radar to fetch and download new releases based on config.",
         help="scan and download new releases (radar mode)"
     )
     
+<<<<<<< HEAD
     # --- INÍCIO DA INTEGRAÇÃO DO COMANDO OST NO MENU ---
     subparsers.add_parser(
         "ost_hunter",
@@ -433,6 +438,8 @@ def qobuz_dl_args(default_quality: Union[int, str] = 6, default_limit: Union[int
     )
     # --- FIM DA INTEGRAÇÃO ---
     
+=======
+>>>>>>> 76c7cf3e7fb22c6c157c0896e32e246525f3b2e2
     subparsers.add_parser(
         "stats",
         description="Generate and display detailed statistics of your local downloaded library.",
