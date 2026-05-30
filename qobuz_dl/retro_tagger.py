@@ -1,4 +1,5 @@
 import os
+import re
 import time
 import logging
 from pathlib import Path
@@ -110,13 +111,15 @@ async def _process_single_file(semaphore: asyncio.Semaphore, file_path: Path, en
             if not title or not artist:
                 return
 
-            search_artist = album_artist if album_artist and album_artist.lower() != "various artists" else artist
+            raw_artist = album_artist if album_artist and album_artist.lower() != "various artists" else artist
+            # Corta a string em virgulas, &, feat, ft, ; ou / e pega apenas o primeiro [0]
+            search_artist = re.split(r'(?i)\s*(?:,|\&| feat\.| ft\.|;|\/)\s*',raw_artist)[0].strip()
 
             if not overwrite and has_lyrics:
                 msg = f"{YELLOW}  [*] Ignorado (Já Marcado): {title} - {search_artist}{OFF}"
                 return
 
-            safe_print(f"{CYAN}[{current_idx}/{total_files}] Buscando: {title} - {search_artist}...{OFF}")
+            safe_print(f"{GREEN}[{current_idx}/{total_files}] Buscando: {title} - {search_artist}...{OFF}")
             task_start = time.monotonic()
 
             res_tuple = await engine.fetch_and_inject(
@@ -193,7 +196,7 @@ async def inject_lyrics_retroactively(directory_path: str, genius_token: str = N
     safe_print(f"\n{CYAN}[*] Starting retroactive lyrics scan in: {directory_path}{OFF}\n")
 
     if overwrite:
-        safe_print(f"{RED}[!] OVERWRITE MODE ENABLED: Existing lyrics will be replaced.{OFF}\n")
+        safe_print(f"{YELLOW}[!] OVERWRITE MODE ENABLED: Existing lyrics will be replaced.{OFF}\n")
 
     target_dir = Path(directory_path)
     if not target_dir.is_dir():
@@ -305,7 +308,8 @@ async def interactive_fix_lyrics(directory_path: str, genius_token: str = None,
 async def _handle_manual_lyric_search(track_info: dict, engine: Any) -> None:
     from pick import pick
 
-    search_artist = track_info["album_artist"] if track_info["album_artist"] and track_info["album_artist"].lower() != "various artists" else track_info["artist"]
+    raw_artist = track_info["album_artist"] if track_info["album_artist"] and track_info["album_artist"].lower() != "various artists" else track_info["artist"]
+    search_artist = re.split(r'(?i)\s*(?:,|\&| feat\.| ft\.|;|\/)\s*',raw_artist)[0].strip()
     track_title = track_info["title"]
     real_duration = track_info.get("duration", 0)
     real_mins = int(real_duration // 60)
@@ -374,12 +378,27 @@ async def _handle_manual_lyric_search(track_info: dict, engine: Any) -> None:
                     "albumName": "Genius"
                 })
 
+    async def fetch_musixmatch():
+        text = await engine._fetch_musixmatch_lyrics(search_artist, track_title)
+        if text:
+            is_sync = engine._is_strictly_synced(text)
+            results.append({
+                "provider": "Musixmatch",
+                "duration": real_duration, 
+                "syncedLyrics": text if is_sync else None,
+                "plainLyrics": text if not is_sync else None,
+                "artistName": search_artist,
+                "trackName": track_title,
+                "albumName": "Musixmatch"
+            })
+
     try:
         await asyncio.gather(
             fetch_lrclib(),
             fetch_lyricsplus(),
             fetch_netease(),
-            fetch_genius()
+            fetch_genius(),
+            fetch_musixmatch()
         )
     except Exception as e:
         print(f"{RED}[!] Search failed: {e}{OFF}")
@@ -393,10 +412,12 @@ async def _handle_manual_lyric_search(track_info: dict, engine: Any) -> None:
     options = []
     option_mapping = {}
 
+    # Nova Lógica de Organização: Musixmatch ganha coroa de prioridade 0
     def sort_key(r):
         dur = r.get("duration", 0)
-        if dur == 0: return float('inf')
-        return abs(dur - real_duration)
+        dur_diff = abs(dur - real_duration) if dur > 0 else float('inf')
+        provider_weight = 0 if r.get("provider") == "Musixmatch" else 1
+        return (provider_weight, dur_diff)
 
     results.sort(key=sort_key)
 

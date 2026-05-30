@@ -48,6 +48,9 @@ class LyricsEngine:
         self.fasttext_model = None
         self._init_fasttext()
         
+        # Cache do token para evitar Rate Limit e Banimentos do Musixmatch
+        self._mxm_token = None
+        
         # Lista de palavras que não precisam de tradução isolada
         self.pt_false_positives = {"oh", "yeah", "ah", "baby", "na", "la", "uh", "hey", "ooh", "woah"}
 
@@ -146,7 +149,7 @@ class LyricsEngine:
                     # Ignora se a linha for composta APENAS por palavras como "oh", "yeah", "baby"
                     is_filler = bool(words) and words.issubset(self.pt_false_positives)
                     
-                    # Detecta o idioma da linha
+                    # Detecta o idioma da linha (com mais de 75% de confiança para evitar falsos portugueses)
                     lang, conf = self._detect_lang(txt)
                     is_pt = lang and lang.startswith('pt') and conf > 0.75
 
@@ -208,20 +211,68 @@ class LyricsEngine:
             return None
 
     async def _fetch_musixmatch_lyrics(self, artist, title):
-        headers = {"x-mxm-app-version": "10.1.1", "User-Agent": "Musixmatch/2025120901"}
-        try:
-            async with aiohttp.ClientSession(headers=headers) as session:
-                resp = await session.get("https://apic-appmobile.musixmatch.com/ws/1.1/token.get?app_id=mac-ios-v2.0", timeout=50)
-                data = await resp.json(content_type=None)
-                token = data["message"]["body"]["user_token"]
-                params = {"q_artist": artist, "q_track": title, "format": "json", "namespace": "lyrics_richsynched", "usertoken": token}
-                resp = await session.get("https://apic-appmobile.musixmatch.com/ws/1.1/macro.subtitles.get?" + urllib.parse.urlencode(params), timeout=50)
-                data = await resp.json(content_type=None)
-                subtitles = data["message"]["body"]["macro_calls"]["track.subtitles.get"]["message"]["body"]
-                if "subtitle_list" in subtitles: 
-                    return subtitles["subtitle_list"][0]["subtitle"]["subtitle_body"]
-        except: 
-            return None
+        # Cabeçalhos fortificados para camuflar o script como um iPhone real
+        headers = {
+            "x-mxm-app-version": "10.1.1", 
+            "User-Agent": "Musixmatch/2025120901 CFNetwork/1404.0.5 Darwin/22.3.0",
+            "Accept": "*/*",
+            "Accept-Language": "en-US,en;q=0.9"
+        }
+        
+        max_retries = 2
+        for attempt in range(max_retries):
+            try:
+                async with aiohttp.ClientSession(headers=headers) as session:
+                    # 1. Pega token APENAS se não tivermos um salvo na memória (Evita banimento)
+                    if not self._mxm_token:
+                        resp_token = await session.get("https://apic-appmobile.musixmatch.com/ws/1.1/token.get?app_id=mac-ios-v2.0", timeout=30)
+                        data_token = await resp_token.json(content_type=None)
+                        if data_token.get("message", {}).get("header", {}).get("status_code") == 200:
+                            self._mxm_token = data_token["message"]["body"]["user_token"]
+                        else:
+                            await asyncio.sleep(1)
+                            continue
+
+                    # 2. Faz a requisição da letra
+                    params = {
+                        "q_artist": artist, 
+                        "q_track": title, 
+                        "format": "json", 
+                        "namespace": "lyrics_richsynched", 
+                        "usertoken": self._mxm_token,
+                        "app_id": "mac-ios-v2.0"
+                    }
+                    
+                    resp = await session.get("https://apic-appmobile.musixmatch.com/ws/1.1/macro.subtitles.get", params=params, timeout=30)
+                    data = await resp.json(content_type=None)
+                    
+                    status_code = data.get("message", {}).get("header", {}).get("status_code")
+                    
+                    # Se o token expirou ou fomos barrados (401/403), jogamos o token fora e tentamos de novo
+                    if status_code in (401, 403):
+                        logger.debug("[!] Musixmatch revogou o token. Gerando um novo...")
+                        self._mxm_token = None
+                        await asyncio.sleep(1.5)
+                        continue
+                        
+                    # Se deu tudo certo (200), extraímos a letra
+                    if status_code == 200:
+                        body = data["message"]["body"]
+                        if "macro_calls" in body and "track.subtitles.get" in body["macro_calls"]:
+                            sub_msg = body["macro_calls"]["track.subtitles.get"]["message"]
+                            if sub_msg["header"]["status_code"] == 200 and "subtitle_list" in sub_msg["body"]:
+                                subtitle_list = sub_msg["body"]["subtitle_list"]
+                                if subtitle_list:
+                                    return subtitle_list[0]["subtitle"]["subtitle_body"]
+                    
+                    # Se chegou aqui com status 200 mas não retornou 'subtitle_list', é porque a música realmente não tem letra lá.
+                    break
+                    
+            except Exception as e: 
+                logger.debug(f"[*] Erro Musixmatch (tentativa {attempt+1}): {e}")
+                await asyncio.sleep(1)
+                
+        return None
 
     async def _fetch_netease_lyrics(self, artist, title):
         try:
@@ -238,16 +289,18 @@ class LyricsEngine:
         if not overwrite and self._has_lyrics(file_path, check_lrc=True):
             return (True, 0, 0, "Local")
 
+        clan_artist = re.split(r'(?i)\s*(?:,|\&| feat\.| ft\.|;|\/)\s*',album_artist)[0].strip() if album_artist else ""
+ 
         status = None
         try:
-            mxm_lyrics = await self._fetch_musixmatch_lyrics(album_artist, track)
+            mxm_lyrics = await self._fetch_musixmatch_lyrics(clean_artist, track)
             if mxm_lyrics and (not self.synced_only or self._is_strictly_synced(mxm_lyrics)):
                 final_lyrics, trans_count, total_lines = await self._process_translation(mxm_lyrics, is_synced=True)
                 self._inject_metadata(file_path, final_lyrics)
                 if save_lrc: self._save_lrc_file(file_path, final_lyrics)
                 return (True, trans_count, total_lines, "200 [Musixmatch]")
 
-            lyricsplus_lyrics = await self._fetch_lyrics_plus(album_artist, track)
+            lyricsplus_lyrics = await self._fetch_lyrics_plus(clean_artist, track)
             if lyricsplus_lyrics and (not self.synced_only or self._is_strictly_synced(lyricsplus_lyrics)):
                 final_lyrics, trans_count, total_lines = await self._process_translation(lyricsplus_lyrics, is_synced=True)
                 self._inject_metadata(file_path, final_lyrics)
@@ -256,7 +309,7 @@ class LyricsEngine:
 
             try:
                 async with aiohttp.ClientSession() as session:
-                    params = {"artist_name": album_artist, "track_name": track, "album_name": album}
+                    params = {"artist_name": clean_artist, "track_name": track, "album_name": album}
                     async with session.get("https://lrclib.net/api/get", params=params, timeout=15) as resp:
                         status = resp.status
                         if status == 200:
@@ -275,7 +328,7 @@ class LyricsEngine:
             except Exception as e:
                 logger.debug(f"[*] Erro LRCLIB: {e}")
 
-            netease_lyrics = await self._fetch_netease_lyrics(album_artist, track)
+            netease_lyrics = await self._fetch_netease_lyrics(clean_artist, track)
             if netease_lyrics and (not self.synced_only or self._is_strictly_synced(netease_lyrics)):
                 final_lyrics, trans_count, total_lines = await self._process_translation(netease_lyrics, is_synced=True)
                 self._inject_metadata(file_path, final_lyrics)
@@ -284,7 +337,7 @@ class LyricsEngine:
 
             # Genius só será chamado se synced_only=False
             if self.genius and not self.synced_only:
-                song = await asyncio.to_thread(self.genius.search_song, track, album_artist)
+                song = await asyncio.to_thread(self.genius.search_song, track, clean_artist)
                 if song and song.lyrics:
                     final_lyrics, trans_count, total_lines = await self._process_translation(song.lyrics, is_synced=False)
                     self._inject_metadata(file_path, final_lyrics)
@@ -342,4 +395,3 @@ class LyricsEngine:
         except Exception as e:
             logger.error(f"Erro na injeção manual: {e}")
             return (False, 0, 0)
-
