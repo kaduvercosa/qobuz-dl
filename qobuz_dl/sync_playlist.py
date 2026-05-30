@@ -84,14 +84,12 @@ def _clean_empty_dirs(base_directory: str | Path, exclude_dirs: set = None) -> N
     exclude.add("_Playlists")
     base_dir = Path(base_directory)
     
-    # O os.walk ainda é útil aqui para varrer de baixo para cima (topdown=False)
     for root, dirs, files in os.walk(base_dir, topdown=False):
         for d in dirs:
             dir_path = Path(root) / d
             try:
                 if d in exclude:
                     continue
-                # Se a pasta estiver vazia (sem conteúdo)
                 if not any(dir_path.iterdir()):
                     dir_path.rmdir()
                     rel = dir_path.relative_to(base_dir)
@@ -113,11 +111,10 @@ async def _execute_sync(qobuz_dl: Any, target_folder: Path, to_delete_ids: set,
     for tid in to_delete_ids:
         fpath = local_tracks[tid]
         try:
-            fpath.unlink() # Substitui os.remove()
+            fpath.unlink()
             deleted_count += 1
             logger.info(f"  {RED}[-] Deleted: {fpath.name}{OFF}")
 
-            # Apaga o ficheiro .lrc se existir
             lrc_path = fpath.with_suffix(".lrc")
             if lrc_path.is_file():
                 lrc_path.unlink()
@@ -151,7 +148,7 @@ async def _execute_sync(qobuz_dl: Any, target_folder: Path, to_delete_ids: set,
         except Exception as e:
             logger.error(f"  {RED}[!] Failed to download track {tid}: {e}{OFF}")
 
-    # Restaura as configurações
+    # Restaura as configurações originais
     qobuz_dl.folder_format = original_folder_format
     qobuz_dl.settings.multiple_disc_one_dir = original_multi_disc
 
@@ -261,6 +258,6 @@ async def sync_playlist(qobuz_dl: Any, url: str, folder: str, auto_confirm: bool
             logger.info(f"\n{YELLOW}Sync cancelled.{OFF}")
             return
 
-    # PASSO 4: Executar a Sincronização (movido para uma função separada)
+    # PASSO 4: Executar a Sincronização
     await _execute_sync(qobuz_dl, target_folder, to_delete_ids, to_download_ids, 
                         local_tracks, remote_items, remote_ids)

@@ -83,9 +83,8 @@ EMB_COVER_NAME = "embed_cover.jpg"
 
 class Download:
     def __init__(
-<<<<<<< HEAD
         self,
-        client,
+        client: Any,
         item_id: str,
         path: str,
         quality: int,
@@ -106,16 +105,8 @@ class Download:
         download_db=None,
         is_playlist: bool = False,           
         playlist_track_number: int = None, 
-        booklet_only: bool = False,        
-=======
-        self, client: Any, item_id: str, path: str, quality: int, embed_art: bool = False,
-        albums_only: bool = False, downgrade_quality: bool = False, cover_og_quality: bool = False,
-        no_cover: bool = False, folder_format: str = None, track_format: str = None, fetch_lyrics: bool = False,
-        no_lrc_files: bool = False, genius_token: str = None, deepl_api_key: str = None, target_lang: str = "PT-BR",
-        no_credits: bool = False, settings: QobuzDLSettings = None, download_db: str = None,
-        is_playlist: bool = False, playlist_track_number: int = None, booklet_only: bool = False
->>>>>>> 76c7cf3e7fb22c6c157c0896e32e246525f3b2e2
-    ):
+        booklet_only: bool = False):
+ 
         self.client = client
         self.item_id = item_id
         self.path = path

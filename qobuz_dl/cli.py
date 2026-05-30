@@ -22,12 +22,12 @@ logging.basicConfig(level=logging.INFO, format="%(message)s")
 # ============================================================
 # PATH CONFIGURATIONS (Using Pathlib)
 # ============================================================
-<<<<<<< HEAD
-=======
-# ============================================================
+
+#=======
+## ============================================================
 # PATH CONFIGURATIONS (Using Pathlib)
 # ============================================================
->>>>>>> 76c7cf3e7fb22c6c157c0896e32e246525f3b2e2
+
 def ensure_long_path(path: Union[str, Path]) -> str:
     """Garante o prefixo de long path do Windows (\\\\?\\) quando necessário."""
     if os.name != "nt":
@@ -58,7 +58,7 @@ elif is_ios:
 else:
     OS_CONFIG = Path(os.environ.get("HOME") or Path.home()) / ".config"
 # --- FIM DA DETECÇÃO ---
-<<<<<<< HEAD
+
 
 CONFIG_PATH = OS_CONFIG / "qobuz-dl"
 CONFIG_FILE = CONFIG_PATH / "config.ini"
@@ -66,7 +66,7 @@ QOBUZ_DB = CONFIG_PATH / "qobuz_dl.db"
 
 
 
-=======
+
 
 CONFIG_PATH = OS_CONFIG / "qobuz-dl"
 CONFIG_FILE = CONFIG_PATH / "config.ini"
@@ -74,7 +74,6 @@ QOBUZ_DB = CONFIG_PATH / "qobuz_dl.db"
 
 
 
->>>>>>> 76c7cf3e7fb22c6c157c0896e32e246525f3b2e2
 def validate_config_formats(formats_to_check: dict) -> None:
     """
     Scans the configuration format strings for unknown variables to prevent
@@ -335,7 +334,7 @@ async def amain():
             print(f"\n\n{RED}[!] Radar manualmente interrompido.. (CTRL+C).{OFF}")
         sys.exit(0)
 
-<<<<<<< HEAD
+
     # --- INÍCIO DA INTEGRAÇÃO DO OST HUNTER ---
     if len(sys.argv) > 1 and sys.argv[1] in ("ost", "ost_hunter"):
         from qobuz_dl.ost_hunter import amain as _async_run_ost
@@ -348,8 +347,8 @@ async def amain():
         sys.exit(0)
     # --- FIM DA INTEGRAÇÃO DO OST HUNTER ---
 
-=======
->>>>>>> 76c7cf3e7fb22c6c157c0896e32e246525f3b2e2
+
+
     if len(sys.argv) > 1 and sys.argv[1] == "stats":
         from qobuz_dl.db import get_folder_stats
         _cfg = configparser.ConfigParser(interpolation=None)
@@ -458,10 +457,10 @@ async def amain():
         sync_client = Client(email, password, app_id, secrets, user_auth_token=token, force_english=force_english)
         sync_dir = ensure_long_path(default_folder if arguments.sync_db == "DEFAULT" else arguments.sync_db)
         
-<<<<<<< HEAD
-=======
+
+
         # [!] Correção Crítica: O sync_database é agora uma função assíncrona!
->>>>>>> 76c7cf3e7fb22c6c157c0896e32e246525f3b2e2
+
         await sync_database(sync_dir, str(QOBUZ_DB), sync_client)
         
         sys.exit(f"\n{GREEN}Database synchronization finished successfully.{OFF}")

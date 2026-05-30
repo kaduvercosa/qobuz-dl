@@ -1,8 +1,5 @@
 import logging
-<<<<<<< HEAD
 import asyncio
-=======
->>>>>>> 76c7cf3e7fb22c6c157c0896e32e246525f3b2e2
 import aiohttp
 from urllib.parse import urljoin
 from bs4 import BeautifulSoup
@@ -13,7 +10,7 @@ from qobuz_dl.color import OFF, GREEN, RED, YELLOW, CYAN
 # Inicializamos o logger para manter a consistência com o resto do projeto
 logger = logging.getLogger(__name__)
 
-<<<<<<< HEAD
+
 async def fetch_lastfm_playlist(url: str, max_retries: int = 3) -> List[Dict[str, str]]:
     """
     Extrai as faixas (artista, título e álbum) de uma ou mais páginas do Last.fm.
@@ -27,7 +24,7 @@ async def fetch_lastfm_playlist(url: str, max_retries: int = 3) -> List[Dict[str
         return []
 
     logger.info(f"{CYAN}[*] Analyzing Last.fm playlist (Suporte a paginação ativado)...{OFF}")
-=======
+
 async def fetch_lastfm_playlist(url: str) -> List[Dict[str, str]]:
     """
     Extrai as faixas (artista e título) de um URL de uma playlist do Last.fm.
@@ -36,7 +33,7 @@ async def fetch_lastfm_playlist(url: str) -> List[Dict[str, str]]:
         Uma lista de dicionários no formato: [{'artist': 'Nome', 'title': 'Música'}]
     """
     logger.info(f"{CYAN}[*] Analyzing Last.fm playlist...{OFF}")
->>>>>>> 76c7cf3e7fb22c6c157c0896e32e246525f3b2e2
+
     
     # 2. Camuflagem de Headers Mais Robusta
     headers = {
@@ -45,8 +42,7 @@ async def fetch_lastfm_playlist(url: str) -> List[Dict[str, str]]:
         "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
     }
     
-<<<<<<< HEAD
-=======
+
     try:
         # A forma correta e recomendada pelo aiohttp para definir timeouts
         timeout = aiohttp.ClientTimeout(total=15)
@@ -67,12 +63,11 @@ async def fetch_lastfm_playlist(url: str) -> List[Dict[str, str]]:
 
     # Analisa o conteúdo HTML da página
     soup = BeautifulSoup(text, 'html.parser')
->>>>>>> 76c7cf3e7fb22c6c157c0896e32e246525f3b2e2
+
     tracks = []
     current_url = url
     page_count = 1
     
-<<<<<<< HEAD
     timeout = aiohttp.ClientTimeout(total=20)
     
     async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
@@ -148,7 +143,7 @@ async def fetch_lastfm_playlist(url: str) -> List[Dict[str, str]]:
             
             # Se não encontrar o botão "Next", define URL como None para quebrar o loop While
             current_url = None
-=======
+
     # Localiza todas as linhas da tabela que contêm as faixas
     rows = soup.find_all('tr', class_='chartlist-row')
     
@@ -164,16 +159,14 @@ async def fetch_lastfm_playlist(url: str) -> List[Dict[str, str]]:
             # Validação extra: garante que não adicionamos entradas vazias
             if artist and title:
                 tracks.append({"artist": artist, "title": title})
->>>>>>> 76c7cf3e7fb22c6c157c0896e32e246525f3b2e2
             
     # Resumo Final
     if not tracks:
         logger.warning(f"{YELLOW}[!] No tracks found. The playlist might be empty or Last.fm changed their layout.{OFF}")
     else:
-<<<<<<< HEAD
+
         logger.info(f"{GREEN}[+] Successfully extracted {len(tracks)} tracks across {page_count} page(s) from Last.fm!{OFF}")
-=======
+
         logger.info(f"{GREEN}[+] Successfully extracted {len(tracks)} tracks from Last.fm!{OFF}")
->>>>>>> 76c7cf3e7fb22c6c157c0896e32e246525f3b2e2
         
     return tracks

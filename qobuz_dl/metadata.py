@@ -3,7 +3,7 @@ import os
 import logging
 import mimetypes
 from pathlib import Path
-from typing import Dict, Any, Optional, Union
+from typing import Dict, Any, Optional
 
 from mutagen.flac import FLAC, Picture
 import mutagen.id3 as id3
@@ -128,10 +128,6 @@ def tag_flac(filename: str, root_dir: str, final_name: str, d: dict, album: dict
     if not settings.no_disc_total_tag:
         tags["DISCTOTAL"] = str(qobuz_album.get("media_count", "1"))
 
-<<<<<<< HEAD
-    # Retrieve the tech comments previously generated
-=======
->>>>>>> 76c7cf3e7fb22c6c157c0896e32e246525f3b2e2
     tech_comment = tags.get("COMMENT", "")
 
     if em_image:
@@ -139,20 +135,9 @@ def tag_flac(filename: str, root_dir: str, final_name: str, d: dict, album: dict
         if cover_path:
             _embed_flac_img(cover_path, audio)
             
-<<<<<<< HEAD
-            if tech_comment:
-                tags["COMMENT"] = f"{tech_comment}\n{cover_info}"
-            else:
-                tags["COMMENT"] = cover_info
-        # -------------------------------------------------------------------
-=======
+            # Puxa a info primeiro, e SÓ DEPOIS injeta no comentário
             cover_info = _get_cover_info(cover_path)
             tags["COMMENT"] = f"{tech_comment}\n{cover_info}" if tech_comment else cover_info
-
-    for k, v in tags.items():
-        if v:
-            audio[k] = v
->>>>>>> 76c7cf3e7fb22c6c157c0896e32e246525f3b2e2
 
     for k, v in tags.items():
         if v:
@@ -178,35 +163,10 @@ def tag_mp3(filename: str, root_dir: str, final_name: str, d: dict, album: dict,
         if cover_path:
             _embed_id3_img(cover_path, audio)
             
+            # Puxa a info primeiro, e SÓ DEPOIS injeta no comentário
             cover_info = _get_cover_info(cover_path)
             tags["COMMENT"] = f"{tech_comment}\n{cover_info}" if tech_comment else cover_info
 
-<<<<<<< HEAD
-    # Retrieve the tech comments previously generated
-    tech_comment = tags.get("COMMENT", "")
-    
-    if em_image:
-        _embed_id3_img(root_dir, audio)
-        
-        # --- INJEÇÃO DAS INFOS DA CAPA NA TAG DE COMENTÁRIO (SEM PILLOW) ---
-        cover_path = _find_cover_image(root_dir)
-        if cover_path:
-            try:
-                size_mb = os.path.getsize(cover_path) / (1024 * 1024)
-                cover_info = f"Cover Quality: _org | Size: {size_mb:.2f} MB"
-            except Exception as e:
-                logger.warning(f"Não foi possível ler o tamanho da capa: {e}")
-                cover_info = "Cover Quality: _org"
-            
-            # Merge cover info with tech comments to ensure Neutron Player reads everything
-            if tech_comment:
-                tags["COMMENT"] = f"{tech_comment}\n{cover_info}"
-            else:
-                tags["COMMENT"] = cover_info
-        # -------------------------------------------------------------------
-
-=======
->>>>>>> 76c7cf3e7fb22c6c157c0896e32e246525f3b2e2
     for k, v in tags.items():
         if v:
             id3tag = ID3_LEGEND.get(k.lower()) or ID3_LEGEND.get(k)
@@ -244,7 +204,6 @@ def _get_tags_to_add(qobuz_album: dict, qobuz_item: dict, settings: QobuzDLSetti
 
     performers_data = qobuz_item.get("performers", [])
     
-    # Lista estrita apenas dos papéis solicitados
     target_roles = ["mainartist", "main artist", "performedartist", "performed artist"]
     
     if isinstance(performers_data, list) and performers_data:
@@ -255,7 +214,6 @@ def _get_tags_to_add(qobuz_album: dict, qobuz_item: dict, settings: QobuzDLSetti
             
             roles_str = str(p.get("roles", [])).lower()
             
-            # Adiciona estritamente se bater com MainArtist ou PerformedArtist
             if any(role in roles_str for role in target_roles):
                 if name not in artists: artists.append(name)
                 
@@ -280,12 +238,10 @@ def _get_tags_to_add(qobuz_album: dict, qobuz_item: dict, settings: QobuzDLSetti
                 if any(role in roles_str for role in ["orchestra", "ensemble", "choir"]):
                     if name not in ensembles: ensembles.append(name)
 
-    # Remove duplicatas residuais
     artists = list(dict.fromkeys(artists))
     conductors = list(dict.fromkeys(conductors))
     ensembles = list(dict.fromkeys(ensembles))
 
-    # Sem fallbacks. Apenas assina se a lista não estiver vazia.
     if not settings.no_track_artist_tag and artists:
         tags["ARTIST"] = ", ".join(artists)
 
@@ -293,7 +249,6 @@ def _get_tags_to_add(qobuz_album: dict, qobuz_item: dict, settings: QobuzDLSetti
         tags["CONDUCTOR"] = ", ".join(conductors)
     if ensembles:
         tags["ENSEMBLE"] = ", ".join(ensembles)
-    # ----------------------------------------------------
 
     if not settings.no_composer_tag:
         tags["COMPOSER"] = qobuz_item.get("composer", {}).get("name", "")
@@ -319,7 +274,6 @@ def _get_tags_to_add(qobuz_album: dict, qobuz_item: dict, settings: QobuzDLSetti
     if not settings.no_explicit_tag:
         tags["ITUNESADVISORY"] = "1" if qobuz_album.get("parental_warning", False) else "0"
 
-    # --- AUDIOPHILE RESOLUTION TAGS ---
     tags["BITDEPTH"] = str(qobuz_item.get("maximum_bit_depth", "16"))
     tags["SAMPLERATE"] = str(qobuz_item.get("maximum_sampling_rate", "44.1"))
 
@@ -332,7 +286,6 @@ def _get_tags_to_add(qobuz_album: dict, qobuz_item: dict, settings: QobuzDLSetti
         if rg_peak is not None:
             tags["REPLAYGAIN_TRACK_PEAK"] = str(rg_peak)
 
-    # --- TECHNICAL COMMENT INJECTION ---
     qobuz_id = qobuz_item.get("id", "")
     album_id = qobuz_album.get("id", "")
     album_url = qobuz_album.get("url", "")

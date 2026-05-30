@@ -232,10 +232,6 @@ class QobuzDL:
         self.no_credits           = no_credits
         self.settings             = settings or QobuzDLSettings()
         self.booklet_only         = booklet_only
-<<<<<<< HEAD
-=======
-        self.booklet_only         = booklet_only
->>>>>>> 76c7cf3e7fb22c6c157c0896e32e246525f3b2e2
 
         # ── Estado interno ───────────────────────────────────────────────────
         self._file_lock:              Optional[asyncio.Lock] = None
@@ -514,7 +510,6 @@ class QobuzDL:
             else:
                 await self.handle_url(url)
 
-<<<<<<< HEAD
             if txt_file:
                 await self.mark_url_done_in_file(txt_file, original_url)
 
@@ -523,32 +518,16 @@ class QobuzDL:
 
     # ── Download em lote ────────────────────────────────────────────────────
 
-=======
-            #logger.info(f"{GREEN}[+] Completed: {original_url}{OFF}")
-
-            if txt_file:
-                await self.mark_url_done_in_file(txt_file, original_url)
-
-        except Exception as exc:
-            logger.error(f"{RED}[!] Error downloading {original_url}: {exc}{OFF}")
-
-    # ── Download em lote ────────────────────────────────────────────────────
-
->>>>>>> 76c7cf3e7fb22c6c157c0896e32e246525f3b2e2
     async def download_list_of_urls(self, urls: List[str], txt_file: Optional[str] = None):
         if not urls or not isinstance(urls, list):
             logger.info(f"{OFF}Nothing to download")
             return
 
-<<<<<<< HEAD
         # [!] CORREÇÃO AQUI: Forçando a conversão de max_workers para inteiro para evitar o TypeError
         try:
             max_batch_workers = int(getattr(self.settings, "max_workers", 3))
         except (ValueError, TypeError):
             max_batch_workers = 3
-=======
-        max_batch_workers = getattr(self.settings, "max_workers", 3)
->>>>>>> 76c7cf3e7fb22c6c157c0896e32e246525f3b2e2
 
         if len(urls) > 1 and max_batch_workers > 1 and txt_file is not None:
             logger.info(

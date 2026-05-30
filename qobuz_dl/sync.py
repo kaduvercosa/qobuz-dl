@@ -46,7 +46,6 @@ async def _extract_track_data(file_path: Path, client: Any) -> Tuple[Optional[st
     if not track_id and isrc:
         logger.info(f"{CYAN}[*] Missing local ID. Fetching via API (ISRC: {isrc})...{OFF}")
         try:
-            # Substituímos o asyncio.run() por um await natural
             res = await client.search_tracks(isrc, limit=1)
             
             if res and "tracks" in res and res["tracks"]["items"]:
@@ -54,7 +53,6 @@ async def _extract_track_data(file_path: Path, client: Any) -> Tuple[Optional[st
                 track_id = str(q_track["id"])
                 album_id = str(q_track.get("album", {}).get("id", ""))
                 
-            # Substituímos o time.sleep por asyncio.sleep para não bloquear o programa
             await asyncio.sleep(0.2)
             
         except Exception as e:
@@ -119,7 +117,6 @@ async def sync_database(directory: str | Path, db_path: str, client: Any) -> Non
                         media_type="album",
                         quality=quality, 
                         file_format=file_format, 
-                        # Substitui os.path.dirname por .parent do pathlib
                         saved_path=str(file_path.parent)
                     )
                     added_albums.add(album_id)

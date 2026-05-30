@@ -4,13 +4,9 @@ import logging
 import time
 import unicodedata
 import asyncio
-<<<<<<< HEAD
 import difflib
-=======
-import difflib  # Movido para o topo
->>>>>>> 76c7cf3e7fb22c6c157c0896e32e246525f3b2e2
-from typing import Any, Tuple, Dict, Optional, List, AsyncGenerator
 
+from typing import Any, Tuple, Dict, Optional, List, AsyncGenerator
 import aiohttp
 
 try:
@@ -61,7 +57,6 @@ class Client:
                     logger.info(f"{GREEN}[+] App ID dynamically updated: {self.id}{OFF}")
             except Exception as e:
                 logger.warning(f"Não foi possível atualizar app_id/secrets dinamicamente: {e}")
-<<<<<<< HEAD
 
         self.headers = self._build_initial_headers()
         
@@ -77,23 +72,7 @@ class Client:
         self._initial_pwd = pwd
         self._initial_uat = user_auth_token
 
-=======
 
-        self.headers = self._build_initial_headers()
-        
-        self.session = None
-        self.base = "https://www.qobuz.com/api.json/0.2/"
-        self.sec = None
-        self.session_id = None
-        self.session_infos = None
-        self.session_key = None
-        self.uat = None
-        
-        self._initial_email = email
-        self._initial_pwd = pwd
-        self._initial_uat = user_auth_token
-
->>>>>>> 76c7cf3e7fb22c6c157c0896e32e246525f3b2e2
     def _build_initial_headers(self) -> Dict[str, str]:
         headers = {"X-App-Id": self.id}
         if self.force_english:
@@ -193,7 +172,6 @@ class Client:
         return unpad(padded, AES.block_size)
 
     async def _do_request(self, method: str, url: str, kwargs_req: dict, epoint: str) -> Tuple[int, str, Any]:
-        """Executa o pedido HTTP com lógica de retry."""
         max_retries = 4
         backoff_factor = 1
 
@@ -210,10 +188,6 @@ class Client:
                         text = await r.text()
                         json_resp = await r.json() if "application/json" in r.headers.get("Content-Type", "") else None
 
-<<<<<<< HEAD
-=======
-                # Se falhou com códigos de rede comuns, tenta novamente
->>>>>>> 76c7cf3e7fb22c6c157c0896e32e246525f3b2e2
                 if status in [429, 500, 502, 503, 504]:
                     if attempt < max_retries - 1:
                         await asyncio.sleep(backoff_factor * (2 ** attempt))
@@ -229,13 +203,8 @@ class Client:
                 raise
 
     async def api_call(self, epoint: str, **kwargs) -> Dict:
-        """Constrói os parâmetros e orquestra a chamada à API."""
         params = {}
         
-<<<<<<< HEAD
-=======
-        # 1. Preparação de parâmetros baseados no endpoint
->>>>>>> 76c7cf3e7fb22c6c157c0896e32e246525f3b2e2
         if epoint == "user/login":
             if kwargs.get("user_auth_token"):
                 params = {"user_auth_token": kwargs["user_auth_token"], "app_id": self.id}
@@ -294,24 +263,16 @@ class Client:
             elif epoint == "artist/get": params["artist_id"] = val_id; params["extra"] = "albums"
             elif epoint == "label/get": params["label_id"] = val_id; params["extra"] = "albums"
 
-<<<<<<< HEAD
         params = {k: v for k, v in params.items() if v is not None}
 
         url = self.base + epoint
         req_kwargs = {"headers": self.headers.copy()}
         
+        # INJEÇÃO CORRETA DO TOKEN EM POSTS
         if epoint in ["user/login", "favorite/create", "playlist/addTracks", "playlist/create"]:
-=======
-        # Remove valores None
-        params = {k: v for k, v in params.items() if v is not None}
-
-        # 2. Execução do Pedido
-        url = self.base + epoint
-        req_kwargs = {"headers": self.headers.copy()}
-        
-        if epoint in ["user/login", "favorite/create"]:
->>>>>>> 76c7cf3e7fb22c6c157c0896e32e246525f3b2e2
             method = "POST"
+            if self.uat and epoint != "user/login":
+                params["user_auth_token"] = self.uat
             req_kwargs["data"] = params
         elif epoint == "session/start":
             method = "POST"
@@ -323,39 +284,19 @@ class Client:
 
         status, text, json_resp = await self._do_request(method, url, req_kwargs, epoint)
 
-<<<<<<< HEAD
-=======
-        # 3. Tratamento de Erros de Negócio da API
->>>>>>> 76c7cf3e7fb22c6c157c0896e32e246525f3b2e2
-        if epoint == "user/login" and status == 400:
-            if "invalid" in text.lower(): 
-                raise AuthenticationError("Invalid email or password.")
-        elif epoint in ["track/getFileUrl", "favorite/getUserFavorites", "playlist/getUserPlaylists", "file/url"] and status == 400:
-            msg = json_resp if json_resp else "Status 400."
-            raise InvalidAppSecretError(f"Invalid app secret: {msg}\n{RESET}")
+        # PROTEÇÃO CONTRA FALHAS SILENCIOSAS: Levanta exceção se a API recusar (útil para o radar)
+        if status >= 400 and epoint not in ["user/get"]:
+            error_details = json_resp if json_resp else text
+            raise Exception(f"HTTP {status} - {error_details}")
 
         if epoint == "user/get" and status == 400: 
             return {}
-<<<<<<< HEAD
 
         if json_resp is not None:
             return self._normalize_json_strings(json_resp)
             
         return {}
 
-=======
-            
-        if status >= 400 and status != 400:
-            # Re-lança se o status for erro não tratado acima
-            pass # idealmente r.raise_for_status(), mas o aiohttp já lida com o try/except principal
-
-        # 4. Formatação da Resposta
-        if json_resp is not None:
-            return self._normalize_json_strings(json_resp)
-            
-        return {}
-
->>>>>>> 76c7cf3e7fb22c6c157c0896e32e246525f3b2e2
     async def multi_meta(self, epoint: str, key: str, id: str, type: str) -> AsyncGenerator[Dict, None]:
         offset = 0
         limit = 50
@@ -405,14 +346,9 @@ class Client:
                         valid_track_ids.append(best_match_id)
                     elif highest_ratio >= PROMPT_THRESHOLD and best_match_id:
                         print(f"\n{YELLOW}[?] Borderline match detected ({highest_ratio*100:.0f}% similarity){OFF}")
-                        print(f"    Target: {item['artist']} - {item['title']}")
-                        print(f"    Found : {best_match_name}")
                         choice = input(f"{CYAN}    Do you want to download this track anyway? [y/n]: {OFF}").strip().lower()
                         if choice == 'y':
                             valid_track_ids.append(best_match_id)
-                            print(f"{GREEN}    [+] Track accepted manually.{OFF}")
-                        else:
-                            print(f"{RED}    [-] Track skipped manually.{OFF}")
                     else:
                         print(f"{YELLOW}[!] Skipping: '{query}' (Best match: {highest_ratio*100:.0f}%){OFF}")
                 else:
@@ -425,19 +361,19 @@ class Client:
 
     async def search_albums(self, query: str, limit: int = 20) -> Dict:
         try: return await self.api_call("catalog/search", query=query, type="albums", limit=limit)
-        except Exception: return {}
+        except: return {}
 
     async def search_tracks(self, query: str, limit: int = 20) -> Dict:
         try: return await self.api_call("catalog/search", query=query, type="tracks", limit=limit)
-        except Exception: return {}
+        except: return {}
 
     async def search_playlists(self, query: str, limit: int = 20) -> Dict:
         try: return await self.api_call("catalog/search", query=query, type="playlists", limit=limit)
-        except Exception: return {}
+        except: return {}
 
     async def search_artists(self, query: str, limit: int = 20) -> Dict:
         try: return await self.api_call("catalog/search", query=query, type="artists", limit=limit)
-        except Exception: return {}
+        except: return {}
 
     async def get_favorites(self, fav_type: str = "albums", limit: int = 100, offset: int = 0) -> Dict:
         try: 
@@ -445,12 +381,9 @@ class Client:
                 res = await self.api_call("playlist/getUserPlaylists", limit=limit, offset=offset)
                 items = res.get("playlists", {}).get("items", res.get("items", []))
                 total = res.get("playlists", {}).get("total", res.get("total", len(items)))
-                    
-                return {"favorites": {"playlists": {"items": items, "total": total}},
-                        "playlists": {"items": items, "total": total}}
+                return {"favorites": {"playlists": {"items": items, "total": total}}, "playlists": {"items": items, "total": total}}
                 
             res = await self.api_call("favorite/getUserFavorites", fav_type=fav_type, limit=limit, offset=offset)
-            
             items = []
             total = 0
             if "favorites" in res and fav_type in res["favorites"]:
@@ -459,33 +392,23 @@ class Client:
             elif fav_type in res:
                 items = res[fav_type].get("items", [])
                 total = res[fav_type].get("total", len(items))
-
-            return {"favorites": {fav_type: {"items": items, "total": total}},
-                    fav_type: {"items": items, "total": total}}
-
-        except Exception as e: 
-            logger.error(f"{RED}[!] API Error fetching {fav_type}: {e}{OFF}")
+            return {"favorites": {fav_type: {"items": items, "total": total}}, fav_type: {"items": items, "total": total}}
+        except Exception: 
             return {}
 
     async def get_user_playlists(self, limit: int = 100, offset: int = 0) -> Dict:
         try: return await self.api_call("playlist/getUserPlaylists", limit=limit, offset=offset)
-        except Exception as e: 
-            logger.error(f"{RED}[!] API Error fetching playlists: {e}{OFF}")
-            return {}
+        except Exception: return {}
             
     async def add_favorite_album(self, album_id: str) -> Dict:
         return await self.api_call("favorite/create", album_ids=str(album_id), artist_ids="", track_ids="")
         
-<<<<<<< HEAD
     async def add_playlist_tracks(self, playlist_id: str, track_ids: str) -> Dict:
         return await self.api_call("playlist/addTracks", playlist_id=str(playlist_id), track_ids=str(track_ids))
         
     async def create_playlist(self, name: str) -> Dict:
-        """Cria uma nova playlist na conta do usuário."""
         return await self.api_call("playlist/create", name=name)
-        
-=======
->>>>>>> 76c7cf3e7fb22c6c157c0896e32e246525f3b2e2
+
     async def get_track_url(self, id: str, fmt_id: int, force_segments: bool = False) -> Dict:
         if int(fmt_id) == 5:
             return await self.api_call("track/getFileUrl", id=id, fmt_id=fmt_id)
