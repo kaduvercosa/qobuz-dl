@@ -8,8 +8,9 @@ from typing import List, Dict, Tuple, Set
 from pick import pick
 
 from qobuz_dl.qopy import Client
-from qobuz_dl.color import GREEN, YELLOW, CYAN, OFF
+from qobuz_dl.color import GREEN, YELLOW, CYAN, OFF, RED
 
+# --- LÓGICA DE CLASSIFICAÇÃO ---
 def classificar_tipo_lancamento(raw_type: str, title: str, t_count: int, duration: int) -> str:
     r_type = (raw_type or "").lower()
     title_l = title.lower()
@@ -89,6 +90,7 @@ async def amain():
         tipo = classificar_tipo_lancamento(item.get("release_type", ""), item.get("title", ""), item.get("tracks_count", 0), item.get("duration", 0))
         
         status = " (Já existe)" if is_dup else ""
+        # Tabela espaçada e limpa
         label = f"{'✅' if is_dup else '⬜'} [{tipo.upper():^6}] {item.get('artist', {}).get('name', 'Unknown')[:20]:<20} | {item.get('title', '')[:65]:<65}{status}"
         labels.append(label)
         validos.append(item)
