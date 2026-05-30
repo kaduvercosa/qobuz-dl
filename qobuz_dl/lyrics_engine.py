@@ -289,7 +289,7 @@ class LyricsEngine:
         if not overwrite and self._has_lyrics(file_path, check_lrc=True):
             return (True, 0, 0, "Local")
 
-        clan_artist = re.split(r'(?i)\s*(?:,|\&| feat\.| ft\.|;|\/)\s*',album_artist)[0].strip() if album_artist else ""
+        clean_artist = re.split(r'(?i)\s*(?:,|\&| feat\.| ft\.|;|\/)\s*',album_artist)[0].strip() if album_artist else ""
  
         status = None
         try:
