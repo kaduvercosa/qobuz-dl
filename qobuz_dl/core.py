@@ -56,8 +56,8 @@ def classificar_tipo_lancamento(
     Retorna uma string lowercase: "album", "ep", "single", "live", "compilation".
     """
     r_type = (raw_type or "").lower().strip()
-    title_l   = title.lower()
-    version_l = version.lower()
+    title_l   = (title or "").lower()
+    version_l = (version or "").lower()
 
     # Palavras-chave explícitas no título/versão têm prioridade máxima
     if "live" in version_l or "(live" in title_l or "- live" in title_l:
@@ -465,6 +465,15 @@ class QobuzDL:
             if is_playlist:
                 self.folder_format                  = original_folder_format
                 self.settings.multiple_disc_one_dir = original_multi_disc_setting
+                
+                # --- GATILHO DO TELEGRAM PARA PLAYLISTS INTEIRAS ---
+                try:
+                    from qobuz_dl.telegram_uploader import upload_album_completo
+                    logger.info(f"\n{CYAN}[*] Playlist Concluída! Subindo pacote completo para o Telegram...{OFF}")
+                    await upload_album_completo(new_path, content_name, "Vários Artistas", "Vários Artistas (Playlist)", "Playlist")
+                except Exception as e:
+                    logger.error(f"{RED}[!] Erro ao enviar Playlist para o Telegram: {e}{OFF}")
+                # ---------------------------------------------------
 
             if url_type == "playlist" and not self.no_m3u_for_playlists:
                 make_m3u(new_path)

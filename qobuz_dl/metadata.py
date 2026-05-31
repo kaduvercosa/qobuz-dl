@@ -195,7 +195,21 @@ def _get_tags_to_add(qobuz_album: dict, qobuz_item: dict, settings: QobuzDLSetti
         tags["TITLE"] = _get_title_with_version(title=qobuz_item.get("title", ""), version=qobuz_item.get("version", ""))
 
     if not settings.no_album_artist_tag:
-        tags["ALBUMARTIST"] = get_album_artist(qobuz_album)
+        album_artist_name = get_album_artist(qobuz_album)
+        nome_generico = ["Various Artists"]
+
+        if album_artist_name in nome_generico:
+            performer_singular = qobuz_item_get("performer")
+
+            if performer_singular and isinstance(performer_singular, dict):
+                tags["ALBUMARTIST"] = performer_singular.get("name", "").strip()
+            elif performer_singular and isinstance(performer_singular, str):
+                tags["ALBUMARTIST"] = performer_singular.strip()
+            else:
+                tags["ALBUMARTIST"] = album_artist_name
+        else:
+            tags["ALBUMARTIST"] = album_artist_name
+
 
     # --- EXTRATOR ABSOLUTAMENTE ESTRITO DE PERFORMERS ---
     artists = []
@@ -244,6 +258,7 @@ def _get_tags_to_add(qobuz_album: dict, qobuz_item: dict, settings: QobuzDLSetti
 
     if not settings.no_track_artist_tag and artists:
         tags["ARTIST"] = ", ".join(artists)
+ 
 
     if conductors:
         tags["CONDUCTOR"] = ", ".join(conductors)

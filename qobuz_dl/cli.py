@@ -181,6 +181,43 @@ def _reset_config(config_file: Path) -> int:
         print("\n--- Autonomous Watcher / Webhooks (Optional) ---")
         config["qobuz"]["webhook_url"] = input("Enter your n8n / Make.com Webhook URL (Leave blank to skip): ").strip()
 
+        # --- SEÇÃO DO TELEGRAM (ESPELHO DE MÚSICAS) ---
+        print("\n--- Telegram Mirror (Optional) ---")
+        print("  Mirror your downloads to private Telegram channels.")
+        print("  Requires a Telegram account and 3 private channels.")
+        tg_choice = input("Enable Telegram mirroring? (y/N): ").strip().lower()
+
+        if tg_choice == "y":
+            config["telegram"] = {}
+            config["telegram"]["enabled"] = "false"   # Desabilitado por padrão; usuário ativa manualmente
+            print(f"\n{YELLOW}[!] Telegram will be DISABLED by default.{OFF}")
+            print(f"{YELLOW}    Set 'enabled = true' in config.ini [telegram] when ready to use.{OFF}\n")
+            config["telegram"]["api_id"]   = input("Telegram App api_id (from my.telegram.org): ").strip()
+            config["telegram"]["api_hash"] = input("Telegram App api_hash: ").strip()
+            config["telegram"]["session"]  = input("Session name [default: qobuz_session]: ").strip() or "qobuz_session"
+            print(f"\n{YELLOW}[!] Channel IDs always start with -100{OFF}")
+            config["channels"] = {}
+            config["channels"]["musicas"]  = input("Channel ID -- Tracks (e.g. -1001234567890): ").strip()
+            config["channels"]["albuns"]   = input("Channel ID -- Albums (e.g. -1001234567890): ").strip()
+            config["channels"]["artistas"] = input("Channel ID -- Artists (e.g. -1001234567890): ").strip()
+            config["channels"]["geral"]    = input("Channel ID -- General/Log (e.g. -1001234567890): ").strip()
+            print(f"\n{GREEN}[+] Telegram section added. Remember to set 'enabled = true' when you want to start mirroring.{OFF}")
+        else:
+            # Grava seção desabilitada com valores vazios para o usuário preencher depois
+            config["telegram"] = {
+                "enabled":  "false",
+                "api_id":   "",
+                "api_hash": "",
+                "session":  "qobuz_session",
+            }
+            config["channels"] = {
+                "musicas":  "",
+                "albuns":   "",
+                "artistas": "",
+                "geral":    "",
+            }
+        # -----------------------------------------------
+
         # --- NOVA SEÇÃO DO RADAR ---
         print("\n--- Radar (New Releases) ---")
         dias_busca = input("Days to search back for new releases (Radar) [default: 7]: ").strip()
@@ -393,6 +430,10 @@ async def amain():
 
     config = configparser.ConfigParser(interpolation=None)
     config.read(CONFIG_FILE)
+
+    # Exporta o caminho do config.ini para que o telegram_uploader encontre
+    # a seção [telegram] e [channels] independente de onde é chamado
+    os.environ.setdefault("QOBUZ_DL_CONFIG", str(CONFIG_FILE))
 
     try:
         section = "qobuz" if config.has_section("qobuz") else "DEFAULT"

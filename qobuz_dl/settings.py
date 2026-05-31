@@ -71,6 +71,19 @@ class QobuzDLSettings:
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
 
+    # ── Espelho Telegram (Pyrogram) ──────────────────────────────────────────
+    # Lidos da seção [telegram] e [channels] do config.ini.
+    # O telegram_uploader.py usa os.environ["QOBUZ_DL_CONFIG"] para encontrar
+    # o config.ini correto; estes campos são apenas para inspeção/debug.
+    telegram_mirror_enabled: bool  = False
+    telegram_api_id:         str   = ""
+    telegram_api_hash:       str   = ""
+    telegram_session:        str   = "qobuz_session"
+    telegram_ch_musicas:     str   = ""
+    telegram_ch_albuns:      str   = ""
+    telegram_ch_artistas:    str   = ""
+    telegram_ch_geral:       str   = ""
+
     @classmethod
     def from_arguments_configparser(cls, arguments: Any, config: Any) -> 'QobuzDLSettings':
         """
@@ -102,9 +115,9 @@ class QobuzDLSettings:
             
             # Opções de Capa
             'embed_art': getattr(arguments, 'embed_art', False) or config.getboolean(section, "embed_art", fallback=True),
-            'og_cover': getattr(arguments, 'og_cover', False) or config.getboolean(section, "og_cover", fallback=False),
+            'og_cover': getattr(arguments, 'og_cover', False) or config.getboolean(section, "og_cover", fallback=True),
             'no_cover': getattr(arguments, 'no_cover', False) or config.getboolean(section, "no_cover", fallback=False),
-            'embedded_art_size': getattr(arguments, 'embedded_art_size', None) or config.get(section, "embedded_art_size", fallback="600"),
+            'embedded_art_size': getattr(arguments, 'embedded_art_size', None) or config.get(section, "embedded_art_size", fallback="org"),
             'saved_art_size': getattr(arguments, 'saved_art_size', None) or config.get(section, "saved_art_size", fallback="org"),
             
             # Opções Multidisco
@@ -142,6 +155,16 @@ class QobuzDLSettings:
             'webhook_url': getattr(arguments, 'webhook_url', config.get(section, "webhook_url", fallback="")),
             'telegram_bot_token': getattr(arguments, 'telegram_bot_token', config.get(section, "telegram_bot_token", fallback="")),
             'telegram_chat_id': getattr(arguments, 'telegram_chat_id', config.get(section, "telegram_chat_id", fallback="")),
+
+            # ── Espelho Telegram (Pyrogram) ──────────────────────────────────
+            'telegram_mirror_enabled': config.getboolean("telegram", "enabled",  fallback=False),
+            'telegram_api_id':         config.get("telegram",  "api_id",   fallback=""),
+            'telegram_api_hash':        config.get("telegram",  "api_hash",  fallback=""),
+            'telegram_session':         config.get("telegram",  "session",   fallback="qobuz_session"),
+            'telegram_ch_musicas':      config.get("channels",  "musicas",   fallback=""),
+            'telegram_ch_albuns':       config.get("channels",  "albuns",    fallback=""),
+            'telegram_ch_artistas':     config.get("channels",  "artistas",  fallback=""),
+            'telegram_ch_geral':        config.get("channels",  "geral",     fallback=""),
         }
         
         # Desempacota o dicionário para dentro da Dataclass

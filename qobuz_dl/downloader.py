@@ -42,11 +42,10 @@ async def safe_print_async(*args, **kwargs) -> None:
         tqdm.write(text, end=kwargs.get('end', '\n'))
 
 def format_release_type(release_type: Optional[str]) -> str:
-    """Normaliza o tipo de lançamento retornado pela API."""
-    if not release_type:
-        return "Unknown"
-    release_type = release_type.lower()
-    return "EP" if release_type == "ep" else release_type.title()
+    """Normaliza o tipo de lançamento -- delega à fonte única de verdade no core.py."""
+    from qobuz_dl.core import classificar_tipo_lancamento
+    r = classificar_tipo_lancamento(raw_type=release_type)
+    return "EP" if r == "ep" else r.title()
 
 def process_folder_format_with_subdirs(folder_format: str, attr_dict: dict, path: Optional[str] = None, legacy_charmap: bool = False) -> str:
     """Processa o formato da pasta, limpa carateres inválidos e constrói a árvore."""
@@ -313,6 +312,34 @@ class Download:
         if aborted_by_user: os._exit(1)
             
         handle_download_id(self.download_db, self.item_id, add_id=True, media_type="album", quality=self.quality, file_format=file_format, quality_met=quality_met, bit_depth=bit_depth, sampling_rate=sampling_rate, saved_path=str(final_dirn), url=url, release_date=release_date, artist=album_attr.get("album_artist", "Unknown"), album=album_attr.get("album_title", "Unknown"))
+        
+        # --- GATILHO DO TELEGRAM PARA ÁLBUNS E EPs ---
+        if failed_tracks == 0 and not aborted_by_user:
+            try:
+                from qobuz_dl.telegram_uploader import upload_album_completo
+                from qobuz_dl.core import classificar_tipo_lancamento
+
+                t_faixa        = album_attr.get("artist", "Unknown")
+                t_album_artist = album_attr.get("album_artist", "Unknown")
+                t_album        = album_attr.get("album_title", "Unknown")
+                t_year         = album_attr.get("year", "2026")
+
+                # Determina o tipo real (álbum/EP/single) usando a fonte única de verdade
+                t_tipo = classificar_tipo_lancamento(
+                    raw_type  = album_meta.get("release_type") or album_meta.get("product_type"),
+                    title     = album_meta.get("title", ""),
+                    version   = album_meta.get("version", ""),
+                    t_count   = sum(1 for t in album_meta.get("tracks", {}).get("items", [])
+                                    if "sample" not in t and t.get("streamable", True)),
+                    duration  = album_meta.get("duration", 0),
+                )
+
+                await upload_album_completo(str(final_dirn), t_album, t_faixa, t_album_artist, t_year, tipo=t_tipo)
+            except Exception as e:
+                import traceback; traceback.print_exc()
+                await safe_print_async(f"{RED}[!] Erro ao enviar para o Telegram: {e}{OFF}")
+        # ---------------------------------------------
+
         await safe_print_async(f"{GREEN}Completed{OFF}")
 
     async def download_track(self) -> None:
@@ -351,6 +378,25 @@ class Download:
             
             if download_success and not abort_event.is_set():
                 handle_download_id(self.download_db, self.item_id, True, "track", self.quality, file_format, quality_met, bit_depth, sampling_rate, str(dirn), track_meta.get("album", {}).get("url", ""), track_meta.get("release_date_original", ""), track_attr.get("artist", "Unknown"), track_attr.get("album", "Unknown"))
+                
+                # --- GATILHO DO TELEGRAM PARA SINGLES (FAIXAS ÚNICAS) ---
+                if not getattr(self, 'is_playlist', False):
+                    try:
+                        from qobuz_dl.telegram_uploader import upload_album_completo
+
+                        t_faixa        = track_attr.get("artist", "Unknown")
+                        t_album_artist = track_attr.get("album_artist", t_faixa)
+                        t_album        = track_attr.get("album", "Unknown")
+                        t_date         = track_meta.get("release_date_original", "2026")
+                        t_year         = str(t_date).split("-")[0] if t_date else "2026"
+
+                        # Single é sempre tipo="single" -- faixa avulsa baixada por ID
+                        await upload_album_completo(str(dirn), t_album, t_faixa, t_album_artist, t_year, tipo="single")
+                    except Exception as e:
+                        import traceback; traceback.print_exc()
+                        await safe_print_async(f"{RED}[!] Erro ao enviar Single para o Telegram: {e}{OFF}")
+                # --------------------------------------------------------
+                # --------------------------------------------------------
             else:
                 await safe_print_async(f"{YELLOW}[*] Faixa Incompleta. Ignorando base de dados.{OFF}")
         else:
@@ -500,6 +546,16 @@ class Download:
         album_meta = meta if is_album else meta.get("album", {})
         a_artist_raw = get_album_artist(album_meta)
         a_artist_str = ", ".join(a_artist_raw) if isinstance(a_artist_raw, list) else (str(a_artist_raw) if a_artist_raw else _safe_get(meta, "performer", "name"))
+
+        nome_generico = ["Various Artists"]
+        if a_artist_str in nome_generico:
+            tracks = meta.get("tracks", {}).get("items", []) if is_album else [meta]
+            if tracks:
+                perf = tracks[0].get("performer")
+                if perf and isinstance(perf, dict):
+                    a_artist_str = perf.get("name", "").strip()
+                elif perf and isinstance(perf, str):
+                    a_artist_name = perf.strip()
 
         res = {
             "album": _get_title(album_meta) if not is_album else title,
