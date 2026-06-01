@@ -218,7 +218,18 @@ def _get_tags_to_add(qobuz_album: dict, qobuz_item: dict, settings: QobuzDLSetti
 
     performers_data = qobuz_item.get("performers", [])
     
-    target_roles = ["mainartist", "main artist", "performedartist", "performed artist"]
+    target_roles = [
+    "mainartist",
+    "main artist",
+    "performedartist",
+    "performed artist",
+    "featuredartist",
+    "featured artist",
+    "featuredperformer",
+    "featured performer",
+    "guestartist",
+    "guest artist"
+]
     
     if isinstance(performers_data, list) and performers_data:
         for p in performers_data:
