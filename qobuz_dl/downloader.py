@@ -409,7 +409,7 @@ class Download:
         filename_attr = self._get_filename_attr(_safe_get(track_meta, "performer", "name"), track_meta, album_meta.get("album", {}) if is_track else album_meta)
 
         if getattr(self, 'is_playlist', False):
-            formatted_path = sanitize_filename(clean_filename("{artist} - {track_title}".format(**filename_attr), legacy_charmap=legacy_flag), replacement_text="_")
+            formatted_path = sanitize_filename(clean_filename(self.track_format.format(**filename_attr), legacy_charmap=legacy_flag), replacement_text="_")
         elif multiple and self.settings.multiple_disc_one_dir:
             formatted_path = sanitize_filename(clean_filename(self.settings.multiple_disc_track_format.format(**filename_attr), legacy_charmap=legacy_flag), replacement_text="_")
         else:
@@ -519,9 +519,16 @@ class Download:
 
         performers = track_meta.get("performers", [])
         if isinstance(performers, list) and performers:
-            seen = set()
-            names = [p.get("name") for p in performers if isinstance(p, dict) and p.get("name") and not (p.get("name") in seen or seen.add(p.get("name")))]
-            final_track_artist = ", ".join(names) if names else track_artist
+            target_roles = ["mainartist", "main artist", "performedartist", "performed artist", "featuredartist", "featured artist"]
+            main_names = [p.get("name") for p in performers if isinstance(p, dict) and p.get("name")
+                          and any(role in str(p.get("roles", [])).lower() for role in target_roles)]
+            if main_names:
+                final_track_artist = ", ".join(dict.fromkeys(main_names))
+            else:
+                seen = set()
+                names = [p.get("name") for p in performers if isinstance(p, dict) and p.get("name")
+                         and not (p.get("name") in seen or seen.add(p.get("name")))]
+                final_track_artist = ", ".join(names) if names else track_artist
         elif isinstance(performers, str) and performers.strip():
             final_track_artist = performers
         else:

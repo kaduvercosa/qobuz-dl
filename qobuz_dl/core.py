@@ -469,8 +469,7 @@ class QobuzDL:
                 # --- GATILHO DO TELEGRAM PARA PLAYLISTS INTEIRAS ---
                 try:
                     from qobuz_dl.telegram_uploader import upload_album_completo
-                    logger.info(f"\n{CYAN}[*] Playlist Concluída! Subindo pacote completo para o Telegram...{OFF}")
-                    await upload_album_completo(new_path, content_name, "Vários Artistas", "Vários Artistas (Playlist)", "Playlist")
+                    await upload_album_completo(new_path, content_name, "Vários Artistas", "Various Artists", "Vários Artistas (Playlist)", "Playlist")
                 except Exception as e:
                     logger.error(f"{RED}[!] Erro ao enviar Playlist para o Telegram: {e}{OFF}")
                 # ---------------------------------------------------

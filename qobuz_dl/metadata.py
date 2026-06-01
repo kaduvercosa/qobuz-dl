@@ -199,7 +199,7 @@ def _get_tags_to_add(qobuz_album: dict, qobuz_item: dict, settings: QobuzDLSetti
         nome_generico = ["Various Artists"]
 
         if album_artist_name in nome_generico:
-            performer_singular = qobuz_item_get("performer")
+            performer_singular = qobuz_item.get("performer")
 
             if performer_singular and isinstance(performer_singular, dict):
                 tags["ALBUMARTIST"] = performer_singular.get("name", "").strip()
