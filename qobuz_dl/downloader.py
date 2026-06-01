@@ -558,11 +558,52 @@ class Download:
         if a_artist_str in nome_generico:
             tracks = meta.get("tracks", {}).get("items", []) if is_album else [meta]
             if tracks:
-                perf = tracks[0].get("performer")
-                if perf and isinstance(perf, dict):
-                    a_artist_str = perf.get("name", "").strip()
-                elif perf and isinstance(perf, str):
-                    a_artist_name = perf.strip()
+                track_data = tracks[0]
+                new_artist = ""
+
+                # 1. prioridade Máxima: Busca o artista principal
+                perf = track_data.get("performer")
+                if perf and isinstance(perf, dict) and perf.get("name"):
+                    new_artist = perf.get("name").strip()
+                elif perf and isinstance(perf, str) and perf.strip():
+                    new_artist = perf.strip()
+
+                # 2. Fallback 1: Primeiro item do 'performers' plural
+                if not new_artist:
+                    performers_data = track_data.get("performers", [])
+                    target_roles = ["mainartist", "main artist", "performedartist", "performed artist"]
+
+                    if isinstance(performers_data, list) and performers_data:
+                        for p in performers_data:
+                            if isinstance(p, dict) and any(r in str(p.get("roles", [])).lower() for r in target_roles):
+                                new_artist = p.get("name").strip()
+                                break
+                        if not new_artist and isinstance(performers_data[0], dict):
+                            new_artist = performers_data[0].get("name", "").strip()
+
+                    elif isinstance(performers_data, str) and performers_data.strip():
+                        primeiro_nome = ""
+                        for performer_block in performers_data.split(" - "):
+                            parts = [p.strip() for p in performer_block.split(",")]
+                            if not parts: continue
+                            name = parts[0]
+                            roles_str = "".join(parts[:1]).lower()
+                        
+                            if not primeiro_nome: primeiro_nome = name
+                            if any(r in roles_str for r in target_roles):
+                                new_artit = name
+                                break
+                        if not new_artist and primeiro_nome:
+                            new_artist = primeiro_nome
+
+                # 3. Fallback 2 (O Salva Vidas): 'composer'
+                if not new_artist:
+                    composer_name = track_data.get("composer", {}).get("name", "").strip()
+                    if composer_name:
+                        new_artist = composer_name
+
+                if new_artist:
+                    a_artist_str = new_artist
 
         res = {
             "album": _get_title(album_meta) if not is_album else title,

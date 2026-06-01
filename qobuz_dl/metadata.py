@@ -195,21 +195,46 @@ def _get_tags_to_add(qobuz_album: dict, qobuz_item: dict, settings: QobuzDLSetti
         tags["TITLE"] = _get_title_with_version(title=qobuz_item.get("title", ""), version=qobuz_item.get("version", ""))
 
     if not settings.no_album_artist_tag:
-        album_artist_name = get_album_artist(qobuz_album)
-        nome_generico = ["Various Artists"]
+        album_artist_raw = get_album_artist(qobuz_album)
+        album_artist_name = album_artist_raw if isinstance(album_artist_raw, list) else str(album_artist_raw)
 
-        if album_artist_name in nome_generico:
-            performer_singular = qobuz_item.get("performer")
+        if "Various Artists" in album_artist_name:
+            new_artist = ""
 
-            if performer_singular and isinstance(performer_singular, dict):
-                tags["ALBUMARTIST"] = performer_singular.get("name", "").strip()
-            elif performer_singular and isinstance(performer_singular, str):
-                tags["ALBUMARTIST"] = performer_singular.strip()
-            else:
-                tags["ALBUMARTIST"] = album_artist_name
+            # 1. Prioridade Máxima: 'performer'singular
+            perf = qobuz_item.get("performer")
+            if perf and isinstance(perf, dict) and perf.get("name"):
+                new_artist = perf.get("name").strip()
+            elif perf and isinstance(perf, str) and perf.strip():
+                new_artist = perf.strip()
+
+            # 2. Fallback 1: primeiro item de 'performers' plural
+            if not new_artist:
+                performers_data = qobuz_item.get("performers", [])
+                if isinstance(performers_data, list) and performers_data:
+                    primeiro_p = performers_data[0]
+                    if isinstance(primeiro_p, dict) and primeiro_p.get("name"):
+                        new_artist = primeiro_p.get("name").strip()
+                    elif isinstance(primeiro_p, str) and primeiro_p.strip():
+                        new_artist = primeiro_p.strip()
+                elif isinstance(performers_data,str) and performers_data.strip():
+                    new_artist = performers_data.split(" - ")[0].split(",")[0].strip()
+
+            # 3. Fallback 2: (O Salva-Vidas): 'composer'
+            if not new_artist:
+                 composer_name = qobuz_item.get(composer, {}).get("name", "").strip()
+                 if composer_name:
+                     new_artist = composer_name
+
+            # 4. Fallback 3: O próprio artista da faixa(salva vidas extra)
+            if not new_artist:
+                track_artist = qobuz_item.get("artist", {}).get("name", "").strip()
+                if track_artist and "Various Artists" not in track_artist:
+                    new_artist = track_artist
+
+            tags["ALBUMARTIST"] = new_artist if new_artist else album_artist_name
         else:
             tags["ALBUMARTIST"] = album_artist_name
-
 
     # --- EXTRATOR ABSOLUTAMENTE ESTRITO DE PERFORMERS ---
     artists = []
@@ -269,7 +294,6 @@ def _get_tags_to_add(qobuz_album: dict, qobuz_item: dict, settings: QobuzDLSetti
 
     if not settings.no_track_artist_tag and artists:
         tags["ARTIST"] = ", ".join(artists)
- 
 
     if conductors:
         tags["CONDUCTOR"] = ", ".join(conductors)
