@@ -45,6 +45,7 @@ class QobuzDLSettings:
     no_upc_tag: bool = False
     no_isrc_tag: bool = False
     lrc_files: bool = True
+    multi_value_tags: bool = False
 
     # Opções de Capa
     embed_art: bool = False
@@ -144,6 +145,7 @@ class QobuzDLSettings:
             'no_upc_tag': getattr(arguments, 'no_upc_tag', False) or config.getboolean(section, "no_upc_tag", fallback=False),
             'no_isrc_tag': getattr(arguments, 'no_isrc_tag', False) or config.getboolean(section, "no_isrc_tag", fallback=False),
             'lrc_files': getattr(arguments, 'lrc_files', config.getboolean(section, "lrc_files", fallback=True)),
+            'multi_value_tags': getattr(arguments, 'multi_value_tags', False) or config.getboolean(section, "multi_value_tags", fallback=False),
             
             # Concorrência e APIs Extras
             'max_workers': getattr(arguments, 'max_workers', None) or config.get(section, "max_workers", fallback="3"),

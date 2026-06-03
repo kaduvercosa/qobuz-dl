@@ -50,7 +50,6 @@ EMB_COVER_NAMES = [
 ]
 
 def _find_cover_image(root_dir: [str, Path]) -> Optional[Path]:
-    """Procura a imagem de capa na pasta atual ou na pasta pai."""
     root_path = Path(root_dir).resolve()
     search_dirs = [root_path, root_path.parent]
     
@@ -62,12 +61,10 @@ def _find_cover_image(root_dir: [str, Path]) -> Optional[Path]:
     return None
 
 def _get_cover_info(cover_path: Path) -> str:
-    """Extrai as informações de tamanho da capa para os comentários técnicos."""
     try:
         size_mb = cover_path.stat().st_size / (1024 * 1024)
         return f"Cover Quality: _org | Size: {size_mb:.2f} MB"
     except Exception as e:
-        logger.warning(f"Não foi possível ler o tamanho da capa: {e}")
         return "Cover Quality: _org"
 
 def _get_title_with_version(title: str = "", version: str = "") -> str:
@@ -82,7 +79,6 @@ def _format_copyright(s: str) -> str:
     return s
 
 def _format_genres(genres: list) -> str:
-    """Extrai os géneros e remove duplicados mantendo a ordem original."""
     genres_flat = re.findall(r"([^\u2192\/]+)", "/".join(genres))
     no_repeats = list(dict.fromkeys(g.strip() for g in genres_flat))
     return ", ".join(no_repeats)
@@ -90,27 +86,25 @@ def _format_genres(genres: list) -> str:
 def _embed_flac_img(cover_image: Path, audio: FLAC) -> None:
     try:
         if cover_image.stat().st_size > FLAC_MAX_BLOCKSIZE:
-            size_mb = cover_image.stat().st_size / (1024 * 1024)
-            logger.info(f"[!] Capa Original ({size_mb:.2f} MB) excedeu o limite do FLAC. Pulando embed..")
             return
-
         image = Picture()
         image.type = 3
         mime_type, _ = mimetypes.guess_type(str(cover_image))
         image.mime = mime_type or "image/jpeg"
         image.desc = "cover"
-        
         with open(cover_image, "rb") as img:
             image.data = img.read()
-            
         audio.add_picture(image)
     except Exception as e:
-        logger.error(f"Error embedding image: {e}", exc_info=True)
+        pass
 
 def _embed_id3_img(cover_image: Path, audio: id3.ID3) -> None:
     with open(cover_image, "rb") as cover:
         mime_type, _ = mimetypes.guess_type(str(cover_image))
         audio.add(id3.APIC(encoding=3, mime=mime_type or "image/jpeg", type=3, desc="Cover", data=cover.read()))
+
+import shutil
+import time
 
 def tag_flac(filename: str, root_dir: str, final_name: str, d: dict, album: dict, istrack: bool = True, em_image: bool = False, settings: QobuzDLSettings = None):
     audio = FLAC(filename)
@@ -134,17 +128,26 @@ def tag_flac(filename: str, root_dir: str, final_name: str, d: dict, album: dict
         cover_path = _find_cover_image(root_dir)
         if cover_path:
             _embed_flac_img(cover_path, audio)
-            
-            # Puxa a info primeiro, e SÓ DEPOIS injeta no comentário
             cover_info = _get_cover_info(cover_path)
             tags["COMMENT"] = f"{tech_comment}\n{cover_info}" if tech_comment else cover_info
 
     for k, v in tags.items():
         if v:
-            audio[k] = v
+            if isinstance(v, list):
+                audio[k] = [str(i) for i in v]
+            else:
+                audio[k] = str(v)
 
     audio.save()
-    Path(filename).rename(final_name)
+
+    # O Cofre de Tentativas para renomear em mounts do FUSE (iSH)
+    for _ in range(5):
+        try:
+            shutil.move(filename, final_name)
+            return
+        except Exception:
+            time.sleep(1.0)
+    os.rename(filename, final_name) # Última tentativa forçada se o shutil falhar
 
 def tag_mp3(filename: str, root_dir: str, final_name: str, d: dict, album: dict, istrack: bool = True, em_image: bool = False, settings: QobuzDLSettings = None):
     try:
@@ -162,8 +165,6 @@ def tag_mp3(filename: str, root_dir: str, final_name: str, d: dict, album: dict,
         cover_path = _find_cover_image(root_dir)
         if cover_path:
             _embed_id3_img(cover_path, audio)
-            
-            # Puxa a info primeiro, e SÓ DEPOIS injeta no comentário
             cover_info = _get_cover_info(cover_path)
             tags["COMMENT"] = f"{tech_comment}\n{cover_info}" if tech_comment else cover_info
 
@@ -174,15 +175,23 @@ def tag_mp3(filename: str, root_dir: str, final_name: str, d: dict, album: dict,
                 if id3tag == id3.TXXX:
                     audio.add(id3tag(encoding=3, desc=k, text=v))
                 elif id3tag == id3.COMM:
-                    audio.add(id3tag(encoding=3, lang='eng', desc='', text=[v]))
+                    audio.add(id3tag(encoding=3, lang='eng', desc='', text=[v] if isinstance(v, str) else v))
                 else:
-                    audio[id3tag.__name__] = id3tag(encoding=3, text=v)
+                    audio[id3tag.__name__] = id3tag(encoding=3, text=[v] if isinstance(v, str) else v)
 
     audio["TRCK"] = id3.TRCK(encoding=3, text=f'{str(qobuz_item.get("track_number", "1"))}/{str(qobuz_album.get("tracks_count", "1"))}')
     audio["TPOS"] = id3.TPOS(encoding=3, text=f'{str(qobuz_item.get("media_number", "1"))}/{str(qobuz_album.get("media_count", "1"))}')
         
     audio.save(filename, v2_version=3)
-    Path(filename).rename(final_name)
+
+    # O Cofre de Tentativas para renomear em mounts do FUSE (iSH)
+    for _ in range(5):
+        try:
+            shutil.move(filename, final_name)
+            return
+        except Exception:
+            time.sleep(1.0)
+    os.rename(filename, final_name) # Última tentativa forçada se o shutil falhar
 
 def _get_tags_to_add(qobuz_album: dict, qobuz_item: dict, settings: QobuzDLSettings = None) -> Dict[str, Any]:
     tags = {}
@@ -194,114 +203,100 @@ def _get_tags_to_add(qobuz_album: dict, qobuz_item: dict, settings: QobuzDLSetti
     if not settings.no_track_title_tag:
         tags["TITLE"] = _get_title_with_version(title=qobuz_item.get("title", ""), version=qobuz_item.get("version", ""))
 
-    if not settings.no_album_artist_tag:
-        album_artist_raw = get_album_artist(qobuz_album)
-        album_artist_name = album_artist_raw if isinstance(album_artist_raw, list) else str(album_artist_raw)
+    album_artist_raw = get_album_artist(qobuz_album)
+    album_artist_name = album_artist_raw if isinstance(album_artist_raw, list) else str(album_artist_raw)
 
-        if "Various Artists" in album_artist_name:
-            new_artist = ""
-
-            # 1. Prioridade Máxima: 'performer'singular
-            perf = qobuz_item.get("performer")
-            if perf and isinstance(perf, dict) and perf.get("name"):
-                new_artist = perf.get("name").strip()
-            elif perf and isinstance(perf, str) and perf.strip():
-                new_artist = perf.strip()
-
-            # 2. Fallback 1: primeiro item de 'performers' plural
-            if not new_artist:
-                performers_data = qobuz_item.get("performers", [])
-                if isinstance(performers_data, list) and performers_data:
-                    primeiro_p = performers_data[0]
-                    if isinstance(primeiro_p, dict) and primeiro_p.get("name"):
-                        new_artist = primeiro_p.get("name").strip()
-                    elif isinstance(primeiro_p, str) and primeiro_p.strip():
-                        new_artist = primeiro_p.strip()
-                elif isinstance(performers_data,str) and performers_data.strip():
-                    new_artist = performers_data.split(" - ")[0].split(",")[0].strip()
-
-            # 3. Fallback 2: (O Salva-Vidas): 'composer'
-            if not new_artist:
-                 composer_name = qobuz_item.get(composer, {}).get("name", "").strip()
-                 if composer_name:
-                     new_artist = composer_name
-
-            # 4. Fallback 3: O próprio artista da faixa(salva vidas extra)
-            if not new_artist:
-                track_artist = qobuz_item.get("artist", {}).get("name", "").strip()
-                if track_artist and "Various Artists" not in track_artist:
-                    new_artist = track_artist
-
-            tags["ALBUMARTIST"] = new_artist if new_artist else album_artist_name
-        else:
-            tags["ALBUMARTIST"] = album_artist_name
-
-    # --- EXTRATOR ABSOLUTAMENTE ESTRITO DE PERFORMERS ---
     artists = []
     conductors = []
     ensembles = []
+    composers = []
 
-    performers_data = qobuz_item.get("performers", [])
-    
-    target_roles = [
-    "mainartist",
-    "main artist",
-    "performedartist",
-    "performed artist",
-    "featuredartist",
-    "featured artist",
-    "featuredperformer",
-    "featured performer",
-    "guestartist",
-    "guest artist"
-]
-    
-    if isinstance(performers_data, list) and performers_data:
-        for p in performers_data:
-            if not isinstance(p, dict): continue
-            name = p.get("name", "").strip()
-            if not name: continue
-            
-            roles_str = str(p.get("roles", [])).lower()
-            
-            if any(role in roles_str for role in target_roles):
-                if name not in artists: artists.append(name)
-                
-            if "conductor" in roles_str:
-                if name not in conductors: conductors.append(name)
-            if any(role in roles_str for role in ["orchestra", "ensemble", "choir"]):
-                if name not in ensembles: ensembles.append(name)
+    main_art_raw = qobuz_item.get("performer", {}).get("name") or qobuz_item.get("artist", {}).get("name", "")
+    if main_art_raw:
+        splits = re.split(r'(?i)\s*,\s*|\s+&\s+|\s+feat\.?\s+|\s+ft\.?\s+|\s*/\s+|\s+with\s+|\s+x\s+', main_art_raw)
+        for s in splits:
+            if s.strip() and s.strip() not in artists:
+                artists.append(s.strip())
 
-    elif isinstance(performers_data, str) and performers_data.strip():
-        for performer_block in performers_data.split(" - "):
-            parts = [p.strip() for p in performer_block.split(",")]
+    performers_data = qobuz_item.get("performers", "")
+    target_roles = ["mainartist", "main artist", "performedartist", "performed artist", "featuredartist", "featured artist", "guestartist", "guest artist", "remixer"]
+    
+    if isinstance(performers_data, str) and performers_data.strip():
+        blocks = re.split(r'\r?\n|\s+-\s+', performers_data.strip())
+        for block in blocks:
+            if not block.strip(): continue
+            
+            parts = [p.strip() for p in block.split(",")]
             if not parts: continue
             
             name = parts[0]
-            roles_str = "".join(parts[1:]).lower()
-
+            roles_str = "".join(parts[1:]).lower().replace(" ", "")
+            
+            if any(tr.replace(" ", "") in name.lower().replace(" ", "") for tr in target_roles):
+                name = parts[-1]
+                roles_str = "".join(parts[:-1]).lower().replace(" ", "")
+                
             if roles_str:
-                if any(role in roles_str for role in target_roles):
+                if any(tr.replace(" ", "") in roles_str for tr in target_roles):
                     if name not in artists: artists.append(name)
                 if "conductor" in roles_str:
                     if name not in conductors: conductors.append(name)
-                if any(role in roles_str for role in ["orchestra", "ensemble", "choir"]):
+                if "orchestra" in roles_str or "ensemble" in roles_str or "choir" in roles_str:
                     if name not in ensembles: ensembles.append(name)
+                if "composer" in roles_str:
+                    if name not in composers: composers.append(name)
+            else:
+                if name not in artists: artists.append(name)
 
-    artists = list(dict.fromkeys(artists))
-    conductors = list(dict.fromkeys(conductors))
-    ensembles = list(dict.fromkeys(ensembles))
+    elif isinstance(performers_data, list):
+        for p in performers_data:
+            if not isinstance(p, dict): continue
+            name = p.get("name", "").strip()
+            roles_str = str(p.get("roles", [])).lower().replace(" ", "")
+            if any(tr.replace(" ", "") in roles_str for tr in target_roles):
+                if name not in artists: artists.append(name)
+            if "conductor" in roles_str:
+                if name not in conductors: conductors.append(name)
+            if "orchestra" in roles_str or "ensemble" in roles_str:
+                if name not in ensembles: ensembles.append(name)
+            if "composer" in roles_str:
+                if name not in composers: composers.append(name)
 
-    if not settings.no_track_artist_tag and artists:
-        tags["ARTIST"] = ", ".join(artists)
+    clean_artists = []
+    seen = set()
+    for a in artists:
+        if a.lower() not in seen:
+            seen.add(a.lower())
+            clean_artists.append(a)
+
+    if "Various Artists" in album_artist_name:
+        new_aa = clean_artists[0] if clean_artists else qobuz_item.get("artist", {}).get("name", "").strip()
+        tags["ALBUMARTIST"] = new_aa if new_aa else album_artist_name
+    else:
+        tags["ALBUMARTIST"] = album_artist_name
+
+    if not settings.no_track_artist_tag and clean_artists:
+        if getattr(settings, 'multi_value_tags', False):
+            tags["ARTIST"] = clean_artists 
+        else:
+            tags["ARTIST"] = ", ".join(clean_artists)
 
     if conductors:
-        tags["CONDUCTOR"] = ", ".join(conductors)
+        tags["CONDUCTOR"] = conductors if getattr(settings, 'multi_value_tags', False) else ", ".join(conductors)
     if ensembles:
-        tags["ENSEMBLE"] = ", ".join(ensembles)
+        tags["ENSEMBLE"] = ensembles if getattr(settings, 'multi_value_tags', False) else ", ".join(ensembles)
 
     if not settings.no_composer_tag:
-        tags["COMPOSER"] = qobuz_item.get("composer", {}).get("name", "")
+        api_composer = qobuz_item.get("composer", {}).get("name", "")
+        if composers:
+            if api_composer and api_composer not in composers:
+                composers.insert(0, api_composer)
+            tags["COMPOSER"] = composers if getattr(settings, 'multi_value_tags', False) else ", ".join(composers)
+        elif api_composer:
+            if getattr(settings, 'multi_value_tags', False):
+                tags["COMPOSER"] = [c.strip() for c in re.split(r'(?i)\s*,\s*|\s+&\s+|\s+and\s+', api_composer) if c.strip()]
+            else:
+                tags["COMPOSER"] = api_composer
 
     release_date = qobuz_album.get("release_date_original", "")
     if not settings.no_release_date_tag:
@@ -309,7 +304,13 @@ def _get_tags_to_add(qobuz_album: dict, qobuz_item: dict, settings: QobuzDLSetti
         tags["YEAR"] = release_date[:4] if release_date else ""
 
     if not settings.no_genre_tag:
-        tags["GENRE"] = _format_genres(qobuz_album.get("genres_list", []))
+        genres_list = qobuz_album.get("genres_list", [])
+        if getattr(settings, 'multi_value_tags', False):
+            genres_flat = re.findall(r"([^\u2192\/]+)", "/".join(genres_list))
+            tags["GENRE"] = list(dict.fromkeys(g.strip() for g in genres_flat))
+        else:
+            tags["GENRE"] = _format_genres(genres_list)
+
     if not settings.no_copyright_tag:
         tags["COPYRIGHT"] = _format_copyright(qobuz_album.get("copyright", "n/a"))
     if not settings.no_label_tag:
@@ -318,14 +319,20 @@ def _get_tags_to_add(qobuz_album: dict, qobuz_item: dict, settings: QobuzDLSetti
         tags["ISRC"] = qobuz_item.get("isrc", "")
     if not settings.no_upc_tag:
         tags["BARCODE"] = qobuz_album.get("upc", "")
-
     if not settings.no_media_type_tag:
         tags["MEDIATYPE"] = qobuz_album.get("product_type", "").upper()
     if not settings.no_explicit_tag:
         tags["ITUNESADVISORY"] = "1" if qobuz_album.get("parental_warning", False) else "0"
 
-    tags["BITDEPTH"] = str(qobuz_item.get("maximum_bit_depth", "16"))
-    tags["SAMPLERATE"] = str(qobuz_item.get("maximum_sampling_rate", "44.1"))
+    # INJEÇÃO DA QUALIDADE REAL DOWNLOADADA
+    actual_bd = qobuz_item.get("actual_bit_depth")
+    actual_sr = qobuz_item.get("actual_sampling_rate")
+    
+    bit_depth = str(actual_bd) if actual_bd else str(qobuz_item.get("maximum_bit_depth", "16"))
+    sampling_rate = str(actual_sr) if actual_sr else str(qobuz_item.get("maximum_sampling_rate", "44.1"))
+
+    tags["BITDEPTH"] = bit_depth
+    tags["SAMPLERATE"] = sampling_rate
 
     audio_info = qobuz_item.get("audio_info", {})
     if audio_info:
@@ -339,8 +346,6 @@ def _get_tags_to_add(qobuz_album: dict, qobuz_item: dict, settings: QobuzDLSetti
     qobuz_id = qobuz_item.get("id", "")
     album_id = qobuz_album.get("id", "")
     album_url = qobuz_album.get("url", "")
-    bit_depth = qobuz_item.get("maximum_bit_depth", "16")
-    sampling_rate = qobuz_item.get("maximum_sampling_rate", "44.1")
     hires_tag = "Hi-Res " if int(bit_depth) >= 24 else "CD-Quality "
 
     comments = [
@@ -352,16 +357,8 @@ def _get_tags_to_add(qobuz_album: dict, qobuz_item: dict, settings: QobuzDLSetti
         comments.append(f"URL: {album_url}")
 
     tags["COMMENT"] = "\n".join(comments)
+    tags["WORK"] = qobuz_item.get("work") if qobuz_item.get("work") else ""
+    tags["QOBUZTRACKID"] = str(qobuz_item.get("id", ""))
+    tags["QOBUZALBUMID"] = str(qobuz_album.get("id", ""))
 
-    work = qobuz_item.get("work")
-    if work:
-        tags["WORK"] = work
-
-    track_id = qobuz_item.get("id")
-    if track_id:
-        tags["QOBUZTRACKID"] = str(track_id)
-    album_id = qobuz_album.get("id")
-    if album_id:
-        tags["QOBUZALBUMID"] = str(album_id)
-
-    return tags
+    return {k: v for k, v in tags.items() if v}

@@ -270,6 +270,13 @@ def add_common_arg(custom_parser: argparse.ArgumentParser, default_folder: str, 
         action="store_true",
         help="force the generation of the Digital Booklet.txt (overrides config.ini)",
     )
+    custom_parser.add_argument(
+        "--multi-tags",
+        dest="multi_value_tags",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help="split comma-separated metadata (genres, artists) into multiple separate tag fields (FLAC only)",
+    )
 
     # Adding tag-related parameters
     tag_group = custom_parser.add_argument_group('tag options')

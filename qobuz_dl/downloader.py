@@ -20,7 +20,6 @@ from pathvalidate import sanitize_filename, sanitize_filepath
 from tqdm import tqdm
 
 import qobuz_dl.metadata as metadata
-from qobuz_dl.color import OFF, GREEN, RED, YELLOW, CYAN, RESET
 from qobuz_dl.exceptions import NonStreamable
 from qobuz_dl.settings import QobuzDLSettings
 from qobuz_dl.utils import get_album_artist, clean_filename
@@ -28,7 +27,31 @@ from qobuz_dl.db import handle_download_id
 from qobuz_dl.constants import DEFAULT_FOLDER, DEFAULT_TRACK, DEFAULT_MULTIPLE_DISC_TRACK
 from qobuz_dl.lyrics_engine import LyricsEngine
 
-# UI Lock and Event management explicitly designed for Asyncio
+
+class Tema:
+    """
+    =========================================
+    🎨 SISTEMA DE CORES ADAPTÁVEL (CLARO/ESCURO)
+    =========================================
+    """
+    CYAN    = "\033[36m"
+    GREEN   = "\033[32m"
+    YELLOW  = "\033[33m"
+    RED     = "\033[31m"
+    BLUE    = "\033[34m"   
+    PURPLE  = "\033[35m"   
+    BOLD    = "\033[1m"
+    OFF     = "\033[0m"
+
+    TAG       = BLUE           
+    TITULO    = BOLD           
+    SUCESSO   = GREEN          
+    AVISO     = YELLOW         
+    ERRO      = RED            
+    DETALHES  = ""             
+
+
+# Controle assíncrono para evitar prints encavalados
 print_lock = asyncio.Lock()
 abort_event = asyncio.Event()
 
@@ -36,33 +59,26 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 async def safe_print_async(*args, **kwargs) -> None:
-    """Imprime de forma assíncrona garantindo que a barra do tqdm não é quebrada."""
     async with print_lock:
         text = " ".join(map(str, args))
         tqdm.write(text, end=kwargs.get('end', '\n'))
 
 def format_release_type(release_type: Optional[str]) -> str:
-    """Normaliza o tipo de lançamento -- delega à fonte única de verdade no core.py."""
     from qobuz_dl.core import classificar_tipo_lancamento
     r = classificar_tipo_lancamento(raw_type=release_type)
     return "EP" if r == "ep" else r.title()
 
 def process_folder_format_with_subdirs(folder_format: str, attr_dict: dict, path: Optional[str] = None, legacy_charmap: bool = False) -> str:
-    """Processa o formato da pasta, limpa carateres inválidos e constrói a árvore."""
     cleaned_parts = []
     for part in folder_format.split('/'):
         if not part: continue
         try:
             formatted_part = part.format(**attr_dict)
             cleaned_part = sanitize_filepath(clean_filename(formatted_part, legacy_charmap=legacy_charmap), replacement_text="_")
-            
-            # Truncamento inteligente
             if cleaned_part and len(cleaned_part) > 120:
                 cleaned_part = cleaned_part[:60].rstrip(' ."-_\'') + "..." + cleaned_part[-50:].lstrip(' ."-_\'')
-                
             if cleaned_part: cleaned_parts.append(cleaned_part)
         except KeyError as e:
-            logger.warning(f"{YELLOW}Format error ({e}), using original text.{OFF}")
             cleaned_part = sanitize_filepath(clean_filename(part, legacy_charmap=legacy_charmap), replacement_text="_")
             if cleaned_part and len(cleaned_part) > 120:
                 cleaned_part = cleaned_part[:60].rstrip(' ."-_\'') + "..." + cleaned_part[-50:].lstrip(' ."-_\'')
@@ -139,12 +155,11 @@ class Download:
             try: self.delay = int(sys.argv[sys.argv.index('--delay') + 1])
             except: pass
  
-    async def _apply_delay(self):
-        """Gerencia o delay de forma centralizada"""
+    async def _apply_delay(self, tag: str = ""):
         delay_val = int(self.delay) if self.delay is not None else 0
-
         if delay_val > 0 and not abort_event.is_set():
-            await safe_print_async(f"{YELLOW}[*] Sleeping {delay_val}s...{OFF}")
+            prefix = f"{tag} {Tema.AVISO}⏳" if tag else f"{Tema.AVISO}⏳"
+            await safe_print_async(f"{prefix} Aguardando {delay_val}s de segurança...{Tema.OFF}")
             await asyncio.sleep(delay_val)
 
     async def download_id_by_type(self, track: bool = True) -> None:
@@ -164,7 +179,6 @@ class Download:
             raise NonStreamable("This release is not streamable")
 
         if self.albums_only and (album_meta.get("release_type") != "album" or album_meta.get("artist").get("name") == "Various Artists"):
-            logger.info(f'{OFF}Ignoring Single/EP/VA: {album_meta.get("title", "n/a")}')
             return
 
         album_title = _get_title(album_meta)
@@ -173,13 +187,19 @@ class Download:
         file_format, quality_met, bit_depth, sampling_rate = await self._get_format(album_meta)
 
         if not self.downgrade_quality and not quality_met:
-            logger.info(f"{OFF}Skipping {album_title} as it doesn't meet quality requirement")
             return
 
         _track_count = sum(1 for t in album_meta["tracks"]["items"] if "sample" not in t and t.get("streamable", True))
-        logger.info(f"\n{YELLOW}Downloading: {album_title}\nQuality: {file_format} ({bit_depth}bit/{sampling_rate}kHz) | [{_track_count} FAIXAS NA FILA..]\n{OFF}")
         
         album_attr = self._build_metadata_dict(album_meta, album_title, bit_depth, sampling_rate, file_format, True)
+        
+        await safe_print_async(f"\n{Tema.TAG}══════════════════════════════════════════════════════════════════════{Tema.OFF}")
+        await safe_print_async(f"{Tema.TAG}[ALBUM] {Tema.OFF} 💿 {Tema.TITULO}{album_title}{Tema.OFF}")
+        await safe_print_async(f"   {Tema.DETALHES}├──{Tema.OFF} Artista: {album_attr.get('album_artist', 'Unknown')}")
+        await safe_print_async(f"   {Tema.DETALHES}├──{Tema.OFF} Qualidade Máx: {file_format} ({bit_depth}b/{sampling_rate}kHz)")
+        await safe_print_async(f"   {Tema.DETALHES}└──{Tema.OFF} Faixas na Fila: {_track_count}")
+        await safe_print_async(f"{Tema.TAG}══════════════════════════════════════════════════════════════════════{Tema.OFF}\n")
+        
         await self._determine_formats(album_meta=album_meta, album_attr=album_attr, tracks_meta=album_meta["tracks"]["items"],
                                 track_attr=None, is_track=False, file_format=file_format, settings=self.settings)
         
@@ -196,8 +216,7 @@ class Download:
             try:
                 if incomplete_dirn.exists(): incomplete_dirn.rename(working_dirn)
                 elif target_dirn.exists(): target_dirn.rename(working_dirn)
-            except OSError as e:
-                logger.warning(f"{YELLOW}[!] Could not rename folder to [IN PROGRESS]. ({e}){OFF}")
+            except OSError:
                 working_dirn = target_dirn
         else:
             working_dirn = target_dirn
@@ -214,10 +233,7 @@ class Download:
         is_parallel = active_workers > 1 and delay_time == 0
         
         if delay_time > 0:
-            await safe_print_async(f"{YELLOW}[*] Safety Delay active: Sequential mode enabled.{OFF}")
             active_workers = 1
-        elif is_parallel:
-            await safe_print_async(f"{YELLOW}[*] Multithreading Enabled ({active_workers} workers).{OFF}")
             
         failed_tracks, aborted_by_user = 0, False
         abort_event.clear()
@@ -225,9 +241,7 @@ class Download:
         try:
             await self._generate_tracklist(album_meta, str(working_dirn), album_title, file_format, bit_depth, sampling_rate)
 
-            if self.settings.no_cover:
-                logger.info(f"{OFF}Skipping cover")
-            else:
+            if not self.settings.no_cover:
                 await _get_extra(album_meta["image"]["large"], str(working_dirn), art_size="org")
 
             if self.settings.embed_art:
@@ -239,39 +253,44 @@ class Download:
                 await _download_goodies(album_meta, str(working_dirn))
                 
             if getattr(self, 'booklet_only', False):
-                await safe_print_async(f"{YELLOW}[*] --booklet-only flag active. Skipping tracks.{OFF}")
+                await safe_print_async(f"\n{Tema.AVISO}[!] Apenas encartes solicitado. Pulando áudio.{Tema.OFF}\n")
                 if is_standard_album and working_dirn == inprogress_dirn:
                     try: working_dirn.rename(incomplete_dirn)
                     except OSError: pass
                 return
+            
+            await safe_print_async("")
              
-            # --- CÓDIGO DE CONCORRÊNCIA OTIMIZADO ---
             sem = asyncio.Semaphore(active_workers)
             
             async def bound_process_track(dirn, t_count, track_item, a_meta, is_multi, is_para):
-                """Envolve a chamada de API E o download na mesma barreira do semáforo."""
                 async with sem:
                     if abort_event.is_set(): return False
                     
+                    t_no = str(track_item.get('track_number', 0)).zfill(2)
+                    t_tag_text = f"[{t_no}/{str({_track_count}).zfill(2)}]".ljust(8)
+                    t_tag = f"{Tema.TAG}[{t_no}/{str(_track_count).zfill(2)}]{Tema.OFF}"
+
                     try:
-                        # A API só é chamada quando o worker está liberado para trabalhar (Evita HTTP 429)
+                        full_track_meta = await self.client.get_track_meta(track_item["id"])
                         parse = await self.client.get_track_url(track_item["id"], fmt_id=self.quality)
                     except Exception as e:
-                        await safe_print_async(f"{RED}[!] API Error for track {track_item.get('track_number')} (ID: {track_item['id']}): {e}{OFF}")
+                        await safe_print_async(f"{t_tag} {Tema.DETALHES}───{Tema.OFF} {Tema.ERRO}❌ Erro na API: {e}{Tema.OFF}\n")
                         return False
 
                     if "sample" not in parse and parse.get("sampling_rate"):
                         media_num = track_item.get("media_number") if is_multi else None
+                        
                         return await self._download_and_tag(
-                            dirn, t_count, parse, track_item, a_meta, False, int(self.quality) == 5, media_num, is_para
+                            dirn, t_count, parse, full_track_meta, a_meta, False, int(self.quality) == 5, media_num, is_para, t_tag
                         )
                     return False
+
 
             tasks = []
             for continuous_track_index, i in enumerate(album_meta["tracks"]["items"], start=1):
                 if abort_event.is_set(): break
                 if is_multiple: i["track_number"] = continuous_track_index
-                
                 tasks.append(bound_process_track(str(working_dirn), count, i, album_meta, is_multiple, is_parallel))
                 count += 1
 
@@ -279,13 +298,12 @@ class Download:
                 results = await asyncio.gather(*tasks, return_exceptions=True)
                 for res in results:
                     if isinstance(res, Exception):
-                        await safe_print_async(f"{RED}[!] Track process failed: {res}{OFF}")
                         failed_tracks += 1
                     elif res is False: failed_tracks += 1
             except (KeyboardInterrupt, SystemExit, asyncio.CancelledError):
                 abort_event.set()
                 aborted_by_user = True
-                await safe_print_async(f"\n{RED}[!] CTRL+C Intercepted: Securing files and folders...{OFF}")
+                await safe_print_async(f"\n{Tema.ERRO}[!] CTRL+C Interceptado: Fechando arquivos em segurança...{Tema.OFF}")
                     
             if not aborted_by_user:
                 await _clean_embed_art(working_dirn)
@@ -295,7 +313,7 @@ class Download:
         except (KeyboardInterrupt, SystemExit):
             abort_event.set()
             aborted_by_user = True
-            await safe_print_async(f"\n{RED}[!] CTRL+C Intercepted...{OFF}")
+            await safe_print_async(f"\n{Tema.ERRO}[!] Operação Abortada...{Tema.OFF}")
                 
         if aborted_by_user: time.sleep(1.5)
             
@@ -304,8 +322,8 @@ class Download:
             try: working_dirn.rename(final_dirn)
             except OSError: final_dirn = working_dirn
             
-            if aborted_by_user: await safe_print_async(f"{YELLOW}[!] Download aborted. Marked as [INCOMPLETE].{OFF}")
-            elif failed_tracks > 0: await safe_print_async(f"\n{YELLOW}[!] Download partial. Marked as [INCOMPLETE].{OFF}")
+            if aborted_by_user: await safe_print_async(f"{Tema.AVISO}[!] Download abortado. Marcado como [INCOMPLETE].{Tema.OFF}")
+            elif failed_tracks > 0: await safe_print_async(f"\n{Tema.AVISO}[!] Download parcial. Marcado como [INCOMPLETE].{Tema.OFF}")
         else:
             final_dirn = working_dirn
         
@@ -313,7 +331,6 @@ class Download:
             
         handle_download_id(self.download_db, self.item_id, add_id=True, media_type="album", quality=self.quality, file_format=file_format, quality_met=quality_met, bit_depth=bit_depth, sampling_rate=sampling_rate, saved_path=str(final_dirn), url=url, release_date=release_date, artist=album_attr.get("album_artist", "Unknown"), album=album_attr.get("album_title", "Unknown"))
         
-        # --- GATILHO DO TELEGRAM PARA ÁLBUNS E EPs ---
         if failed_tracks == 0 and not aborted_by_user:
             try:
                 from qobuz_dl.telegram_uploader import upload_album_completo
@@ -324,7 +341,6 @@ class Download:
                 t_album        = album_attr.get("album_title", "Unknown")
                 t_year         = album_attr.get("year", "2026")
 
-                # Determina o tipo real (álbum/EP/single) usando a fonte única de verdade
                 t_tipo = classificar_tipo_lancamento(
                     raw_type  = album_meta.get("release_type") or album_meta.get("product_type"),
                     title     = album_meta.get("title", ""),
@@ -333,14 +349,11 @@ class Download:
                                     if "sample" not in t and t.get("streamable", True)),
                     duration  = album_meta.get("duration", 0),
                 )
-
                 await upload_album_completo(str(final_dirn), t_album, t_faixa, t_album_artist, t_year, tipo=t_tipo)
-            except Exception as e:
-                import traceback; traceback.print_exc()
-                await safe_print_async(f"{RED}[!] Erro ao enviar para o Telegram: {e}{OFF}")
-        # ---------------------------------------------
+            except Exception:
+                pass
 
-        await safe_print_async(f"{GREEN}Completed{OFF}")
+        await safe_print_async(f"{Tema.SUCESSO}[✔] Lançamento Concluído: {Tema.TITULO}{album_title}{Tema.OFF}\n")
 
     async def download_track(self) -> None:
         parse = await self.client.get_track_url(self.item_id, self.quality)
@@ -350,12 +363,24 @@ class Download:
                 track_meta["track_number"] = self.playlist_track_number
             
             track_title, artist = _get_title(track_meta), _safe_get(track_meta, "performer", "name")
-            logger.info(f"\n{YELLOW}Downloading: {artist} - {track_title}{OFF}")
-
+            
             file_format, quality_met, bit_depth, sampling_rate = await self._get_format(track_meta, is_track_id=True, track_url_dict=parse)
             if not self.downgrade_quality and not quality_met:
-                logger.info(f"{OFF}Skipping {track_title}: quality requirement not met")
                 return
+            
+            # --- DIFERENCIAÇÃO DO CABEÇALHO PARA PLAYLIST E SINGLE ---
+            if getattr(self, 'is_playlist', False):
+                total_tracks = getattr(self.settings, 'playlist_total_count', '??')
+                t_no = str(self.playlist_track_number).zfill(2)
+                counter_tag = f"[{t_no}/{str(total_tracks).zfill(2)}]"
+                
+                await safe_print_async(f"\n{Tema.TAG}▶ {counter_tag}{Tema.OFF} 🎵 {Tema.TITULO}{artist} - {track_title}{Tema.OFF}")
+                await safe_print_async(f"   {Tema.DETALHES}├──{Tema.OFF} Qualidade Máx: {file_format} ({bit_depth}b/{sampling_rate}kHz)\n")
+            else:
+                await safe_print_async(f"\n{Tema.TAG}══════════════════════════════════════════════════════════════════════{Tema.OFF}")
+                await safe_print_async(f"{Tema.TAG}▶ [SINGLE]{Tema.OFF} 🎵 {Tema.TITULO}{artist} - {track_title}{Tema.OFF}")
+                await safe_print_async(f"   {Tema.DETALHES}├──{Tema.OFF} Qualidade Máx: {file_format} ({bit_depth}b/{sampling_rate}kHz)")
+                await safe_print_async(f"{Tema.TAG}══════════════════════════════════════════════════════════════════════{Tema.OFF}\n")
                 
             track_attr = self._build_metadata_dict(track_meta, track_title, bit_depth, sampling_rate, file_format, False)
             await self._determine_formats(track_meta.get("album", {}), None, [track_meta], track_attr, True, file_format, self.settings)
@@ -364,22 +389,28 @@ class Download:
             dirn.mkdir(parents=True, exist_ok=True)
 
             if getattr(self, 'is_playlist', False):
-                logger.info(f"{OFF}Skipping standard cover save to keep playlist folder clean")
                 if self.settings.embed_art:
-                    await _get_extra(track_meta["album"]["image"]["large"], str(dirn), extra=EMB_COVER_NAME, art_size="org")
+                    await _get_extra(track_meta["album"]["image"]["large"], str(dirn), extra=EMB_COVER_NAME, art_size="org", is_playlist=True)
             elif not self.settings.no_cover:
                 await _get_extra(track_meta["album"]["image"]["large"], str(dirn), art_size="org")
                 if self.settings.embed_art:
                     cover_path, embed_path = dirn / "cover.jpg", dirn / EMB_COVER_NAME
                     if cover_path.exists(): shutil.copy2(cover_path, embed_path)
             
-            download_success = await self._download_and_tag(str(dirn), 1, parse, track_meta, track_meta, True, int(self.quality) == 5, False, False)
+            # --- DIFERENCIAÇÃO DA TAG [ATUAL/TOTAL] NA ÁRVORE ---
+            if getattr(self, 'is_playlist', False):
+                total_tracks = getattr(self.settings, 'playlist_total_count', '??')
+                t_no = str(self.playlist_track_number).zfill(2)
+                t_tag = f"{Tema.TAG}[{t_no}/{str(total_tracks).zfill(2)}]{Tema.OFF}"
+            else:
+                t_tag = f"{Tema.TAG}[SINGLE]{Tema.OFF}"
+            
+            download_success = await self._download_and_tag(str(dirn), 1, parse, track_meta, track_meta, True, int(self.quality) == 5, False, False, t_tag)
             await _clean_embed_art(dirn)
             
             if download_success and not abort_event.is_set():
                 handle_download_id(self.download_db, self.item_id, True, "track", self.quality, file_format, quality_met, bit_depth, sampling_rate, str(dirn), track_meta.get("album", {}).get("url", ""), track_meta.get("release_date_original", ""), track_attr.get("artist", "Unknown"), track_attr.get("album", "Unknown"))
                 
-                # --- GATILHO DO TELEGRAM PARA SINGLES (FAIXAS ÚNICAS) ---
                 if not getattr(self, 'is_playlist', False):
                     try:
                         from qobuz_dl.telegram_uploader import upload_album_completo
@@ -390,20 +421,19 @@ class Download:
                         t_date         = track_meta.get("release_date_original", "2026")
                         t_year         = str(t_date).split("-")[0] if t_date else "2026"
 
-                        # Single é sempre tipo="single" -- faixa avulsa baixada por ID
                         await upload_album_completo(str(dirn), t_album, t_faixa, t_album_artist, t_year, tipo="single")
-                    except Exception as e:
-                        import traceback; traceback.print_exc()
-                        await safe_print_async(f"{RED}[!] Erro ao enviar Single para o Telegram: {e}{OFF}")
-                # --------------------------------------------------------
-                # --------------------------------------------------------
-            else:
-                await safe_print_async(f"{YELLOW}[*] Faixa Incompleta. Ignorando base de dados.{OFF}")
-        else:
-            logger.info(f"{OFF}Demo. Skipping")
-        logger.info(f"{GREEN}Completed{OFF}")
+                    except Exception:
+                        pass
+                        
+            if not getattr(self, 'is_playlist', False):
+                await safe_print_async(f"{Tema.SUCESSO}[✔] Faixa Concluída: {Tema.TITULO}{track_title}{Tema.OFF}\n")
 
-    async def _download_and_tag(self, root_dir: str, tmp_count: int, track_url_dict: dict, track_meta: dict, album_meta: dict, is_track: bool, is_mp3: bool, multiple: Optional[int], is_parallel: bool) -> bool:
+    async def _download_and_tag(self, root_dir: str, tmp_count: int, track_url_dict: dict, track_meta: dict, album_meta: dict, is_track: bool, is_mp3: bool, multiple: Optional[int], is_parallel: bool, t_tag: str) -> bool:
+        r_type_raw = track_meta.get("album", {}).get("release_type")
+        if not r_type_raw:
+            r_type_raw = album_meta.get("release_type", "Unknown")
+        r_type_str = format_release_type(r_type_raw).upper()
+
         extension = ".mp3" if is_mp3 else ".flac"
         legacy_flag = getattr(self.settings, 'legacy_charmap', False)
         filename_attr = self._get_filename_attr(_safe_get(track_meta, "performer", "name"), track_meta, album_meta.get("album", {}) if is_track else album_meta)
@@ -426,39 +456,56 @@ class Download:
             
         final_file = Path(root_dir) / f"{formatted_path}{extension}"
 
+        desc_name = track_meta.get('title', 'Unknown')
+        if len(desc_name) > 30: desc_name = desc_name[:27] + "..."
+
+        # --- SEPARAÇÃO INTELIGENTE DE TAGS ---
+        if not is_track:
+            # Para Álbuns e EPs: Usa o contador dinâmico paralelo (ex: [01/04])
+            t_tag_arq    = f"{t_tag} ├─────"
+            t_tag_letra  = f"{t_tag} ├────"
+            t_tag_status = f"{t_tag} └───"
+            t_tag_bar    = f"{t_tag} "
+        else:
+            # Para Playlists e Singles: Mantém o padrão de texto fixo
+            t_tag_arq    = f"{Tema.TAG}[DOWNLOAD]{Tema.OFF} ├─────"
+            t_tag_letra  = f"{Tema.TAG}[LETRA]{Tema.OFF}    ├────"
+            t_tag_status = f"{Tema.TAG}[STATUS]{Tema.OFF}   └───"
+            t_tag_bar    = f"{Tema.TAG}[DOWNLOAD]{Tema.OFF} "
+
         if final_file.exists():
-            await safe_print_async(f"{CYAN}[*] Skipping: {final_file.name} (Already exists){OFF}")
+            await safe_print_async(f"{t_tag_arq} 🎧 {Tema.TITULO}{desc_name}{Tema.OFF}")
+            await safe_print_async(f"{t_tag_status} ⏭️ {Tema.AVISO}Pulando (Já existe){Tema.OFF}\n")
             return True
 
         if abort_event.is_set(): return False
         
         if not is_parallel:
-            await self._apply_delay()
+            await self._apply_delay(t_tag_arq)
 
         try: url = track_url_dict["url"]
         except KeyError:
-            logger.info(f"{OFF}Track not available for download")
             return False
 
         if multiple and album_meta.get('media_count', 1) > 1 and not self.settings.multiple_disc_one_dir:
             try: d_num = int(multiple) if not isinstance(multiple, bool) else 1
             except: d_num = 1
             root_dir = str(Path(root_dir) / f"{self.settings.multiple_disc_prefix} {d_num:02}")
-            Path(root_dir).mkdir(exist_ok=True)
+        
+        # Cria a pasta antes para o mount do iSH estabilizar
+        Path(root_dir).mkdir(parents=True, exist_ok=True)
 
         filename = str(Path(root_dir) / f".{tmp_count:02}.tmp")
-        track_no = str(track_meta.get('track_number', 0)).zfill(2)
-        desc = f"{track_no}. {track_meta.get('title')}"
 
         FALLBACK_TIERS, TIER_NAMES = [27, 7, 6, 5], {27: "24-bit/>96kHz", 7: "24-bit/96kHz", 6: "16-bit/44.1kHz (CD)", 5: "MP3 320kbps"}
         try: start_idx = FALLBACK_TIERS.index(int(self.quality))
         except ValueError: start_idx = 0
             
         success, final_fmt = False, int(self.quality)
+        actual_bd, actual_sr = None, None
+
         for attempt_fmt in FALLBACK_TIERS[start_idx:]:
             if abort_event.is_set(): return False
-            if attempt_fmt != int(self.quality):
-                await safe_print_async(f"{YELLOW}[!] Downgrade: Attempting {TIER_NAMES[attempt_fmt]}...{OFF}")
 
             async def get_fresh_url(fmt=attempt_fmt, force_segments=False):
                 return await self.client.get_track_url(track_meta["id"], fmt_id=fmt, force_segments=force_segments)
@@ -467,31 +514,61 @@ class Download:
                 fresh_track = await get_fresh_url(force_segments=False)
                 if "url" in fresh_track:
                     try:
-                        await tqdm_download(fresh_track["url"], filename, desc, is_parallel)
-                        success, final_fmt = True, attempt_fmt
+                        actual_bd = fresh_track.get("bit_depth")
+                        actual_sr = fresh_track.get("sampling_rate")
+                        final_fmt = fresh_track.get("format_id", attempt_fmt)
+                        
+                        q_str = f"[{actual_bd}b/{actual_sr}kHz]" if actual_bd and actual_sr else ""
+                        if int(final_fmt) == 5: q_str = "[MP3 320kbps]"
+                        
+                        await safe_print_async(f"{t_tag_arq} 🎧 {Tema.TITULO}{desc_name}{Tema.OFF} {Tema.SUCESSO}{q_str}{Tema.OFF}")
+
+                        await tqdm_download(fresh_track["url"], filename, log_prefix=t_tag_bar, is_parallel=is_parallel, track_name=desc_name)
+                        success = True
                         break
                     except Exception:
                         if abort_event.is_set(): return False
-                        await safe_print_async(f"{YELLOW}[!] Akamai block. Activating fallback segmented download...{OFF}")
                         fresh_track = await get_fresh_url(force_segments=True)
                 
                 if "url_template" in fresh_track:
-                    await tqdm_download_segments(fresh_track, filename, desc, is_parallel)
-                    success, final_fmt = True, attempt_fmt
+                    actual_bd = fresh_track.get("bit_depth")
+                    actual_sr = fresh_track.get("sampling_rate")
+                    final_fmt = fresh_track.get("format_id", attempt_fmt)
+                    
+                    q_str = f"[{actual_bd}b/{actual_sr}kHz]" if actual_bd and actual_sr else ""
+                    if int(final_fmt) == 5: q_str = "[MP3 320kbps]"
+                    
+                    await safe_print_async(f"{t_tag_arq} 🎧 {Tema.TITULO}{desc_name}{Tema.OFF} {Tema.SUCESSO}{q_str}{Tema.OFF}")
+
+                    await tqdm_download_segments(fresh_track, filename, log_prefix=t_tag_bar, is_parallel=is_parallel, track_name=desc_name)
+                    success = True
                     break
             except Exception: pass
 
         if abort_event.is_set(): return False
+        
         if not success:
-            await safe_print_async(f"\n{RED}[!] TRACK {track_no} DISCARDED AFTER ALL DOWNGRADES.{OFF}")
+            await safe_print_async(f"{t_tag_arq} 🎧 {Tema.TITULO}{desc_name}{Tema.OFF}")
+            await safe_print_async(f"{t_tag_status} ❌ {Tema.ERRO}Descartada (Sem formato){Tema.OFF}\n")
             return False
+
+        track_meta["actual_bit_depth"] = actual_bd
+        track_meta["actual_sampling_rate"] = actual_sr
+        track_meta["actual_format_id"] = final_fmt
+
+        # O Respiro Mágico do Mount (dá tempo do iOS criar fisicamente o arquivo no app Arquivos)
+        await asyncio.sleep(2.0)
 
         tag_function = metadata.tag_mp3 if final_fmt == 5 else metadata.tag_flac
         try:
             tag_function(filename, root_dir, str(final_file), track_meta, album_meta, is_track, self.embed_art, settings=self.settings)
         except Exception as e:
-            await safe_print_async(f"{RED}[!] Error tagging: {e}{OFF}")
-
+            await safe_print_async(f"{t_tag_status} ❌ {Tema.ERRO}Erro ao injetar metadados: {e}{Tema.OFF}\n")
+            return False
+            
+        msg_tree = []
+        
+        # 3. Letras
         if self.fetch_lyrics and hasattr(self, 'lyrics_engine') and not abort_event.is_set():
             s_artist = _safe_get(track_meta, "performer", "name") or _safe_get(track_meta, "artist", "name", default="Unknown")
             if _safe_get(track_meta, "album", "artist", "name") not in [None, "Various Artists"]:
@@ -502,13 +579,18 @@ class Download:
                 album=_safe_get(track_meta, "album", "title", default=""), save_lrc=not self.no_lrc_files
             )
             if letra_ok:
-                trad_str = f"{trans_count}/{total_lines} - ({'Total' if trans_count >= total_lines else 'Parcial'})" if trans_count else "Não"
-                await safe_print_async(f"{OFF if resp_code != 'Local' else CYAN}[*] Letra Encontrada{' (Local)' if resp_code == 'Local' else ''}: {desc} - {s_artist} | Trad: {trad_str} | Code: {resp_code}{OFF}")
+                trad_str = f"{trans_count}/{total_lines}" if trans_count else "Não"
+                msg_tree.append(f"{t_tag_letra} 📝 Letra: {resp_code} (Trad: {trad_str})")
             else:
-                await safe_print_async(f"{RED}  [-] Letra Não Encontrada: {desc} - {s_artist}{OFF}")
+                msg_tree.append(f"{t_tag_letra} 📝 Letra: Não encontrada")
+                
+        # 4. Finalização com Respiro (\n)
+        msg_tree.append(f"{t_tag_status} ✔️ {Tema.SUCESSO}Finalizado{Tema.OFF}\n")
+
+        await safe_print_async("\n".join(msg_tree))
 
         if not is_parallel:
-            await self._apply_delay()
+            await self._apply_delay(t_tag_arq)
             
         return True
 
@@ -517,22 +599,7 @@ class Download:
         a_artist_raw = get_album_artist(album_meta)
         a_artist_str = ", ".join(a_artist_raw) if isinstance(a_artist_raw, list) else (str(a_artist_raw) if a_artist_raw else track_artist)
 
-        performers = track_meta.get("performers", [])
-        if isinstance(performers, list) and performers:
-            target_roles = ["mainartist", "main artist", "performedartist", "performed artist", "featuredartist", "featured artist"]
-            main_names = [p.get("name") for p in performers if isinstance(p, dict) and p.get("name")
-                          and any(role in str(p.get("roles", [])).lower() for role in target_roles)]
-            if main_names:
-                final_track_artist = ", ".join(dict.fromkeys(main_names))
-            else:
-                seen = set()
-                names = [p.get("name") for p in performers if isinstance(p, dict) and p.get("name")
-                         and not (p.get("name") in seen or seen.add(p.get("name")))]
-                final_track_artist = ", ".join(names) if names else track_artist
-        elif isinstance(performers, str) and performers.strip():
-            final_track_artist = performers
-        else:
-            final_track_artist = track_artist
+        final_track_artist = track_meta.get("performer", {}).get("name") or track_artist
 
         return {
             "artist": final_track_artist, "albumartist": a_artist_str, "tracktitle": _get_title(track_meta),
@@ -549,61 +616,9 @@ class Download:
         }
 
     def _build_metadata_dict(self, meta: dict, title: str, bit_depth: str, sampling_rate: str, file_format: str, is_album: bool) -> dict:
-        """Centraliza a extração de dados da API num dicionário amigável de tags, fundindo a lógica de álbum e faixa."""
         album_meta = meta if is_album else meta.get("album", {})
         a_artist_raw = get_album_artist(album_meta)
         a_artist_str = ", ".join(a_artist_raw) if isinstance(a_artist_raw, list) else (str(a_artist_raw) if a_artist_raw else _safe_get(meta, "performer", "name"))
-
-        nome_generico = ["Various Artists"]
-        if a_artist_str in nome_generico:
-            tracks = meta.get("tracks", {}).get("items", []) if is_album else [meta]
-            if tracks:
-                track_data = tracks[0]
-                new_artist = ""
-
-                # 1. prioridade Máxima: Busca o artista principal
-                perf = track_data.get("performer")
-                if perf and isinstance(perf, dict) and perf.get("name"):
-                    new_artist = perf.get("name").strip()
-                elif perf and isinstance(perf, str) and perf.strip():
-                    new_artist = perf.strip()
-
-                # 2. Fallback 1: Primeiro item do 'performers' plural
-                if not new_artist:
-                    performers_data = track_data.get("performers", [])
-                    target_roles = ["mainartist", "main artist", "performedartist", "performed artist"]
-
-                    if isinstance(performers_data, list) and performers_data:
-                        for p in performers_data:
-                            if isinstance(p, dict) and any(r in str(p.get("roles", [])).lower() for r in target_roles):
-                                new_artist = p.get("name").strip()
-                                break
-                        if not new_artist and isinstance(performers_data[0], dict):
-                            new_artist = performers_data[0].get("name", "").strip()
-
-                    elif isinstance(performers_data, str) and performers_data.strip():
-                        primeiro_nome = ""
-                        for performer_block in performers_data.split(" - "):
-                            parts = [p.strip() for p in performer_block.split(",")]
-                            if not parts: continue
-                            name = parts[0]
-                            roles_str = "".join(parts[:1]).lower()
-                        
-                            if not primeiro_nome: primeiro_nome = name
-                            if any(r in roles_str for r in target_roles):
-                                new_artit = name
-                                break
-                        if not new_artist and primeiro_nome:
-                            new_artist = primeiro_nome
-
-                # 3. Fallback 2 (O Salva Vidas): 'composer'
-                if not new_artist:
-                    composer_name = track_data.get("composer", {}).get("name", "").strip()
-                    if composer_name:
-                        new_artist = composer_name
-
-                if new_artist:
-                    a_artist_str = new_artist
 
         res = {
             "album": _get_title(album_meta) if not is_album else title,
@@ -685,8 +700,6 @@ class Download:
         t_path = Path(dirn) / f"{sanitize_filename(album_title)} - Tracklist.txt"
         if t_path.is_file(): return
             
-        await safe_print_async(f"{CYAN}[+] Generating Digital Booklet...{OFF}")
-        
         try:
             with open(t_path, "w", encoding="utf-8") as f:
                 f.write("=" * 70 + "\n")
@@ -728,9 +741,9 @@ class Download:
                     for p in re.sub(r'<[^<]+>', '', re.sub(r'<br\s*/?>', '\n', str(desc))).split('\n'):
                         if p.strip(): f.write(textwrap.fill(p.strip(), width=70) + "\n\n")
 
-            await safe_print_async(f"{GREEN}  L Completed: Digital Booklet.txt{OFF}")
-        except Exception as e:
-            await safe_print_async(f"{RED}[!] Error creating booklet: {e}{OFF}")
+            await safe_print_async(f"{Tema.TAG}[PDF]{Tema.OFF}    📄 {Tema.SUCESSO}Booklet criado com sucesso{Tema.OFF}")
+        except Exception:
+            pass
 
     async def _append_lyrics_to_booklet(self, dirn: str, album_title: str) -> None:
         if abort_event.is_set(): return
@@ -758,9 +771,8 @@ class Download:
                 with open(t_path, "a", encoding="utf-8") as f:
                     f.write("\n" + "=" * 70 + "\nALBUM LYRICS\n" + "=" * 70 + "\n\n")
                     f.writelines(to_append)
-                await safe_print_async(f"{CYAN}[+] Lyrics appended to Digital Booklet.{OFF}")
-            except Exception as e:
-                logger.error(f"{RED}[!] Error appending lyrics: {e}{OFF}")
+            except Exception:
+                pass
 
 def _get_title(item: dict) -> str:
     title = item.get("title", "")
@@ -768,17 +780,26 @@ def _get_title(item: dict) -> str:
         title = f"{title} ({v})" if v.lower() not in title.lower() else title
     return title
 
-async def _get_extra(item: str, dirn: str, extra: str = "cover.jpg", art_size: str = None, og_quality: bool = False) -> None:
+async def _get_extra(item: str, dirn: str, extra: str = "cover.jpg", art_size: str = None, og_quality: bool = False, is_playlist: bool = False) -> None:
     if abort_event.is_set(): return
     e_file = Path(dirn) / extra
-    if e_file.is_file(): return
+    
+    # 4 espaços para fechar exatos 10 caracteres no alinhamento
+    tag_capa = f"{Tema.TAG}[CAPA]{Tema.OFF}    "
+    
+    if e_file.is_file():
+        await safe_print_async(f"{tag_capa} ┌── 🖼️  {extra}")
+        return
         
     if og_quality: art_size = "org"
     if art_size in ["50", "100", "150", "300", "600", "max", "org"]:
         item = item.replace("_600.", f"_{art_size}.")
     
-    try: await tqdm_download(item, str(e_file), extra, is_parallel=False)
-    except Exception as e: await safe_print_async(f"  {YELLOW}[!] Skipping '{extra}': {e}{OFF}")
+    try:
+        await tqdm_download(item, str(e_file), log_prefix=tag_capa, is_parallel=False)
+        await safe_print_async(f"{tag_capa} ┌── 🖼️  {extra}")
+    except Exception: 
+        pass
 
 def _clean_format_str(folder: str, track: str, file_format: str) -> Tuple[str, str]:
     final = []
@@ -797,7 +818,7 @@ def _safe_get(d: dict, *keys, default=None):
         d = res
     return res
 
-async def tqdm_download(url: str, fname: str, track_name: str, is_parallel: bool = False) -> None:
+async def tqdm_download(url: str, fname: str, log_prefix: str = "", is_parallel: bool = False, track_name: str = "") -> None:
     if abort_event.is_set(): return
     
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", "Connection": "keep-alive"}
@@ -814,11 +835,10 @@ async def tqdm_download(url: str, fname: str, track_name: str, is_parallel: bool
                     if r.status not in [200, 206]: raise Exception(f"HTTP {r.status}")
 
                     if t_size == 0: t_size = d_size + int(r.headers.get('content-length', 0))
-                    if d_size == 0 and attempt == 0:
-                        await safe_print_async(f"{CYAN}[+] In progress: {track_name} [{t_size / (1024*1024):.1f} MB]{OFF}")
 
                     async with aiofiles.open(fname, 'ab' if d_size > 0 else 'wb') as file:
-                        with tqdm(total=t_size, unit="iB", unit_scale=True, desc="" if is_parallel else f" {GREEN}Downloading{OFF}", initial=d_size, disable=is_parallel, leave=False) as bar:
+                        bar_desc = f"{log_prefix} ⬇️  {track_name}" if track_name else f"{log_prefix} ⬇️ "
+                        with tqdm(total=t_size, unit="iB", unit_scale=True, desc=bar_desc, initial=d_size, disable=is_parallel, leave=False, bar_format="{desc}: {percentage:3.0f}% |{bar:20}| {n_fmt}/{total_fmt}") as bar:
                             async for data in r.content.iter_chunked(65536):
                                 if abort_event.is_set(): return
                                 if data:
@@ -826,20 +846,16 @@ async def tqdm_download(url: str, fname: str, track_name: str, is_parallel: bool
                                     d_size += len(data)
                                     if not is_parallel: bar.update(len(data))
             
-            if d_size >= t_size:
-                await safe_print_async(f"{GREEN}  L Completed: {track_name}{OFF}")
-                return 
+            if d_size >= t_size: return 
 
         except asyncio.TimeoutError:
             if attempt < 6:
-                await safe_print_async(f"{YELLOW}[*] Timeout '{track_name}'. Resuming in {delays[attempt]}s{OFF}")
                 await asyncio.sleep(delays[attempt])
                 continue
             if Path(fname).exists(): Path(fname).unlink()
             raise Exception("Timeout definitivo")
         except Exception as e:
             if attempt < 6 and "404" not in str(e):
-                await safe_print_async(f"\n{YELLOW}[!] Server block. Retrying in {delays[attempt]}s | Erro: {e}{OFF}")
                 await asyncio.sleep(delays[attempt])
                 continue
             if Path(fname).exists(): Path(fname).unlink()
@@ -849,7 +865,7 @@ async def tqdm_download(url: str, fname: str, track_name: str, is_parallel: bool
         if Path(fname).exists(): Path(fname).unlink()
         raise Exception("Incomplete download")
 
-async def tqdm_download_segments(track_url: dict, fname: str, track_name: str, is_parallel: bool = False) -> None:
+async def tqdm_download_segments(track_url: dict, fname: str, log_prefix: str = "", is_parallel: bool = False, track_name: str = "") -> None:
     if abort_event.is_set(): return
     
     tmp_fname = f"{fname}.mp4"
@@ -867,13 +883,8 @@ async def tqdm_download_segments(track_url: dict, fname: str, track_name: str, i
     async with aiohttp.ClientSession() as session:
         t_size = sum(await asyncio.gather(*(get_seg_size(session, i) for i in range(n_seg + 1))))
 
-    if is_parallel:
-        await safe_print_async(f"{CYAN}[+] In progress: {track_name} [{t_size / (1024*1024):.1f} MB]{OFF}")
-
     async def fetch_seg(session, i, bar):
         if abort_event.is_set(): return bytearray()
-        
-        # --- CÓDIGO DE RETRY ADICIONADO PARA RESILIÊNCIA EM SEGMENTOS ---
         for attempt in range(4):
             try:
                 async with session.get(tmpl.replace("$SEGMENT$", str(i)), timeout=15) as r:
@@ -884,14 +895,15 @@ async def tqdm_download_segments(track_url: dict, fname: str, track_name: str, i
                         data.extend(chunk)
                         if not is_parallel: bar.update(len(chunk))
                     return data
-            except Exception as e:
+            except Exception:
                 if attempt == 3: raise
                 await asyncio.sleep(2 ** attempt)
 
     try:
         async with aiohttp.ClientSession() as s:
             async with aiofiles.open(tmp_fname, "wb") as f:
-                with tqdm(total=t_size, unit="iB", unit_scale=True, desc="" if is_parallel else f" {GREEN}Segmented Download{OFF}", disable=is_parallel, leave=False) as bar:
+                bar_desc = f"{log_prefix} ✂️  {track_name}" if track_name else f"{log_prefix} ✂️ "
+                with tqdm(total=t_size, unit="iB", unit_scale=True, desc=bar_desc, disable=is_parallel, leave=False, bar_format="{desc}: {percentage:3.0f}% |{bar:20}| {n_fmt}/{total_fmt}") as bar:
                     seg_uuid = None
                     for i in range(2):
                         data = await fetch_seg(s, i, bar)
@@ -908,9 +920,7 @@ async def tqdm_download_segments(track_url: dict, fname: str, track_name: str, i
                             if not abort_event.is_set(): await f.write(_decrypt_qobuz_segment(data, key, seg_uuid))
 
         if abort_event.is_set(): return
-        if not is_parallel: await safe_print_async(f" {GREEN}  > Assembling FLAC...{OFF}")
             
-        # --- CÓDIGO DO FFMPEG OTIMIZADO PARA FINALIZAR COM CTRL+C ---
         proc = await asyncio.create_subprocess_exec(
             "ffmpeg", "-nostdin", "-v", "error", "-y", "-i", tmp_fname, 
             "-c:a", "copy", "-f", "flac", fname, 
@@ -923,8 +933,6 @@ async def tqdm_download_segments(track_url: dict, fname: str, track_name: str, i
         except asyncio.CancelledError:
             proc.terminate()
             raise
-        
-        await safe_print_async(f"{GREEN}  L Completed: {track_name}{OFF}")
 
     finally:
         if Path(tmp_fname).exists():
@@ -980,10 +988,10 @@ async def _download_goodies(album_meta: dict, dirn: str) -> None:
             if not goody.get("url"): continue
             g_name = sanitize_filename(clean_filename(f'{album_meta.get("title")} ({goody.get("id")}).pdf'))
             await _get_extra(goody.get("url"), dirn, extra=g_name)
-    except Exception as e:
-        logger.error(f"{RED}Error downloading goodies: {e}{OFF}", exc_info=True)
+    except Exception:
+        pass
 
-async def _clean_embed_art(dirn: Union[str, Path], settings=None) -> None:
+async def _clean_embed_art(dirn: Union[str, Path]) -> None:
     e_file = Path(dirn) / EMB_COVER_NAME
     if e_file.exists():
         try:
