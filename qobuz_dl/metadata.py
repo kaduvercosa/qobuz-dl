@@ -2,17 +2,58 @@ import re
 import os
 import logging
 import mimetypes
+import shutil
+import time
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List, Union, TypedDict
 
 from mutagen.flac import FLAC, Picture
 import mutagen.id3 as id3
 from mutagen.id3 import ID3NoHeaderError
+
 from qobuz_dl.settings import QobuzDLSettings
 from qobuz_dl.utils import get_album_artist
 
 logger = logging.getLogger(__name__)
 
+# ─── Estruturas de Dados da API do Qobuz ──────────────────────────────────────
+class QobuzAlbum(TypedDict, total=False):
+    id: str
+    title: str
+    version: Optional[str]
+    release_date_original: str
+    tracks_count: int
+    media_count: int
+    copyright: str
+    label: Dict[str, Any]
+    upc: str
+    product_type: str
+    parental_warning: bool
+    genres_list: List[str]
+    artists: List[Dict[str, Any]]
+    artist: Dict[str, Any]
+    url: str
+
+class QobuzItem(TypedDict, total=False):
+    id: str
+    title: str
+    version: Optional[str]
+    track_number: int
+    media_number: int
+    isrc: str
+    actual_bit_depth: int
+    actual_sampling_rate: float
+    maximum_bit_depth: int
+    maximum_sampling_rate: float
+    duration: int
+    performer: Dict[str, Any]
+    performers: Union[str, List[Dict[str, Any]]]
+    composer: Dict[str, Any]
+    audio_info: Dict[str, Any]
+    work: Optional[str]
+    album: QobuzAlbum
+
+# ─── Constantes Globais ────────────────────────────────────────────────────────
 COPYRIGHT, PHON_COPYRIGHT = "\u2117", "\u00a9"
 FLAC_MAX_BLOCKSIZE = 16777215
 
@@ -49,7 +90,8 @@ EMB_COVER_NAMES = [
     "embed_cover.webp"
 ]
 
-def _find_cover_image(root_dir: [str, Path]) -> Optional[Path]:
+# ─── Funções Auxiliares ────────────────────────────────────────────────────────
+def _find_cover_image(root_dir: Union[str, Path]) -> Optional[Path]:
     root_path = Path(root_dir).resolve()
     search_dirs = [root_path, root_path.parent]
     
@@ -64,10 +106,10 @@ def _get_cover_info(cover_path: Path) -> str:
     try:
         size_mb = cover_path.stat().st_size / (1024 * 1024)
         return f"Cover Quality: _org | Size: {size_mb:.2f} MB"
-    except Exception as e:
+    except Exception:
         return "Cover Quality: _org"
 
-def _get_title_with_version(title: str = "", version: str = "") -> str:
+def _get_title_with_version(title: str = "", version: Optional[str] = "") -> str:
     item_title = title
     if version:
         item_title = f"{title} ({version})" if version.lower() not in title.lower() else title
@@ -78,7 +120,7 @@ def _format_copyright(s: str) -> str:
         s = s.replace("(P)", PHON_COPYRIGHT).replace("(C)", COPYRIGHT)
     return s
 
-def _format_genres(genres: list) -> str:
+def _format_genres(genres: List[str]) -> str:
     genres_flat = re.findall(r"([^\u2192\/]+)", "/".join(genres))
     no_repeats = list(dict.fromkeys(g.strip() for g in genres_flat))
     return ", ".join(no_repeats)
@@ -95,7 +137,7 @@ def _embed_flac_img(cover_image: Path, audio: FLAC) -> None:
         with open(cover_image, "rb") as img:
             image.data = img.read()
         audio.add_picture(image)
-    except Exception as e:
+    except Exception:
         pass
 
 def _embed_id3_img(cover_image: Path, audio: id3.ID3) -> None:
@@ -103,13 +145,15 @@ def _embed_id3_img(cover_image: Path, audio: id3.ID3) -> None:
         mime_type, _ = mimetypes.guess_type(str(cover_image))
         audio.add(id3.APIC(encoding=3, mime=mime_type or "image/jpeg", type=3, desc="Cover", data=cover.read()))
 
-import shutil
-import time
 
-def tag_flac(filename: str, root_dir: str, final_name: str, d: dict, album: dict, istrack: bool = True, em_image: bool = False, settings: QobuzDLSettings = None):
+# ─── Funções Principais de Tagging ───────────────────────────────────────────
+def tag_flac(filename: str, root_dir: Union[str, Path], final_name: str, d: QobuzItem, album: QobuzAlbum, istrack: bool = True, em_image: bool = False, settings: Optional[QobuzDLSettings] = None) -> None:
+    if settings is None:
+        settings = QobuzDLSettings()
+        
     audio = FLAC(filename)
     qobuz_item = d
-    qobuz_album = d.get("album", {}) if istrack else album
+    qobuz_album = d.get("album", album) if istrack else album
 
     tags = _get_tags_to_add(qobuz_album, qobuz_item, settings=settings)
 
@@ -149,14 +193,17 @@ def tag_flac(filename: str, root_dir: str, final_name: str, d: dict, album: dict
             time.sleep(1.0)
     os.rename(filename, final_name) # Última tentativa forçada se o shutil falhar
 
-def tag_mp3(filename: str, root_dir: str, final_name: str, d: dict, album: dict, istrack: bool = True, em_image: bool = False, settings: QobuzDLSettings = None):
+def tag_mp3(filename: str, root_dir: Union[str, Path], final_name: str, d: QobuzItem, album: QobuzAlbum, istrack: bool = True, em_image: bool = False, settings: Optional[QobuzDLSettings] = None) -> None:
+    if settings is None:
+        settings = QobuzDLSettings()
+        
     try:
         audio = id3.ID3(filename)
     except ID3NoHeaderError:
         audio = id3.ID3()
         
     qobuz_item = d
-    qobuz_album = d.get("album", {}) if istrack else album
+    qobuz_album = d.get("album", album) if istrack else album
 
     tags = _get_tags_to_add(qobuz_album, qobuz_item, settings=settings)
     tech_comment = tags.get("COMMENT", "")
@@ -193,8 +240,11 @@ def tag_mp3(filename: str, root_dir: str, final_name: str, d: dict, album: dict,
             time.sleep(1.0)
     os.rename(filename, final_name) # Última tentativa forçada se o shutil falhar
 
-def _get_tags_to_add(qobuz_album: dict, qobuz_item: dict, settings: QobuzDLSettings = None) -> Dict[str, Any]:
-    tags = {}
+def _get_tags_to_add(qobuz_album: QobuzAlbum, qobuz_item: QobuzItem, settings: Optional[QobuzDLSettings] = None) -> Dict[str, Any]:
+    if settings is None:
+        settings = QobuzDLSettings()
+        
+    tags: Dict[str, Any] = {}
     if not qobuz_album or not qobuz_item:
         return tags
 
@@ -206,10 +256,10 @@ def _get_tags_to_add(qobuz_album: dict, qobuz_item: dict, settings: QobuzDLSetti
     album_artist_raw = get_album_artist(qobuz_album)
     album_artist_name = album_artist_raw if isinstance(album_artist_raw, list) else str(album_artist_raw)
 
-    artists = []
-    conductors = []
-    ensembles = []
-    composers = []
+    artists: List[str] = []
+    conductors: List[str] = []
+    ensembles: List[str] = []
+    composers: List[str] = []
 
     main_art_raw = qobuz_item.get("performer", {}).get("name") or qobuz_item.get("artist", {}).get("name", "")
     if main_art_raw:
@@ -262,7 +312,7 @@ def _get_tags_to_add(qobuz_album: dict, qobuz_item: dict, settings: QobuzDLSetti
             if "composer" in roles_str:
                 if name not in composers: composers.append(name)
 
-    clean_artists = []
+    clean_artists: List[str] = []
     seen = set()
     for a in artists:
         if a.lower() not in seen:
@@ -346,7 +396,7 @@ def _get_tags_to_add(qobuz_album: dict, qobuz_item: dict, settings: QobuzDLSetti
     qobuz_id = qobuz_item.get("id", "")
     album_id = qobuz_album.get("id", "")
     album_url = qobuz_album.get("url", "")
-    hires_tag = "Hi-Res " if int(bit_depth) >= 24 else "CD-Quality "
+    hires_tag = "Hi-Res " if int(float(bit_depth)) >= 24 else "CD-Quality "
 
     comments = [
         f"Source: Qobuz",

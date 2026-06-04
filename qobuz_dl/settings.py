@@ -1,5 +1,8 @@
+import argparse
+import configparser
 from dataclasses import dataclass, field
-from typing import List, Optional, Any
+from typing import List, Any, Dict
+
 from qobuz_dl.constants import DEFAULT_FOLDER, DEFAULT_TRACK, DEFAULT_MULTIPLE_DISC_TRACK
 
 @dataclass
@@ -86,7 +89,7 @@ class QobuzDLSettings:
     telegram_ch_geral:       str   = ""
 
     @classmethod
-    def from_arguments_configparser(cls, arguments: Any, config: Any) -> 'QobuzDLSettings':
+    def from_arguments_configparser(cls, arguments: argparse.Namespace, config: configparser.ConfigParser) -> 'QobuzDLSettings':
         """
         Cria o objeto de configuração lendo primeiro dos argumentos do terminal
         e, se não existirem, recorre ao ficheiro config.ini.
@@ -95,7 +98,7 @@ class QobuzDLSettings:
         
         # O dicionário kwargs agrupa todos os valores. 
         # O desempacotamento (**kwargs) vai alimentar o Dataclass automaticamente.
-        kwargs = {
+        kwargs: Dict[str, Any] = {
             # Opções Básicas
             'email': config.get(section, "email", fallback=""),
             'password': config.get(section, "password", fallback=""),

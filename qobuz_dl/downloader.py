@@ -64,9 +64,19 @@ async def safe_print_async(*args, **kwargs) -> None:
         text = " ".join(map(str, args))
         tqdm.write(text, end=kwargs.get('end', '\n'))
 
-def format_release_type(release_type: Optional[str]) -> str:
+def format_release_type(album_meta: dict) -> str:
     from qobuz_dl.core import classificar_tipo_lancamento
-    r = classificar_tipo_lancamento(raw_type=release_type)
+    raw_type = album_meta.get("release_type") or album_meta.get("product_type")
+    title = album_meta.get("title", "")
+    version = album_meta.get("version", "")
+    
+    t_count = album_meta.get("tracks_count", 0)
+    if not t_count and "tracks" in album_meta and "items" in album_meta["tracks"]:
+        t_count = len(album_meta["tracks"]["items"])
+
+    duration = album_meta.get("duration", 0)
+
+    r = classificar_tipo_lancamento(raw_type, title, version, t_count, duration)
     return "EP" if r == "ep" else r.title()
 
 def process_folder_format_with_subdirs(folder_format: str, attr_dict: dict, path: Optional[str] = None, legacy_charmap: bool = False) -> str:
@@ -469,10 +479,10 @@ class Download:
                 await safe_print_async(f"{Tema.SUCESSO}[✔] Faixa Concluída: {Tema.TITULO}{track_title}{Tema.OFF}\n")
 
     async def _download_and_tag(self, root_dir: str, tmp_count: int, track_url_dict: dict, track_meta: dict, album_meta: dict, is_track: bool, is_mp3: bool, multiple: Optional[int], is_parallel: bool, t_tag: str) -> bool:
-        r_type_raw = track_meta.get("album", {}).get("release_type")
-        if not r_type_raw:
-            r_type_raw = album_meta.get("release_type", "Unknown")
-        r_type_str = format_release_type(r_type_raw).upper()
+        a_meta_for_type = track_meta.get("album", {})
+        if not a_meta_for_type:
+            a_meta_for_type = album_meta
+        r_type_str = format_release_type(a_meta_for_type).upper()
 
         extension = ".mp3" if is_mp3 else ".flac"
         legacy_flag = getattr(self.settings, 'legacy_charmap', False)
@@ -635,9 +645,8 @@ class Download:
         return True
 
     @staticmethod
-    def _get_filename_attr(track_artist: str, track_meta: dict, album_meta: dict) -> dict:     
-        a_artist_raw = get_album_artist(album_meta)
-        a_artist_str = ", ".join(a_artist_raw) if isinstance(a_artist_raw, list) else (str(a_artist_raw) if a_artist_raw else track_artist)
+    def _get_filename_attr(track_artist: str, track_meta: dict, album_meta: dict) -> dict:
+        a_artist_str = str(album_meta.get("artist", {}).get("name") or album_meta.get("performer", {}).get("name") or track_artist)
 
         # Filtro de inteligência: Substitui Various Artists pelo artista real da faixa
         if "Various Artists" in a_artist_str:
@@ -657,12 +666,13 @@ class Download:
             "disc_number": f'{track_meta.get("media_number", 1):02}', "release_date": track_meta.get("release_date_original"),
             "ExplicitFlag": "[E]" if track_meta.get("parental_warning") else "",
             "explicit": "[E]" if track_meta.get("parental_warning") else "",
+            "release_type": format_release_type(album_meta),
         }
 
     def _build_metadata_dict(self, meta: dict, title: str, bit_depth: str, sampling_rate: str, file_format: str, is_album: bool) -> dict:
         album_meta = meta if is_album else meta.get("album", {})
-        a_artist_raw = get_album_artist(album_meta)
-        a_artist_str = ", ".join(a_artist_raw) if isinstance(a_artist_raw, list) else (str(a_artist_raw) if a_artist_raw else _safe_get(meta, "performer", "name"))
+
+        a_artist_str = str(album_meta.get("artist", {}).get("name") or album_meta.get("performer", {}).get("name") or _safe_get(meta, "performer", "name", default="Unknown"))
 
         # Filtro de inteligência para o nome da Pasta do Álbum
         if "Various Artists" in a_artist_str:
@@ -688,7 +698,7 @@ class Download:
             "disc_count": meta.get("media_count", 1), "track_count": meta.get("track_count", 1),
             "ExplicitFlag": "[E]" if (album_meta if not is_album else meta).get("parental_warning") else "",
             "explicit": "[E]" if (album_meta if not is_album else meta).get("parental_warning") else "",
-            "release_type": format_release_type(album_meta.get("release_type") if not is_album else meta.get("release_type")),
+            "release_type": format_release_type(album_meta),
         }
         if not is_album:
             res.update({"tracktitle": title, "track_title": title, "track_title_base": meta.get("title", "")})

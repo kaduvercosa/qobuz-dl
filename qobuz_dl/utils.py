@@ -29,7 +29,7 @@ class PartialFormatter(string.Formatter):
         self.missing = missing
         self.bad_fmt = bad_fmt
 
-    def get_field(self, field_name: str, args: tuple, kwargs: dict) -> Tuple[Any, str]:
+    def get_field(self, field_name: str, args: Tuple[Any, ...], kwargs: Dict[str, Any]) -> Tuple[Any, str]:
         try:
             val = super().get_field(field_name, args, kwargs)
         except (KeyError, AttributeError):
@@ -47,7 +47,7 @@ class PartialFormatter(string.Formatter):
             raise
 
 
-def make_m3u(pl_directory: Union[str, Path], remote_items: Optional[List[Dict]] = None) -> None:
+def make_m3u(pl_directory: Union[str, Path], remote_items: Optional[List[Dict[str, Any]]] = None) -> None:
     """
     Gera um ficheiro de playlist .m3u.
     Se a ordem remota da API (remote_items) for fornecida, usa um algoritmo de
@@ -58,13 +58,13 @@ def make_m3u(pl_directory: Union[str, Path], remote_items: Optional[List[Dict]] 
     pl_full_path = pl_path / f"{pl_path.name}.m3u"
 
     # 1. Analisa a pasta local e extrai as tags de áudio (Pathlib rglob em vez de os.walk)
-    local_files_info = []
+    local_files_info: List[Dict[str, Any]] = []
     
     for audio_path in pl_path.rglob('*'):
         if not audio_path.is_file() or audio_path.suffix.lower() not in EXTENSIONS:
             continue
 
-        info = {
+        info: Dict[str, Any] = {
             'path': audio_path, 
             'title': '', 
             'artist': '', 
@@ -103,7 +103,7 @@ def make_m3u(pl_directory: Union[str, Path], remote_items: Optional[List[Dict]] 
         
         local_files_info.append(info)
 
-    ordered_files = []
+    ordered_files: List[Dict[str, Any]] = []
 
     # 2. Corresponde com a ordem da API do Qobuz (Algoritmo de 4 Passos)
     if remote_items:
@@ -169,7 +169,7 @@ def make_m3u(pl_directory: Union[str, Path], remote_items: Optional[List[Dict]] 
         pl_full_path.write_text("\n".join(track_list), encoding="utf-8")
 
 
-def smart_discography_filter(contents: list, save_space: bool = False, skip_extras: bool = False) -> list:
+def smart_discography_filter(contents: List[Dict[str, Any]], save_space: bool = False, skip_extras: bool = False) -> List[Dict[str, Any]]:
     """
     Filtra discografias grandes, removendo duplicados de qualidade inferior
     ou versões extra (Deluxe, Live) consoante as configurações.
@@ -179,7 +179,7 @@ def smart_discography_filter(contents: list, save_space: bool = False, skip_extr
         "extra": r"(?i)(anniversary|deluxe|live|collector|demo|expanded)",
     }
 
-    def is_type(album_t: str, album: dict) -> bool:
+    def is_type(album_t: str, album: Dict[str, Any]) -> bool:
         version = album.get("version", "")
         title = album.get("title", "")
         regex = TYPE_REGEXES[album_t]
@@ -192,14 +192,14 @@ def smart_discography_filter(contents: list, save_space: bool = False, skip_extr
     requested_artist = contents[0]["name"]
     items = [item["albums"]["items"] for item in contents][0]
 
-    title_grouped = dict()
+    title_grouped: Dict[str, List[Dict[str, Any]]] = dict()
     for item in items:
         title_ = essence(item["title"])
         if title_ not in title_grouped:
             title_grouped[title_] = []
         title_grouped[title_].append(item)
 
-    filtered_items = []
+    filtered_items: List[Dict[str, Any]] = []
     for albums in title_grouped.values():
         best_bit_depth = max(a["maximum_bit_depth"] for a in albums)
         get_best = min if save_space else max
@@ -208,7 +208,7 @@ def smart_discography_filter(contents: list, save_space: bool = False, skip_extr
         )
         remaster_exists = any(is_type("remaster", a) for a in albums)
 
-        def is_valid(album: dict) -> bool:
+        def is_valid(album: Dict[str, Any]) -> bool:
             return (
                 album["maximum_bit_depth"] == best_bit_depth
                 and album["maximum_sampling_rate"] == best_sampling_rate
@@ -250,7 +250,7 @@ def get_url_info(url: str) -> Tuple[str, str]:
     return r.group(1), r.group(2)
 
 
-def get_album_artist(qobuz_album: dict) -> List[str]:
+def get_album_artist(qobuz_album: Dict[str, Any]) -> List[str]:
     """
     Extrai os artistas principais do álbum. Retorna uma lista de strings para
     garantir o suporte nativo a 'Multi-Artist Tagging'.
@@ -330,7 +330,8 @@ def invalid_chars_to_fullwidth(filename: str) -> str:
         filename = filename.replace(invalid_char, fullwidth_char)
     return filename
 
-async def get_apple_hq_cover(upc: str = None, isrc: str = None, artist: str = None, album: str = None) -> Optional[str]:
+
+async def get_apple_hq_cover(upc: Optional[str] = None, isrc: Optional[str] = None, artist: Optional[str] = None, album: Optional[str] = None) -> Optional[str]:
     import urllib.parse
     
     headers = {
