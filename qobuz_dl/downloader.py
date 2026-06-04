@@ -840,13 +840,26 @@ async def _get_extra(item: str, dirn: str, extra: str = "cover.jpg", art_size: s
     tag_capa = f"{Tema.TAG}[CAPA]{Tema.OFF}" + (" " * spaces)
     
     if e_file.is_file():
-        await safe_print_async(f"{tag_capa} ┌── 🖼️ {extra}")
+        # Lemos o arquivo oculto para recuperar a origem da capa (Apple ou Qobuz)
+        q_file = Path(dirn) / ".cover_quality"
+        q_tag = ""
+        if q_file.exists():
+            saved_q = q_file.read_text(encoding="utf-8").strip()
+            if saved_q == "Apple":
+                q_tag = f" {Tema.PURPLE}[Apple]{Tema.OFF}"
+            else:
+                q_tag = f" {Tema.CYAN}[Qobuz _{saved_q}]{Tema.OFF}" if saved_q and saved_q != "org" else f" {Tema.CYAN}[Qobuz]{Tema.OFF}"
+                
+        await safe_print_async(f"{tag_capa} ┌── 🖼️ {extra}{q_tag} ⏭️  {Tema.AVISO}Pulando (Já existe){Tema.OFF}")
         return
         
     if og_quality: art_size = "org"
     
     # Identifica se a URL é dos servidores da Apple Music (mzstatic)
     is_apple = "mzstatic.com" in item
+
+    # ... (O resto da função continua igual a partir daqui) ...
+
     
     # Tenta a qualidade solicitada, se a Qobuz der 404, cai para 600
     qualities_to_try = [art_size, "600"] if art_size else ["600"]

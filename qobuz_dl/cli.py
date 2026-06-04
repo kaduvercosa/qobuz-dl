@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Union
 
 from qobuz_dl.bundle import Bundle
-from qobuz_dl.color import GREEN, RED, YELLOW, OFF, CYAN
+from qobuz_dl.color import GREEN, RED, YELLOW, OFF, CYAN, BLUE
 from qobuz_dl.commands import qobuz_dl_args
 from qobuz_dl.core import QobuzDL
 from qobuz_dl.downloader import DEFAULT_FOLDER, DEFAULT_TRACK, abort_event
@@ -106,28 +106,33 @@ def validate_config_formats(formats_to_check: dict) -> None:
 
 
 def _reset_config(config_file: Path) -> int:
-    logging.info(f"\n{GREEN}--- QOBUZ-DL: CONFIGURACAO PADRAO ---{OFF}")
+    logging.info(f"\n{BLUE}╭──────────────────────────────────────────────────╮{OFF}")
+    logging.info(f"{BLUE}│       QOBUZ-DL MASTER : CONFIGURAÇÃO INICIAL     │{OFF}")
+    logging.info(f"{BLUE}╰──────────────────────────────────────────────────╯{OFF}")
+    
     config = configparser.ConfigParser(interpolation=None)
     config["qobuz"] = {}
     
     try:
-        print()
-        email = input("Enter your Qobuz email: ")
+        print(f"\n{YELLOW}--- 1. Credenciais da Conta ---{OFF}")
+        email = input("  ❯ Email do Qobuz: ")
         if not email: sys.exit(1)
         config["qobuz"]["email"] = email.strip()
 
-        print(f"\n{YELLOW}[!] ATTENTION: Qobuz API blocked direct password login for 3rd party apps.{OFF}")
-        print(f"{YELLOW}[!] You must use your browser Auth Token (F12 > Storage > Local Storage > localuser > token).{OFF}\n")
+        print(f"\n  {RED}[!] ATENÇÃO: A Qobuz bloqueou o login direto por senha para apps de terceiros.{OFF}")
+        print(f"  {RED}[!] Tem de usar o Token do Navegador (F12 > Storage > Local Storage > localuser > token).{OFF}\n")
         
-        auth_token = input("Paste your browser token here: ")
+        auth_token = input("  ❯ Cole o Token (user_auth_token) aqui: ")
         if not auth_token: sys.exit(1)
 
         config["qobuz"]["password"] = ""
         config["qobuz"]["auth_token"] = auth_token.strip()
 
-        print("\nDo you want to automatically download and inject lyrics?")
-        print("  1) SIM, BAIXAR LETRAS\n  2) NAO, PULE AS LETRAS")
-        fetch_lyrics_opt = input("Escolha (1 or 2): ")
+        print(f"\n{YELLOW}--- 2. Letras & Tradução ---{OFF}")
+        print("  Deseja baixar e injetar letras automaticamente?")
+        print("    1) Sim, procurar e injetar letras")
+        print("    2) Não, saltar as letras")
+        fetch_lyrics_opt = input("  ❯ Escolha (1 ou 2): ")
         config["qobuz"]["fetch_lyrics"] = "true" if fetch_lyrics_opt.strip() == "1" else "false"
 
         target_lang = "PT-BR"
@@ -135,97 +140,83 @@ def _reset_config(config_file: Path) -> int:
         deepl_api_key = ""
 
         if config["qobuz"]["fetch_lyrics"] == "true":
-            print()
-            target_lang_input = input("Target language for DeepL translation (e.g. 'PT-BR', 'EN-US') [default: PT-BR]: ")
+            target_lang_input = input("\n  ❯ Idioma alvo para tradução (ex: 'PT-BR', 'EN-US') [padrão: PT-BR]: ")
             if target_lang_input.strip(): target_lang = target_lang_input.strip().upper()
 
-            print(f"\n{YELLOW}[!] To use DeepL translation, enter your DeepL API Key. Leave blank to disable translation.{OFF}")
-            deepl_api_key = input("DeepL API Key: ").strip()
-
-            print(f"\n{YELLOW}[!] To use Genius as a fallback, enter your API Token. Leave blank to only use LRCLIB.{OFF}")
-            genius_token = input("Genius API Token: ").strip()
+            print(f"\n  {CYAN}[Dica] Deixe as chaves em branco se quiser usar apenas os servidores gratuitos (LRCLIB, etc).{OFF}")
+            deepl_api_key = input("  ❯ Chave API do DeepL (para tradução premium): ").strip()
+            genius_token = input("  ❯ Token API do Genius (para busca estendida): ").strip()
 
         config["qobuz"]["target_lang"] = target_lang
         config["qobuz"]["deepl_api_key"] = deepl_api_key
         config["qobuz"]["genius_token"] = genius_token
 
-        print("\n--- AI Smart Playlists (Optional) ---")
-        print("  1) OpenAI (ChatGPT)\n  2) Google Gemini\n  3) Skip")
-        ai_choice = input("Choice (1, 2 or 3) [default: 3]: ").strip()
+        print(f"\n{YELLOW}--- 3. Playlists Inteligentes (IA) ---{OFF}")
+        print("  Deseja gerar playlists usando Inteligência Artificial?")
+        print("    1) OpenAI (ChatGPT)")
+        print("    2) Google Gemini")
+        print("    3) Saltar (Nenhuma IA)")
+        ai_choice = input("  ❯ Escolha (1, 2 ou 3) [padrão: 3]: ").strip()
 
         config["qobuz"]["ai_provider"] = "openai"
         config["qobuz"]["openai_api_key"] = ""
         config["qobuz"]["gemini_api_key"] = ""
 
-        if ai_choice == "1": config["qobuz"]["openai_api_key"] = input("OpenAI API Key (sk-...): ").strip()
+        if ai_choice == "1": 
+            config["qobuz"]["openai_api_key"] = input("  ❯ Chave API da OpenAI (sk-...): ").strip()
         elif ai_choice == "2": 
             config["qobuz"]["ai_provider"] = "gemini"
-            config["qobuz"]["gemini_api_key"] = input("Gemini API Key: ").strip()
+            config["qobuz"]["gemini_api_key"] = input("  ❯ Chave API do Gemini: ").strip()
 
-        print("\n--- Autonomous Watcher / Webhooks (Optional) ---")
-        config["qobuz"]["webhook_url"] = input("Enter your n8n / Make.com Webhook URL (Leave blank to skip): ").strip()
-
-        # --- SEÇÃO DO TELEGRAM (ESPELHO DE MÚSICAS) ---
-        print("\n--- Telegram Mirror (Optional) ---")
-        print("  Mirror your downloads to private Telegram channels.")
-        print("  Requires a Telegram account and 3 private channels.")
-        tg_choice = input("Enable Telegram mirroring? (y/N): ").strip().lower()
-
-        if tg_choice == "y":
-            config["telegram"] = {}
-            config["telegram"]["enabled"] = "false"   # Desabilitado por padrão; usuário ativa manualmente
-            print(f"\n{YELLOW}[!] Telegram will be DISABLED by default.{OFF}")
-            print(f"{YELLOW}    Set 'enabled = true' in config.ini [telegram] when ready to use.{OFF}\n")
-            config["telegram"]["api_id"]   = input("Telegram App api_id (from my.telegram.org): ").strip()
-            config["telegram"]["api_hash"] = input("Telegram App api_hash: ").strip()
-            config["telegram"]["session"]  = input("Session name [default: qobuz_session]: ").strip() or "qobuz_session"
-            print(f"\n{YELLOW}[!] Channel IDs always start with -100{OFF}")
-            config["channels"] = {}
-            config["channels"]["musicas"]  = input("Channel ID -- Tracks (e.g. -1001234567890): ").strip()
-            config["channels"]["albuns"]   = input("Channel ID -- Albums (e.g. -1001234567890): ").strip()
-            config["channels"]["artistas"] = input("Channel ID -- Artists (e.g. -1001234567890): ").strip()
-            config["channels"]["geral"]    = input("Channel ID -- General/Log (e.g. -1001234567890): ").strip()
-            print(f"\n{GREEN}[+] Telegram section added. Remember to set 'enabled = true' when you want to start mirroring.{OFF}")
-        else:
-            # Grava seção desabilitada com valores vazios para o usuário preencher depois
-            config["telegram"] = {
-                "enabled":  "false",
-                "api_id":   "",
-                "api_hash": "",
-                "session":  "qobuz_session",
-            }
-            config["channels"] = {
-                "musicas":  "",
-                "albuns":   "",
-                "artistas": "",
-                "geral":    "",
-            }
-        # -----------------------------------------------
-
-        # --- NOVA SEÇÃO DO RADAR ---
-        print("\n--- Radar (New Releases) ---")
-        dias_busca = input("Days to search back for new releases (Radar) [default: 7]: ").strip()
+        print(f"\n{YELLOW}--- 4. Automação & Radares ---{OFF}")
+        config["qobuz"]["webhook_url"] = input("  ❯ URL do Webhook (n8n/Make.com) (em branco para saltar): ").strip()
+        
+        dias_busca = input("  ❯ Radar: Dias a retroceder para procurar lançamentos [padrão: 7]: ").strip()
         config["qobuz"]["dias_de_busca"] = dias_busca if dias_busca else "7"
-        # ---------------------------
 
-        print()
-        directory = input(f"Download folder [default: Qobuz Downloads]: ").strip()
+        print(f"\n{YELLOW}--- 5. Espelho do Telegram ---{OFF}")
+        print("  Deseja enviar cópias dos downloads para canais do Telegram?")
+        tg_choice = input("  ❯ Ativar Telegram? (s/N): ").strip().lower()
+
+        if tg_choice == "s":
+            config["telegram"] = {}
+            config["telegram"]["enabled"] = "false"   # Desativado por padrão para proteção
+            print(f"\n  {CYAN}[!] O Telegram começará 'desativado'. Altere 'enabled = true' no config.ini quando quiser usar.{OFF}")
+            config["telegram"]["api_id"]   = input("  ❯ Telegram api_id (de my.telegram.org): ").strip()
+            config["telegram"]["api_hash"] = input("  ❯ Telegram api_hash: ").strip()
+            config["telegram"]["session"]  = input("  ❯ Nome da sessão [padrão: qobuz_session]: ").strip() or "qobuz_session"
+            
+            print(f"\n  {CYAN}[!] Os IDs de canais começam sempre com -100{OFF}")
+            config["channels"] = {}
+            config["channels"]["musicas"]  = input("  ❯ ID Canal Músicas (ex: -100...): ").strip()
+            config["channels"]["albuns"]   = input("  ❯ ID Canal Álbuns (ex: -100...): ").strip()
+            config["channels"]["artistas"] = input("  ❯ ID Canal Artistas (ex: -100...): ").strip()
+            config["channels"]["geral"]    = input("  ❯ ID Canal Geral/Log (ex: -100...): ").strip()
+        else:
+            # Preenche vazio para evitar quebras futuras
+            config["telegram"] = {"enabled": "false", "api_id": "", "api_hash": "", "session": "qobuz_session"}
+            config["channels"] = {"musicas": "", "albuns": "", "artistas": "", "geral": ""}
+
+        print(f"\n{YELLOW}--- 6. Preferências de Download ---{OFF}")
+        directory = input(f"  ❯ Pasta principal de downloads [padrão: Qobuz Downloads]: ").strip()
         config["qobuz"]["directory"] = directory if directory else "Qobuz Downloads"
 
-        print()
-        folder_format = input(f"Folder format [default: {DEFAULT_FOLDER}]: ").strip()
+        folder_format = input(f"  ❯ Formato das subpastas [padrão: {DEFAULT_FOLDER}]: ").strip()
         config["qobuz"]["folder_format"] = folder_format if folder_format else DEFAULT_FOLDER
 
-        print("\nDownload quality:")
-        print("  27) 24-Bit / >96 kHz (Hi-Res)\n  7)  24-Bit / <96 kHz (Hi-Res)")
-        print("  6)  16-Bit / 44.1 kHz (CD / FLAC)\n  5)  320 kbps (MP3)")
-        quality = input("Choice (27, 7, 6, 5) [default: 7]: ").strip()
+        print("\n  Qualidade Padrão de Download:")
+        print("    27) 24-Bit / >96 kHz (Hi-Res Máximo)")
+        print("     7) 24-Bit / <96 kHz (Hi-Res Padrão)")
+        print("     6) 16-Bit / 44.1 kHz (Qualidade CD / FLAC)")
+        print("     5) 320 kbps (MP3 Económico)")
+        quality = input("  ❯ Escolha (27, 7, 6 ou 5) [padrão: 7]: ").strip()
         config["qobuz"]["default_quality"] = quality if quality else "7"
 
     except KeyboardInterrupt:
-        print("\nWizard aborted.")
+        print(f"\n\n{RED}[!] Configuração cancelada pelo utilizador.{OFF}")
         sys.exit(1)
 
+    # Aplica todas as definições base silenciosas
     config["qobuz"].update({
         "default_limit": "500", "no_m3u": "false", "albums_only": "false", 
         "no_fallback": "false", "og_cover": "true", "embed_art": "true", 
@@ -242,14 +233,15 @@ def _reset_config(config_file: Path) -> int:
         "no_composer_tag": "false", "no_explicit_tag": "false",
         "no_copyright_tag": "false", "no_label_tag": "false",
         "no_credits": "false", "no_upc_tag": "false", "no_isrc_tag": "false",
+        "multi_value_tags": "false",
         "embedded_art_size": "org", "saved_art_size": "org",
         "multiple_disc_prefix": "CD", "multiple_disc_one_dir": "false",
         "multiple_disc_track_format": "{disc_number}.{track_number} - {track_title}",
-        "max_workers": "2", "user_auth_token": ""
+        "max_workers": "3", "user_auth_token": ""
     })
 
     print()
-    logging.info(f"{YELLOW}Getting tokens. Please wait...{OFF}")
+    logging.info(f"{CYAN}[*] A gerar chaves de segurança da API... Aguarde.{OFF}")
     bundle = Bundle()
     config["qobuz"]["app_id"] = str(bundle.get_app_id())
     config["qobuz"]["secrets"] = ",".join(bundle.get_secrets().values())
@@ -257,7 +249,7 @@ def _reset_config(config_file: Path) -> int:
     with open(config_file, "w") as configfile:
         config.write(configfile)
         
-    logging.info(f"\n{GREEN}[+] Configuration successfully saved in {config_file}!{OFF}")
+    logging.info(f"\n{GREEN}[+] Configuração guardada com sucesso em:{OFF} {config_file}\n")
     return 0
 
 
@@ -270,11 +262,9 @@ def _remove_leftovers(directory):
             pass
 
 
-async def _handle_commands(qobuz, arguments):
+async def _handle_commands(maestro, qobuz, arguments):
     def sigint_handler(sig, frame):
         pass
-        #print(f"\n\n{RED}[!] Download forcibly interrupted by the user.{OFF}")
-        #print(f"{YELLOW}Securing files and aborting gracefully....{OFF}")
         abort_event.set()
         raise KeyboardInterrupt
         
@@ -282,7 +272,21 @@ async def _handle_commands(qobuz, arguments):
 
     try:
         if arguments.command == "dl":
-            await qobuz.download_list_of_urls(arguments.SOURCE)
+            # --- DELEGAÇÃO PARA O MAESTRO ---
+            import os
+            urls_finais = []
+            
+            # Lê URLs simples ou extrai de ficheiros .txt
+            for item in arguments.SOURCE:
+                if Path(item).is_file():
+                    with open(item, "r", encoding="utf-8") as f:
+                        urls_finais.extend([linha.strip() for linha in f if linha.strip() and not linha.startswith("#") and "[DONE]" not in linha])
+                else:
+                    urls_finais.append(item)
+            
+            # O Cérebro assume o controlo da lista de links!
+            await maestro.process_batch(urls_finais)
+
         elif arguments.command in ("sync-playlist", "sp"):
             from qobuz_dl.sync_playlist import sync_playlist
             await sync_playlist(qobuz, arguments.URL, qobuz.directory, auto_confirm=arguments.yes)
@@ -543,13 +547,32 @@ async def amain():
         blacklist=getattr(arguments, 'blacklist', None) or blacklist_config,
     )
     
-    await qobuz.initialize_client(email, password, app_id, secrets)
+    # --- INÍCIO DA INTEGRAÇÃO DO MAESTRO ---
+    from core.maestro import MaestroEngine
+    from core.qobuz_provider import QobuzProvider
+    
+    # Iniciar o Motor
+    maestro = MaestroEngine()
+    
+    # O Plugin abraça o seu motor clássico
+    qobuz_plugin = QobuzProvider(qobuz)
+    maestro.register_provider(qobuz_plugin)
+    
+    # Autenticar via Plugin
+    credentials = {
+        "email": email,
+        "password": password,
+        "app_id": app_id,
+        "secrets": secrets
+    }
+    await qobuz_plugin.authenticate(credentials)
+    # --- FIM DA INTEGRAÇÃO ---
 
     try:
-        await _handle_commands(qobuz, arguments)
+        # Passamos o Maestro e o Qobuz para que os comandos antigos não quebrem!
+        await _handle_commands(maestro, qobuz, arguments)
     finally:
-        if hasattr(qobuz, 'client') and qobuz.client:
-            await qobuz.client.close()
+        await qobuz_plugin.shutdown()
 
 
 def main():

@@ -330,32 +330,28 @@ def invalid_chars_to_fullwidth(filename: str) -> str:
         filename = filename.replace(invalid_char, fullwidth_char)
     return filename
 
-async def get_apple_hq_cover(upc: str, isrc: str, artist: str, album: str) -> Optional[str]:
+async def get_apple_hq_cover(upc: str = None, isrc: str = None, artist: str = None, album: str = None) -> Optional[str]:
     import urllib.parse
-    import re
     
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36"
     }
-    
-    async def fetch_url(url):
+
+    async def fetch_url(url: str) -> Optional[str]:
         try:
             async with aiohttp.ClientSession(headers=headers) as session:
                 async with session.get(url, timeout=5) as resp:
                     if resp.status == 200:
-                        # A SOLUÇÃO: content_type=None obriga a abrir mesmo com a etiqueta errada da Apple!
                         data = await resp.json(content_type=None)
-                        
                         if data.get("resultCount", 0) > 0:
                             art_url = data["results"][0].get("artworkUrl100", "")
-                            if art_url: 
+                            if art_url:
                                 return re.sub(r'\d+x\d+[a-zA-Z-]*\.jpg', '10000x10000-999.jpg', art_url)
-
-        except Exception as e:
+        except Exception:
             pass
         return None
 
-    # 1. Tentar por UPC
+    # 1. Tentar por UPC (A forma mais precisa)
     if upc and upc.lower() != "n/a":
         res = await fetch_url(f"https://itunes.apple.com/lookup?upc={upc}")
         if res: return res
@@ -365,13 +361,26 @@ async def get_apple_hq_cover(upc: str, isrc: str, artist: str, album: str) -> Op
         res = await fetch_url(f"https://itunes.apple.com/lookup?isrc={isrc}")
         if res: return res
         
-    # 3. Fallback de Inteligência: Busca por texto
+    # 3. Fallback de Texto com Validação Rigorosa (Resolve o problema dos Singles)
     if artist and album:
-        clean_album = re.sub(r'\(.*?\)|\[.*?\]', '', album).strip()
-        clean_artist = artist.split(" feat")[0].split(" ft")[0].strip()
-        query = urllib.parse.quote(f"{clean_artist} {clean_album}")
+        clean_album = re.sub(r'\(.*?\)|\[.*?\]', '', album).strip().lower()
+        clean_artist = artist.split(" feat")[0].split(" &")[0].strip().lower()
+        term = urllib.parse.quote(f"{clean_artist} {clean_album}")
+        url = f"https://itunes.apple.com/search?term={term}&entity=album&limit=10"
         
-        res = await fetch_url(f"https://itunes.apple.com/search?term={query}&entity=album&limit=1")
-        if res: return res
-        
-    return None
+        try:
+            async with aiohttp.ClientSession(headers=headers) as session:
+                async with session.get(url, timeout=5) as resp:
+                    if resp.status == 200:
+                        data = await resp.json(content_type=None)
+                        
+                        for item in data.get("results", []):
+                            apple_album = item.get("collectionName", "").lower()
+                            apple_album_clean = apple_album.replace(" - single", "").replace(" - ep", "").strip()
+                            
+                            if clean_album == apple_album_clean or clean_album in apple_album_clean:
+                                art_url = item.get("artworkUrl100", "")
+                                if art_url:
+                                    return re.sub(r'\d+x\d+[a-zA-Z-]*\.jpg', '10000x10000-999.jpg', art_url)
+        except Exception:
+            pass  # Engole o erro silenciosamente e deixa o Qobuz assumir
