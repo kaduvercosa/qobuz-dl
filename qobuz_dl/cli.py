@@ -208,7 +208,7 @@ def _reset_config(config_file: Path) -> int:
         print("    27) 24-Bit / >96 kHz (Hi-Res Máximo)")
         print("     7) 24-Bit / <96 kHz (Hi-Res Padrão)")
         print("     6) 16-Bit / 44.1 kHz (Qualidade CD / FLAC)")
-        print("     5) 320 kbps (MP3 Económico)")
+        print("     5) 320 kbps (MP3 Econômico)")
         quality = input("  ❯ Escolha (27, 7, 6 ou 5) [padrão: 7]: ").strip()
         config["qobuz"]["default_quality"] = quality if quality else "7"
 
@@ -361,17 +361,27 @@ async def amain():
         sys.exit(0)
 
 
-    # --- INÍCIO DA INTEGRAÇÃO DO OST HUNTER ---
+        # --- INÍCIO DA INTEGRAÇÃO DO OST HUNTER ---
     if len(sys.argv) > 1 and sys.argv[1] in ("ost", "ost_hunter"):
         from qobuz_dl.ost_hunter import amain as _async_run_ost
         try:
-            # Passa a busca do usuário (se houver) manipulando o sys.argv temporariamente
             sys.argv = [sys.argv[0]] + sys.argv[2:]
             await _async_run_ost()
         except KeyboardInterrupt:
-            print(f"\n\n{RED}[!] Caçador de Trilhas manualmente interrompido.. (CTRL+C).{OFF}")
+            print(f"\n\n{RED}[!] Caçador de Trilhas interrompido (CTRL+C).{OFF}")
         sys.exit(0)
     # --- FIM DA INTEGRAÇÃO DO OST HUNTER ---
+
+    # --- INÍCIO DA INTEGRAÇÃO DO ANIME HUNTER ---
+    if len(sys.argv) > 1 and sys.argv[1] == "anime":
+        from qobuz_dl.anime_hunter import amain as _async_run_anime
+        try:
+            sys.argv = [sys.argv[0]] + sys.argv[2:]
+            await _async_run_anime()
+        except KeyboardInterrupt:
+            print(f"\n\n{RED}[!] Caçador de Animes interrompido (CTRL+C).{OFF}")
+        sys.exit(0)
+    # --- FIM DA INTEGRAÇÃO DO ANIME HUNTER ---
 
 
 
