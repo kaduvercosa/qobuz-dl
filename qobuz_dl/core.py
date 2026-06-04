@@ -185,7 +185,7 @@ class QobuzDL:
         self.app_id  = bundle.get_app_id()
         self.secrets = [s for s in bundle.get_secrets().values() if s]
 
-    async def download_from_id(self, item_id: str, album: bool = True, alt_path: Optional[str] = None, is_playlist: bool = False, playlist_index: Optional[int] = None):
+    async def download_from_id(self, item_id: str, album: bool = True, alt_path: Optional[str] = None, is_playlist: bool = False, playlist_index: Optional[int] = None, is_single_batch: bool = False, single_batch_index: int = 1, single_batch_total: int = 1):
         if handle_download_id(self.downloads_db, item_id, add_id=False, quality=self.quality):
             print(f"{Tema.ALERTA}{Tema.AVISO}ID ({item_id}) ignorado (já existe no banco local).{Tema.OFF}")
             return
@@ -198,7 +198,8 @@ class QobuzDL:
                 track_format=self.track_format, fetch_lyrics=self.fetch_lyrics, no_lrc_files=self.no_lrc_files,
                 genius_token=self.genius_token, deepl_api_key=self.deepl_api_key, target_lang=self.target_lang,
                 no_credits=self.no_credits, settings=self.settings, download_db=self.downloads_db,
-                is_playlist=is_playlist, playlist_track_number=playlist_index, booklet_only=self.booklet_only
+                is_playlist=is_playlist, playlist_track_number=playlist_index, booklet_only=self.booklet_only,
+                is_single_batch=is_single_batch, single_batch_index=single_batch_index, single_batch_total=single_batch_total
             )
             await dloader.download_id_by_type(not album)
         except (aiohttp.ClientError, asyncio.TimeoutError, NonStreamable) as exc:
@@ -221,7 +222,7 @@ class QobuzDL:
 
         return classificar_tipo_lancamento(raw_type=raw_type, title=str(item.get("title", "")), version=str(item.get("version", "")), t_count=item.get("tracks_count", 0), duration=item.get("duration", 0))
 
-    async def handle_url(self, url: str):
+    async def handle_url(self, url: str, is_single_batch: bool = False, single_batch_index: int = 1, single_batch_total: int = 1):
         possibles = {
             "playlist": {"func": self.client.get_plist_meta,  "iterable_key": "tracks"},
             "artist":   {"func": self.client.get_artist_meta, "iterable_key": "albums"},
@@ -295,7 +296,7 @@ class QobuzDL:
             if url_type == "playlist" and not self.no_m3u_for_playlists:
                 make_m3u(new_path)
         else:
-            await self.download_from_id(item_id, type_dict["album"])
+            await self.download_from_id(item_id, type_dict["album"], is_single_batch=is_single_batch, single_batch_index=single_batch_index, single_batch_total=single_batch_total)
 
     async def mark_url_done_in_file(self, txt_file: str, url_to_mark: str):
         if not txt_file or not Path(txt_file).is_file(): return
@@ -309,13 +310,13 @@ class QobuzDL:
                         f.write(f"{stripped} [DONE]\n" if stripped == url_to_mark.strip() else line)
         except Exception: pass
 
-    async def _process_single_url(self, url: str, txt_file: Optional[str] = None):
+    async def _process_single_url(self, url: str, txt_file: Optional[str] = None, is_single_batch: bool = False, single_batch_index: int = 1, single_batch_total: int = 1):
         original_url = url
         url = url.replace("open.qobuz.com", "play.qobuz.com")
         try:
             if "last.fm" in url: await self.download_lastfm_pl(url)
             elif Path(url).is_file(): await self.download_from_txt_file(url)
-            else: await self.handle_url(url)
+            else: await self.handle_url(url, is_single_batch, single_batch_index, single_batch_total)
             if txt_file: await self.mark_url_done_in_file(txt_file, original_url)
         except Exception as exc:
             print(f"{Tema.ALERTA}{Tema.ERRO}Erro ao baixar {original_url}: {exc}{Tema.OFF}")
@@ -325,20 +326,24 @@ class QobuzDL:
         
         try: max_batch_workers = int(getattr(self.settings, "max_workers", 3))
         except (ValueError, TypeError): max_batch_workers = 3
+        
+        is_batch = len(urls) > 1
+        total_urls = len(urls)
 
-        if len(urls) > 1 and max_batch_workers > 1 and txt_file is not None:
+        if is_batch and max_batch_workers > 1 and txt_file is not None:
             print(f"{Tema.SYS}{Tema.AVISO}Modo Batch Ativo: Processando {max_batch_workers} links simultâneos.{Tema.OFF}")
             original_workers = max_batch_workers
             self.settings.max_workers = 1
             sem = asyncio.Semaphore(max_batch_workers)
 
             async def sem_process(url: str):
-                async with sem: await self._process_single_url(url, txt_file)
+                async with sem: await self._process_single_url(url, txt_file, is_batch, idx, total_urls)
 
-            try: await asyncio.gather(*[sem_process(u) for u in urls])
+            try: await asyncio.gather(*[sem_process(idx, u) for idx, u in enumerate(urls, start=1)])
             finally: self.settings.max_workers = original_workers
         else:
-            for url in urls: await self._process_single_url(url, txt_file)
+            for idx, url in enumerate(urls, start=1):
+                await self._process_single_url(url, txt_file, is_batch, idx, total_urls)
 
     async def download_from_txt_file(self, txt_file: str):
         try:

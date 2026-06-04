@@ -120,7 +120,10 @@ class Download:
         download_db=None,
         is_playlist: bool = False,           
         playlist_track_number: int = None, 
-        booklet_only: bool = False):
+        booklet_only: bool = False,
+        is_single_batch: bool = False,
+        single_batch_index: int = 1,
+        single_batch_total: int = 1):
  
         self.client = client
         self.item_id = item_id
@@ -138,6 +141,9 @@ class Download:
         self.fetch_lyrics = fetch_lyrics
         self.no_lrc_files = no_lrc_files
         self.target_lang = target_lang
+        self.is_single_batch = is_single_batch
+        self.single_batch_index = single_batch_index
+        self.single_batch_total = single_batch_total
         
         if self.fetch_lyrics:
             self.lyrics_engine = LyricsEngine(genius_token=genius_token, deepl_api_key=deepl_api_key, translate=True, target_lang=self.target_lang)
@@ -193,12 +199,11 @@ class Download:
         
         album_attr = self._build_metadata_dict(album_meta, album_title, bit_depth, sampling_rate, file_format, True)
         
-        await safe_print_async(f"\n{Tema.TAG}══════════════════════════════════════════════════════════════════════{Tema.OFF}")
-        await safe_print_async(f"{Tema.TAG}[ALBUM] {Tema.OFF} 💿 {Tema.TITULO}{album_title}{Tema.OFF}")
+        await safe_print_async(f"=========================ALBÚM=========================")
+        await safe_print_async(f"\n{Tema.TAG}▶{Tema.OFF} 💿 {Tema.TITULO}{album_title}{Tema.OFF}")
         await safe_print_async(f"   {Tema.DETALHES}├──{Tema.OFF} Artista: {album_attr.get('album_artist', 'Unknown')}")
         await safe_print_async(f"   {Tema.DETALHES}├──{Tema.OFF} Qualidade Máx: {file_format} ({bit_depth}b/{sampling_rate}kHz)")
-        await safe_print_async(f"   {Tema.DETALHES}└──{Tema.OFF} Faixas na Fila: {_track_count}")
-        await safe_print_async(f"{Tema.TAG}══════════════════════════════════════════════════════════════════════{Tema.OFF}\n")
+        await safe_print_async(f"   {Tema.DETALHES}└──{Tema.OFF} Faixas na Fila: {_track_count}\n")
         
         await self._determine_formats(album_meta=album_meta, album_attr=album_attr, tracks_meta=album_meta["tracks"]["items"],
                                 track_attr=None, is_track=False, file_format=file_format, settings=self.settings)
@@ -242,12 +247,12 @@ class Download:
             await self._generate_tracklist(album_meta, str(working_dirn), album_title, file_format, bit_depth, sampling_rate)
 
             if not self.settings.no_cover:
-                await _get_extra(album_meta["image"]["large"], str(working_dirn), art_size="org")
+                await _get_extra(album_meta["image"]["large"], str(working_dirn), art_size="org", spaces=3)
 
             if self.settings.embed_art:
                 cover_path, embed_path = working_dirn / "cover.jpg", working_dirn / EMB_COVER_NAME
                 if cover_path.exists(): shutil.copy2(cover_path, embed_path)
-                else: await _get_extra(album_meta["image"]["large"], str(working_dirn), extra=EMB_COVER_NAME, art_size="org")
+                else: await _get_extra(album_meta["image"]["large"], str(working_dirn), extra=EMB_COVER_NAME, art_size="org", spaces=3)
 
             if "goodies" in album_meta:
                 await _download_goodies(album_meta, str(working_dirn))
@@ -268,8 +273,8 @@ class Download:
                     if abort_event.is_set(): return False
                     
                     t_no = str(track_item.get('track_number', 0)).zfill(2)
-                    t_tag_text = f"[{t_no}/{str({_track_count}).zfill(2)}]".ljust(8)
-                    t_tag = f"{Tema.TAG}[{t_no}/{str(_track_count).zfill(2)}]{Tema.OFF}"
+                    t_tag_text = f"[{t_no}/{str(_track_count).zfill(2)}]".ljust(8)
+                    t_tag = f"{Tema.TAG}{t_tag_text}{Tema.OFF}"
 
                     try:
                         full_track_meta = await self.client.get_track_meta(track_item["id"])
@@ -374,25 +379,38 @@ class Download:
                 t_no = str(self.playlist_track_number).zfill(2)
                 counter_tag = f"[{t_no}/{str(total_tracks).zfill(2)}]"
                 
+                if self.playlist_track_number == 1:
+                    await safe_print_async(f"=========================PLAYLIST=========================")
+                
                 await safe_print_async(f"\n{Tema.TAG}▶ {counter_tag}{Tema.OFF} 🎵 {Tema.TITULO}{artist} - {track_title}{Tema.OFF}")
-                await safe_print_async(f"   {Tema.DETALHES}├──{Tema.OFF} Qualidade Máx: {file_format} ({bit_depth}b/{sampling_rate}kHz)\n")
+                await safe_print_async(f"   {Tema.DETALHES}└──{Tema.OFF} Qualidade Máx: {file_format} ({bit_depth}b/{sampling_rate}kHz)\n")
             else:
-                await safe_print_async(f"\n{Tema.TAG}══════════════════════════════════════════════════════════════════════{Tema.OFF}")
-                await safe_print_async(f"{Tema.TAG}▶ [SINGLE]{Tema.OFF} 🎵 {Tema.TITULO}{artist} - {track_title}{Tema.OFF}")
-                await safe_print_async(f"   {Tema.DETALHES}├──{Tema.OFF} Qualidade Máx: {file_format} ({bit_depth}b/{sampling_rate}kHz)")
-                await safe_print_async(f"{Tema.TAG}══════════════════════════════════════════════════════════════════════{Tema.OFF}\n")
+                if self.is_single_batch:
+                    if self.single_batch_index == 1:
+                        await safe_print_async(f"=========================SINGLES=========================")
+
+                    t_no = str(self.single_batch_index).zfill(2)
+                    t_tot = str(self.single_batch_total).zfill(2)
+                    await safe_print_async(f"\n{Tema.TAG}▶ [{t_no}/{t_tot}]{Tema.OFF} 🎵 {Tema.TITULO}{artist} - {track_title}{Tema.OFF}")
+                    await safe_print_async(f"   {Tema.DETALHES}└──{Tema.OFF} Qualidade Máx: {file_format} ({bit_depth}b/{sampling_rate}kHz)\n")
+                else:
+                    await safe_print_async(f"=========================SINGLE=========================")
+                    await safe_print_async(f"\n{Tema.TAG}▶{Tema.OFF} 🎵 {Tema.TITULO}{artist} - {track_title}{Tema.OFF}")
+                    await safe_print_async(f"   {Tema.DETALHES}└──{Tema.OFF} Qualidade Máx: {file_format} ({bit_depth}b/{sampling_rate}kHz)\n")
                 
             track_attr = self._build_metadata_dict(track_meta, track_title, bit_depth, sampling_rate, file_format, False)
             await self._determine_formats(track_meta.get("album", {}), None, [track_meta], track_attr, True, file_format, self.settings)
             
             dirn = Path(process_folder_format_with_subdirs(self.folder_format, track_attr, self.path, getattr(self.settings, 'legacy_charmap', False)))
             dirn.mkdir(parents=True, exist_ok=True)
+            
+            capa_spaces = 3 if getattr(self, 'is_playlist', False) else 5
 
             if getattr(self, 'is_playlist', False):
                 if self.settings.embed_art:
-                    await _get_extra(track_meta["album"]["image"]["large"], str(dirn), extra=EMB_COVER_NAME, art_size="org", is_playlist=True)
+                    await _get_extra(track_meta["album"]["image"]["large"], str(dirn), extra=EMB_COVER_NAME, art_size="org", is_playlist=True, spaces=capa_spaces)
             elif not self.settings.no_cover:
-                await _get_extra(track_meta["album"]["image"]["large"], str(dirn), art_size="org")
+                await _get_extra(track_meta["album"]["image"]["large"], str(dirn), art_size="org", spaces=capa_spaces)
                 if self.settings.embed_art:
                     cover_path, embed_path = dirn / "cover.jpg", dirn / EMB_COVER_NAME
                     if cover_path.exists(): shutil.copy2(cover_path, embed_path)
@@ -401,7 +419,8 @@ class Download:
             if getattr(self, 'is_playlist', False):
                 total_tracks = getattr(self.settings, 'playlist_total_count', '??')
                 t_no = str(self.playlist_track_number).zfill(2)
-                t_tag = f"{Tema.TAG}[{t_no}/{str(total_tracks).zfill(2)}]{Tema.OFF}"
+                t_tag_text = f"[{t_no}/{str(total_tracks).zfill(2)}]".ljust(8)
+                t_tag = f"{Tema.TAG}{t_tag_text}{Tema.OFF}"
             else:
                 t_tag = f"{Tema.TAG}[SINGLE]{Tema.OFF}"
             
@@ -460,17 +479,17 @@ class Download:
         if len(desc_name) > 30: desc_name = desc_name[:27] + "..."
 
         # --- SEPARAÇÃO INTELIGENTE DE TAGS ---
-        if not is_track:
-            # Para Álbuns e EPs: Usa o contador dinâmico paralelo (ex: [01/04])
-            t_tag_arq    = f"{t_tag} ├─────"
-            t_tag_letra  = f"{t_tag} ├────"
-            t_tag_status = f"{t_tag} └───"
+        if getattr(self, 'is_playlist', False) or not is_track:
+            # Para Álbuns, EPs e Playlists (13 caracteres antes do emoji)
+            t_tag_arq    = f"{t_tag}  ├───"
+            t_tag_letra  = f"{t_tag}  ├─────"
+            t_tag_status = f"{t_tag}  └───"
             t_tag_bar    = f"{t_tag} "
         else:
-            # Para Playlists e Singles: Mantém o padrão de texto fixo
-            t_tag_arq    = f"{Tema.TAG}[DOWNLOAD]{Tema.OFF} ├─────"
-            t_tag_letra  = f"{Tema.TAG}[LETRA]{Tema.OFF}    ├────"
-            t_tag_status = f"{Tema.TAG}[STATUS]{Tema.OFF}   └───"
+            # Para Singles Soltos (15 caracteres antes do emoji)
+            t_tag_arq    = f"{Tema.TAG}[ARQUIVO]{Tema.OFF}   ├───"
+            t_tag_letra  = f"{Tema.TAG}[LETRA]{Tema.OFF}     ├─────"
+            t_tag_status = f"{Tema.TAG}[STATUS]{Tema.OFF}    └───"
             t_tag_bar    = f"{Tema.TAG}[DOWNLOAD]{Tema.OFF} "
 
         if final_file.exists():
@@ -599,6 +618,10 @@ class Download:
         a_artist_raw = get_album_artist(album_meta)
         a_artist_str = ", ".join(a_artist_raw) if isinstance(a_artist_raw, list) else (str(a_artist_raw) if a_artist_raw else track_artist)
 
+        # Filtro de inteligência: Substitui Various Artists pelo artista real da faixa
+        if "Various Artists" in a_artist_str:
+            a_artist_str = track_artist
+
         final_track_artist = track_meta.get("performer", {}).get("name") or track_artist
 
         return {
@@ -619,6 +642,14 @@ class Download:
         album_meta = meta if is_album else meta.get("album", {})
         a_artist_raw = get_album_artist(album_meta)
         a_artist_str = ", ".join(a_artist_raw) if isinstance(a_artist_raw, list) else (str(a_artist_raw) if a_artist_raw else _safe_get(meta, "performer", "name"))
+
+        # Filtro de inteligência para o nome da Pasta do Álbum
+        if "Various Artists" in a_artist_str:
+            if is_album and "tracks" in meta and meta.get("tracks", {}).get("items"):
+                first_track = meta["tracks"]["items"][0]
+                a_artist_str = _safe_get(first_track, "performer", "name") or _safe_get(first_track, "artist", "name", default="Unknown")
+            else:
+                a_artist_str = _safe_get(meta, "performer", "name") or _safe_get(meta, "artist", "name", default="Unknown")
 
         res = {
             "album": _get_title(album_meta) if not is_album else title,
@@ -741,7 +772,7 @@ class Download:
                     for p in re.sub(r'<[^<]+>', '', re.sub(r'<br\s*/?>', '\n', str(desc))).split('\n'):
                         if p.strip(): f.write(textwrap.fill(p.strip(), width=70) + "\n\n")
 
-            await safe_print_async(f"{Tema.TAG}[PDF]{Tema.OFF}    📄 {Tema.SUCESSO}Booklet criado com sucesso{Tema.OFF}")
+            await safe_print_async(f"{Tema.TAG}[PDF]{Tema.OFF}     ┌── 📄 {Tema.SUCESSO}Booklet criado com sucesso{Tema.OFF}")
         except Exception:
             pass
 
@@ -780,26 +811,43 @@ def _get_title(item: dict) -> str:
         title = f"{title} ({v})" if v.lower() not in title.lower() else title
     return title
 
-async def _get_extra(item: str, dirn: str, extra: str = "cover.jpg", art_size: str = None, og_quality: bool = False, is_playlist: bool = False) -> None:
+async def _get_extra(item: str, dirn: str, extra: str = "cover.jpg", art_size: str = None, og_quality: bool = False, is_playlist: bool = False, spaces: int = 3) -> None:
     if abort_event.is_set(): return
     e_file = Path(dirn) / extra
     
-    # 4 espaços para fechar exatos 10 caracteres no alinhamento
-    tag_capa = f"{Tema.TAG}[CAPA]{Tema.OFF}    "
+    # A tag da capa agora recebe dinamicamente os espaços para alinhar com a linha de baixo!
+    tag_capa = f"{Tema.TAG}[CAPA]{Tema.OFF}" + (" " * spaces)
     
     if e_file.is_file():
-        await safe_print_async(f"{tag_capa} ┌── 🖼️  {extra}")
+        await safe_print_async(f"{tag_capa} ┌── 🖼️ {extra}")
         return
         
     if og_quality: art_size = "org"
-    if art_size in ["50", "100", "150", "300", "600", "max", "org"]:
-        item = item.replace("_600.", f"_{art_size}.")
     
-    try:
-        await tqdm_download(item, str(e_file), log_prefix=tag_capa, is_parallel=False)
-        await safe_print_async(f"{tag_capa} ┌── 🖼️  {extra}")
-    except Exception: 
-        pass
+    # Tenta a qualidade solicitada, se a Qobuz der 404, cai para 600
+    qualities_to_try = [art_size, "600"] if art_size else ["600"]
+    
+    for q in qualities_to_try:
+        if abort_event.is_set(): break
+        
+        # Cria a URL com a qualidade da tentativa atual
+        try_url = item.replace("_600.", f"_{q}.") if q else item
+        
+        try:
+            await tqdm_download(try_url, str(e_file), log_prefix=tag_capa, is_parallel=False)
+            
+            # Mostra no terminal qual qualidade realmente passou!
+            q_tag = f" [_{q}]" if q else ""
+            await safe_print_async(f"{tag_capa} ┌── 🖼️ {extra}{q_tag}")
+            
+            # Salva a qualidade confirmada em um arquivo invisível para o metadata.py ler
+            if extra in ["cover.jpg", EMB_COVER_NAME] and q:
+                (Path(dirn) / ".cover_quality").write_text(q, encoding="utf-8")
+            return
+            
+        except Exception:
+            # Se deu erro (ex: 404 Not Found no _org), ignora e tenta o próximo da lista
+            continue
 
 def _clean_format_str(folder: str, track: str, file_format: str) -> Tuple[str, str]:
     final = []
@@ -837,7 +885,7 @@ async def tqdm_download(url: str, fname: str, log_prefix: str = "", is_parallel:
                     if t_size == 0: t_size = d_size + int(r.headers.get('content-length', 0))
 
                     async with aiofiles.open(fname, 'ab' if d_size > 0 else 'wb') as file:
-                        bar_desc = f"{log_prefix} ⬇️  {track_name}" if track_name else f"{log_prefix} ⬇️ "
+                        bar_desc = f"{log_prefix}  ⬇️  {track_name}" if track_name else f"{log_prefix}  ⬇️ "
                         with tqdm(total=t_size, unit="iB", unit_scale=True, desc=bar_desc, initial=d_size, disable=is_parallel, leave=False, bar_format="{desc}: {percentage:3.0f}% |{bar:20}| {n_fmt}/{total_fmt}") as bar:
                             async for data in r.content.iter_chunked(65536):
                                 if abort_event.is_set(): return
@@ -993,8 +1041,16 @@ async def _download_goodies(album_meta: dict, dirn: str) -> None:
 
 async def _clean_embed_art(dirn: Union[str, Path]) -> None:
     e_file = Path(dirn) / EMB_COVER_NAME
+    q_file = Path(dirn) / ".cover_quality"
+    
     if e_file.exists():
         try:
             await asyncio.sleep(0.5) 
             e_file.unlink()
+        except OSError: pass
+
+    # Apaga o aviso de qualidade no final
+    if q_file.exists():
+        try:
+            q_file.unlink()
         except OSError: pass

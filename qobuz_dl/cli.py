@@ -288,8 +288,9 @@ def _remove_leftovers(directory):
 
 async def _handle_commands(qobuz, arguments):
     def sigint_handler(sig, frame):
-        print(f"\n\n{RED}[!] Download forcibly interrupted by the user.{OFF}")
-        print(f"{YELLOW}Securing files and aborting gracefully....{OFF}")
+        pass
+        #print(f"\n\n{RED}[!] Download forcibly interrupted by the user.{OFF}")
+        #print(f"{YELLOW}Securing files and aborting gracefully....{OFF}")
         abort_event.set()
         raise KeyboardInterrupt
         
