@@ -3,6 +3,7 @@ import string
 import logging
 import time
 import unicodedata
+import aiohttp
 from pathlib import Path
 from typing import List, Tuple, Dict, Any, Optional, Union
 
@@ -328,3 +329,49 @@ def invalid_chars_to_fullwidth(filename: str) -> str:
     for invalid_char, fullwidth_char in invalid_to_fullwidth.items():
         filename = filename.replace(invalid_char, fullwidth_char)
     return filename
+
+async def get_apple_hq_cover(upc: str, isrc: str, artist: str, album: str) -> Optional[str]:
+    import urllib.parse
+    import re
+    
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+    
+    async def fetch_url(url):
+        try:
+            async with aiohttp.ClientSession(headers=headers) as session:
+                async with session.get(url, timeout=5) as resp:
+                    if resp.status == 200:
+                        # A SOLUÇÃO: content_type=None obriga a abrir mesmo com a etiqueta errada da Apple!
+                        data = await resp.json(content_type=None)
+                        
+                        if data.get("resultCount", 0) > 0:
+                            art_url = data["results"][0].get("artworkUrl100", "")
+                            if art_url: 
+                                return re.sub(r'\d+x\d+[a-zA-Z-]*\.jpg', '10000x10000-999.jpg', art_url)
+
+        except Exception as e:
+            pass
+        return None
+
+    # 1. Tentar por UPC
+    if upc and upc.lower() != "n/a":
+        res = await fetch_url(f"https://itunes.apple.com/lookup?upc={upc}")
+        if res: return res
+        
+    # 2. Tentar por ISRC
+    if isrc and isrc.lower() != "n/a":
+        res = await fetch_url(f"https://itunes.apple.com/lookup?isrc={isrc}")
+        if res: return res
+        
+    # 3. Fallback de Inteligência: Busca por texto
+    if artist and album:
+        clean_album = re.sub(r'\(.*?\)|\[.*?\]', '', album).strip()
+        clean_artist = artist.split(" feat")[0].split(" ft")[0].strip()
+        query = urllib.parse.quote(f"{clean_artist} {clean_album}")
+        
+        res = await fetch_url(f"https://itunes.apple.com/search?term={query}&entity=album&limit=1")
+        if res: return res
+        
+    return None

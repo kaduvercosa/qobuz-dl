@@ -22,7 +22,8 @@ from tqdm import tqdm
 import qobuz_dl.metadata as metadata
 from qobuz_dl.exceptions import NonStreamable
 from qobuz_dl.settings import QobuzDLSettings
-from qobuz_dl.utils import get_album_artist, clean_filename
+# IMPORT ATUALIZADO AQUI
+from qobuz_dl.utils import get_album_artist, clean_filename, get_apple_hq_cover
 from qobuz_dl.db import handle_download_id
 from qobuz_dl.constants import DEFAULT_FOLDER, DEFAULT_TRACK, DEFAULT_MULTIPLE_DISC_TRACK
 from qobuz_dl.lyrics_engine import LyricsEngine
@@ -246,13 +247,25 @@ class Download:
         try:
             await self._generate_tracklist(album_meta, str(working_dirn), album_title, file_format, bit_depth, sampling_rate)
 
+            # --- CAÇADOR DE CAPAS HQ (APPLE) ---
+            album_upc = album_meta.get("upc", "")
+            # Tentar pegar o ISRC da primeira faixa como backup
+            first_track_isrc = ""
+            try:
+                first_track_isrc = album_meta.get("tracks", {}).get("items", [])[0].get("isrc", "")
+            except Exception:
+                pass
+                
+            apple_cover = await get_apple_hq_cover(album_upc, first_track_isrc, album_attr.get('album_artist', ''), album_title)
+            final_cover = apple_cover if apple_cover else album_meta["image"]["large"]
+
             if not self.settings.no_cover:
-                await _get_extra(album_meta["image"]["large"], str(working_dirn), art_size="org", spaces=3)
+                await _get_extra(final_cover, str(working_dirn), art_size="org", spaces=3)
 
             if self.settings.embed_art:
                 cover_path, embed_path = working_dirn / "cover.jpg", working_dirn / EMB_COVER_NAME
                 if cover_path.exists(): shutil.copy2(cover_path, embed_path)
-                else: await _get_extra(album_meta["image"]["large"], str(working_dirn), extra=EMB_COVER_NAME, art_size="org", spaces=3)
+                else: await _get_extra(final_cover, str(working_dirn), extra=EMB_COVER_NAME, art_size="org", spaces=3)
 
             if "goodies" in album_meta:
                 await _download_goodies(album_meta, str(working_dirn))
@@ -406,11 +419,19 @@ class Download:
             
             capa_spaces = 3 if getattr(self, 'is_playlist', False) else 5
 
+            # --- CAÇADOR DE CAPAS HQ (APPLE) ---
+            track_upc = track_meta.get("album", {}).get("upc", "")
+            track_isrc = track_meta.get("isrc", "")
+            track_album_title = track_meta.get("album", {}).get("title", "")
+            
+            apple_cover = await get_apple_hq_cover(track_upc, track_isrc, artist, track_album_title)
+            final_cover = apple_cover if apple_cover else track_meta["album"]["image"]["large"]
+
             if getattr(self, 'is_playlist', False):
                 if self.settings.embed_art:
-                    await _get_extra(track_meta["album"]["image"]["large"], str(dirn), extra=EMB_COVER_NAME, art_size="org", is_playlist=True, spaces=capa_spaces)
+                    await _get_extra(final_cover, str(dirn), extra=EMB_COVER_NAME, art_size="org", is_playlist=True, spaces=capa_spaces)
             elif not self.settings.no_cover:
-                await _get_extra(track_meta["album"]["image"]["large"], str(dirn), art_size="org", spaces=capa_spaces)
+                await _get_extra(final_cover, str(dirn), art_size="org", spaces=capa_spaces)
                 if self.settings.embed_art:
                     cover_path, embed_path = dirn / "cover.jpg", dirn / EMB_COVER_NAME
                     if cover_path.exists(): shutil.copy2(cover_path, embed_path)
@@ -824,29 +845,39 @@ async def _get_extra(item: str, dirn: str, extra: str = "cover.jpg", art_size: s
         
     if og_quality: art_size = "org"
     
+    # Identifica se a URL é dos servidores da Apple Music (mzstatic)
+    is_apple = "mzstatic.com" in item
+    
     # Tenta a qualidade solicitada, se a Qobuz der 404, cai para 600
     qualities_to_try = [art_size, "600"] if art_size else ["600"]
     
     for q in qualities_to_try:
         if abort_event.is_set(): break
         
-        # Cria a URL com a qualidade da tentativa atual
-        try_url = item.replace("_600.", f"_{q}.") if q else item
+        # A url da Apple não tem _600., logo não fazemos replace nela
+        try_url = item.replace("_600.", f"_{q}.") if (q and not is_apple) else item
         
         try:
             await tqdm_download(try_url, str(e_file), log_prefix=tag_capa, is_parallel=False)
             
-            # Mostra no terminal qual qualidade realmente passou!
-            q_tag = f" [_{q}]" if q else ""
+            # Formata a etiqueta visual no terminal dependendo da origem
+            if is_apple:
+                q_tag = f" {Tema.PURPLE}[Apple]{Tema.OFF}"
+                saved_q = "Apple"
+            else:
+                q_tag = f" {Tema.CYAN}[Qobuz _{q}]{Tema.OFF}" if q else f" {Tema.CYAN}[Qobuz]{Tema.OFF}"
+                saved_q = q
+                
             await safe_print_async(f"{tag_capa} ┌── 🖼️ {extra}{q_tag}")
             
-            # Salva a qualidade confirmada em um arquivo invisível para o metadata.py ler
-            if extra in ["cover.jpg", EMB_COVER_NAME] and q:
-                (Path(dirn) / ".cover_quality").write_text(q, encoding="utf-8")
+            # Salva a qualidade confirmada num arquivo invisível para o metadata.py ler
+            if extra in ["cover.jpg", EMB_COVER_NAME] and saved_q:
+                (Path(dirn) / ".cover_quality").write_text(saved_q, encoding="utf-8")
             return
             
         except Exception:
-            # Se deu erro (ex: 404 Not Found no _org), ignora e tenta o próximo da lista
+            # Se for Apple e falhar, o loop quebra logo (não tenta o "600" na Apple)
+            if is_apple: break
             continue
 
 def _clean_format_str(folder: str, track: str, file_format: str) -> Tuple[str, str]:

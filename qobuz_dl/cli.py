@@ -23,11 +23,6 @@ logging.basicConfig(level=logging.INFO, format="%(message)s")
 # PATH CONFIGURATIONS (Using Pathlib)
 # ============================================================
 
-#=======
-## ============================================================
-# PATH CONFIGURATIONS (Using Pathlib)
-# ============================================================
-
 def ensure_long_path(path: Union[str, Path]) -> str:
     """Garante o prefixo de long path do Windows (\\\\?\\) quando necessário."""
     if os.name != "nt":
@@ -59,20 +54,9 @@ else:
     OS_CONFIG = Path(os.environ.get("HOME") or Path.home()) / ".config"
 # --- FIM DA DETECÇÃO ---
 
-
 CONFIG_PATH = OS_CONFIG / "qobuz-dl"
 CONFIG_FILE = CONFIG_PATH / "config.ini"
 QOBUZ_DB = CONFIG_PATH / "qobuz_dl.db"
-
-
-
-
-
-CONFIG_PATH = OS_CONFIG / "qobuz-dl"
-CONFIG_FILE = CONFIG_PATH / "config.ini"
-QOBUZ_DB = CONFIG_PATH / "qobuz_dl.db"
-
-
 
 def validate_config_formats(formats_to_check: dict) -> None:
     """
