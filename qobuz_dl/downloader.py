@@ -53,6 +53,7 @@ class Tema:
 
 print_lock = asyncio.Lock()
 abort_event = asyncio.Event()
+cover_resize_lock = asyncio.Lock()
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -630,6 +631,43 @@ class Download:
         # O PULO DO GATO: Direciona o Tagger para o "quartinho" isolado
         tag_dir = cover_dir if cover_dir else root_dir
         # -------------------------------------------------------------
+        
+        # Verifica se a capa existe e se é maior que 15MB (15.000.000 bytes)
+        cover_path_to_check = Path(tag_dir) / "embed_cover.jpg"
+        async with cover_resize_lock:
+            if cover_path_to_check.exists() and os.path.getsize(cover_path_to_check) >= 16500000:
+                try:
+                    from PIL import Image
+                    await safe_print_async(f"{t_tag} {Tema.AVISO}Capa > 16.5MB! Redimensionando apenas as proporções...{Tema.OFF}")
+                
+                    current_size = os.path.getsize(cover_path_to_check)
+                    target_size = 16000000
+                    
+                    resample_filter = getattr(Image, "Resampling", Image).LANCZOS
+                
+                    with Image.open(cover_path_to_check) as img:
+                        orig_format = img.format or "PNG"
+                    
+                        ratio = (target_size / current_size) ** 0.5
+                    
+                        new_w = int(img.width * ratio * 0.95)
+                        new_h = int(img.height * ratio * 0.95)
+                        
+                        img_copy = img.copy()
+                    
+                    img_copy.thumbnail((new_w, new_h), resample_filter)
+                    
+                    img_copy.save(cover_path_to_check, format=orig_format)
+
+                    while os.path.getsize(cover_path_to_check) >= 16500000:
+                        with Image.open(cover_path_to_check) as img:
+                            img_copy = img.copy()
+                        img_copy.thumbnail((int(img_copy.width * 0.9), int(img_copy.height * 0.9)), resample_filter)
+                        img_copy.save(cover_path_to_check, format=orig_format)
+                except ImportError:
+                    await safe_print_async(f"{t_tag} {Tema.ERRO}Capa gigante, mas o módulo 'Pillow' não está instalado!{Tema.OFF}")
+                except Exception as e:
+                    await safe_print_async(f"{t_tag} {Tema.ERRO}Falha ao processar capa: {e}{Tema.OFF}")
 
         tag_function = metadata.tag_mp3 if final_fmt == 5 else metadata.tag_flac
         try:

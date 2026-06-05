@@ -105,9 +105,17 @@ def _find_cover_image(root_dir: Union[str, Path]) -> Optional[Path]:
 def _get_cover_info(cover_path: Path) -> str:
     try:
         size_mb = cover_path.stat().st_size / (1024 * 1024)
-        return f"Cover Quality: _org | Size: {size_mb:.2f} MB"
+        try:
+            from PIL import Image
+            with Image.open(cover_path) as img:
+                width, height = img.size
+                return f"Cover: {width}x{height}px ({size_mb:.2f} MB)"
+        except ImportError:
+            return f"Cover: Original ({size_mb:.2f} MB)"
+        except Exception:
+            return f"Cover: Original ({size_mb:.2f} MB)"
     except Exception:
-        return "Cover Quality: _org"
+        return "Cover: Original"
 
 def _get_title_with_version(title: str = "", version: Optional[str] = "") -> str:
     item_title = title

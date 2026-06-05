@@ -7,6 +7,28 @@ import urllib.parse
 from mutagen.flac import FLAC
 from mutagen.id3 import ID3, USLT, ID3NoHeaderError
 
+class Tema:
+    """
+    =========================================
+    🎨 SISTEMA DE CORES ADAPTÁVEL (CLARO/ESCURO)
+    =========================================
+    """
+    CYAN    = "\033[36m"
+    GREEN   = "\033[32m"
+    YELLOW  = "\033[33m"
+    RED     = "\033[31m"
+    BLUE    = "\033[34m"   
+    PURPLE  = "\033[35m"   
+    BOLD    = "\033[1m"
+    OFF     = "\033[0m"
+
+    TAG       = BLUE           
+    TITULO    = BOLD           
+    SUCESSO   = GREEN          
+    AVISO     = YELLOW         
+    ERRO      = RED            
+    DETALHES  = ""             
+
 # Imports opcionais
 try: 
     import lyricsgenius

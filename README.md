@@ -181,7 +181,7 @@ apk update
 apk add python3 py3-pip
 pip install --upgrade pip setuptools wheel pybind11 --ignore-installed --no-cache-dir
 apk add gcc musl-dev python3-dev libffi-dev make
-apk add py3-aiohttp py3-pycryptodome py3-beautifulsoup4 py3-lxml 
+apk add py3-aiohttp py3-pycryptodome py3-beautifulsoup4 py3-lxml py3-pillow
 
 # 2. Instalar dependências Python que requerem compilação prévia
 python3 -m pip install --upgrade "typing-extensions>=4.0.0" beautifulsoup4 langdetect lyricsgenius mutagen

@@ -33,16 +33,18 @@ dependencies = [
     "pathvalidate",
     "aiohttp",
     "aiofiles",
+    "ffmpeg-python",
     "mutagen",
     "tqdm",
     "pick==1.6.0",
     "beautifulsoup4",
     "colorama",
     "pycryptodome",
-    "questionary",
     "lyricsgenius",
     "langdetect",
-    "deepl"
+    "requests",
+    "deepl",
+    "Pillow"
 ]
 
 [project.urls]

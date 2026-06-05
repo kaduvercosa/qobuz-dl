@@ -24,6 +24,7 @@ requirements = [
     "pathvalidate",
     "aiohttp",
     "aiofiles",
+    "ffmpeg-python",
     "mutagen",
     "tqdm",
     "pick==1.6.0",
@@ -31,10 +32,11 @@ requirements = [
     "colorama",
     # NOTE: cryptography was replaced with pycryptodome for better portability (e.g. ish-shell/IOS)
     "pycryptodome",
-    "questionary",
     "lyricsgenius",
     "langdetect",
-    "deepl"  # FIX: DeepL API Oficial para traduções de letras
+    "requests",
+    "deepl",  # FIX: DeepL API Oficial para traduções de letras
+    "Pillow"
 ]
 
 setup(
