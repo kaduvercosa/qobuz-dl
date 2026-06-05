@@ -60,4 +60,4 @@ qdl = "qobuz_dl:main"
 version = { attr = "qobuz_dl.__version__" }
 
 [tool.setuptools.packages.find]
-include = ["qobuz_dl*"]
+include = ["qobuz_dl*", "core*"]
