@@ -1,7 +1,7 @@
 import logging
 import asyncio
 from pathlib import Path
-from typing import Any, Tuple, Optional
+from typing import Any, Tuple, Optional, Union
 
 from mutagen.flac import FLAC
 from mutagen.id3 import ID3
@@ -14,7 +14,7 @@ async def _extract_track_data(file_path: Path, client: Any) -> Tuple[Optional[st
     """
     Lê as tags locais (FLAC ou MP3) para obter os IDs do Qobuz.
     Se não encontrar o ID mas encontrar o ISRC, faz uma pesquisa na API.
-    
+
     Retorna:
         Uma tupla contendo (track_id, album_id).
     """
@@ -61,7 +61,7 @@ async def _extract_track_data(file_path: Path, client: Any) -> Tuple[Optional[st
     return track_id, album_id
 
 
-async def sync_database(directory: str | Path, db_path: str, client: Any) -> None:
+async def sync_database(directory: Union[str, Path], db_path: str, client: Any) -> None:
     """
     Verifica o diretório local e restaura IDs do Qobuz em falta na base de dados local.
     Usa tags personalizadas embutidas ou pesquisa inversa via API do Qobuz.

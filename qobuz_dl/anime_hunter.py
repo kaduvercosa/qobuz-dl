@@ -133,11 +133,11 @@ async def amain():
         embed_art=config.getboolean(section, "embed_art", fallback=True)
     )
     
-    # 2. O SEGREDO REVELADO: Guardamos o Token no "cofre" interno de configurações do motor
+    # 2. Guardamos o Token no "cofre" interno de configurações do motor
     token = config.get(section, "auth_token", fallback=config.get(section, "user_auth_token", fallback=""))
     qobuz.settings.user_auth_token = token
 
-    # 3. Autenticamos! (O core.py agora vai ler o qobuz.settings e autorizar a entrada)
+    # 3. Autenticamos! (O core.py vai ler o qobuz.settings e autorizar a entrada)
     await qobuz.initialize_client(
         email=config.get(section, "email", fallback=""),
         pwd=config.get(section, "password", fallback=""),
@@ -145,8 +145,6 @@ async def amain():
         secrets=config.get(section, "secrets", fallback="").split(",")
     )
 
-    app_id = config.get(section, "app_id", fallback="")
-    
     # Processar escolhas do utilizador
     alvos = []
     if escolha == "todas":
@@ -157,7 +155,7 @@ async def amain():
 
     print(f"\n{Tema.GREEN}Iniciando Motor de Download para {len(alvos)} faixa(s)...{Tema.OFF}")
     
-        # 2. Busca e Download Inteligente usando o motor oficial autenticado
+    # 2. Busca e Download Inteligente usando o motor oficial autenticado
     for alvo in alvos:
         print(f"\n{Tema.SYS}Caçando: {Tema.BOLD}{alvo}{Tema.OFF}")
         

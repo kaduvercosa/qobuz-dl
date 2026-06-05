@@ -5,7 +5,7 @@ Sincronização bidirecional entre uma pasta local e uma playlist do Qobuz.
 import os
 import logging
 from pathlib import Path
-from typing import Tuple, Dict, List, Any
+from typing import Tuple, Dict, List, Any, Union
 
 from mutagen.flac import FLAC
 from mutagen.id3 import ID3
@@ -14,17 +14,16 @@ from qobuz_dl.color import CYAN, GREEN, RED, YELLOW, OFF
 
 logger = logging.getLogger(__name__)
 
-def _scan_local_tracks(directory: str | Path) -> Tuple[Dict[str, Path], List[Path]]:
+def _scan_local_tracks(directory: Union[str, Path]) -> Tuple[Dict[str, Path], List[Path]]:
     """
     Percorre a pasta local em busca de ficheiros de áudio e lê as suas tags.
-    
+
     Retorna:
         Um dicionário com {track_id: caminho_do_ficheiro} e uma lista de ficheiros sem tag.
     """
     local_tracks = {}
     untagged_files = []
     
-    # Usamos o Path.rglob para procurar recursivamente, o que substitui o os.walk de forma mais limpa.
     base_dir = Path(directory)
     
     for fpath in base_dir.rglob('*'):
@@ -76,7 +75,7 @@ def _sanitize_dirname(name: str) -> str:
         name = name.replace(char, '_')
     return name.strip()
     
-def _clean_empty_dirs(base_directory: str | Path, exclude_dirs: set = None) -> None:
+def _clean_empty_dirs(base_directory: Union[str, Path], exclude_dirs: set = None) -> None:
     """
     Limpa pastas vazias que possam ter ficado após a exclusão de músicas.
     """
