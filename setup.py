@@ -59,7 +59,7 @@ setup(
             "qdl = qobuz_dl:main",
         ],
     },
-    packages=find_packages(),
+    packages=["qobuz_dl", "core"],
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: GNU General Public License (GPL)",
