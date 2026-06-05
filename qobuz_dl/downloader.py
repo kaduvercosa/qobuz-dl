@@ -573,7 +573,7 @@ class Download:
                         
                         await safe_print_async(f"{t_tag_arq} 🎧 {Tema.TITULO}{desc_name}{Tema.OFF} {Tema.SUCESSO}{q_str}{Tema.OFF}")
 
-                        await tqdm_download(fresh_track["url"], filename, log_prefix=t_tag_bar, is_parallel=is_parallel, track_name=desc_name)
+                        await tqdm_download(self.client.session, fresh_track["url"], filename, log_prefix=t_tag_bar, is_parallel=is_parallel, track_name=desc_name)
                         success = True
                         break
                     except Exception:
@@ -590,7 +590,7 @@ class Download:
                     
                     await safe_print_async(f"{t_tag_arq} 🎧 {Tema.TITULO}{desc_name}{Tema.OFF} {Tema.SUCESSO}{q_str}{Tema.OFF}")
 
-                    await tqdm_download_segments(fresh_track, filename, log_prefix=t_tag_bar, is_parallel=is_parallel, track_name=desc_name)
+                    await tqdm_download_segments(self.client.session, fresh_track, filename, log_prefix=t_tag_bar, is_parallel=is_parallel, track_name=desc_name)
                     success = True
                     break
             except Exception: pass
@@ -868,9 +868,6 @@ async def _get_extra(item: str, dirn: str, extra: str = "cover.jpg", art_size: s
     # Identifica se a URL é dos servidores da Apple Music (mzstatic)
     is_apple = "mzstatic.com" in item
 
-    # ... (O resto da função continua igual a partir daqui) ...
-
-    
     # Tenta a qualidade solicitada, se a Qobuz der 404, cai para 600
     qualities_to_try = [art_size, "600"] if art_size else ["600"]
     
@@ -881,7 +878,7 @@ async def _get_extra(item: str, dirn: str, extra: str = "cover.jpg", art_size: s
         try_url = item.replace("_600.", f"_{q}.") if (q and not is_apple) else item
         
         try:
-            await tqdm_download(try_url, str(e_file), log_prefix=tag_capa, is_parallel=False)
+            await tqdm_download(self.client.session, try_url, str(e_file), log_prefix=tag_capa, is_parallel=False)
             
             # Formata a etiqueta visual no terminal dependendo da origem
             if is_apple:
@@ -920,7 +917,7 @@ def _safe_get(d: dict, *keys, default=None):
         d = res
     return res
 
-async def tqdm_download(url: str, fname: str, log_prefix: str = "", is_parallel: bool = False, track_name: str = "") -> None:
+async def tqdm_download(session, url: str, fname: str, log_prefix: str = "", is_parallel: bool = False, track_name: str = "") -> None:
     if abort_event.is_set(): return
     
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", "Connection": "keep-alive"}
@@ -931,8 +928,8 @@ async def tqdm_download(url: str, fname: str, log_prefix: str = "", is_parallel:
         if abort_event.is_set(): return
         try:
             headers['Range'] = f'bytes={d_size}-'
-            async with aiohttp.ClientSession() as s:
-                async with s.get(url, headers=headers, timeout=aiohttp.ClientTimeout(sock_read=30.0, connect=10.0)) as r:
+#Usa a sessão passada como argumento
+            async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(sock_read=30.0, connect=10.0)) as r:
                     if r.status == 416: return
                     if r.status not in [200, 206]: raise Exception(f"HTTP {r.status}")
 
@@ -941,7 +938,7 @@ async def tqdm_download(url: str, fname: str, log_prefix: str = "", is_parallel:
                     async with aiofiles.open(fname, 'ab' if d_size > 0 else 'wb') as file:
                         bar_desc = f"{log_prefix}  ⬇️  {track_name}" if track_name else f"{log_prefix}  ⬇️ "
                         with tqdm(total=t_size, unit="iB", unit_scale=True, desc=bar_desc, initial=d_size, disable=is_parallel, leave=False, bar_format="{desc}: {percentage:3.0f}% |{bar:20}| {n_fmt}/{total_fmt}") as bar:
-                            async for data in r.content.iter_chunked(65536):
+                            async for data in r.content.iter_chunked(1048576):
                                 if abort_event.is_set(): return
                                 if data:
                                     await file.write(data)
@@ -967,7 +964,7 @@ async def tqdm_download(url: str, fname: str, log_prefix: str = "", is_parallel:
         if Path(fname).exists(): Path(fname).unlink()
         raise Exception("Incomplete download")
 
-async def tqdm_download_segments(track_url: dict, fname: str, log_prefix: str = "", is_parallel: bool = False, track_name: str = "") -> None:
+async def tqdm_download_segments(session, track_url: dict, fname: str, log_prefix: str = "", is_parallel: bool = False, track_name: str = "") -> None:
     if abort_event.is_set(): return
     
     tmp_fname = f"{fname}.mp4"
@@ -992,7 +989,7 @@ async def tqdm_download_segments(track_url: dict, fname: str, log_prefix: str = 
                 async with session.get(tmpl.replace("$SEGMENT$", str(i)), timeout=15) as r:
                     r.raise_for_status()
                     data = bytearray()
-                    async for chunk in r.content.iter_chunked(65536):
+                    async for chunk in r.content.iter_chunked(1048576):
                         if abort_event.is_set(): return bytearray()
                         data.extend(chunk)
                         if not is_parallel: bar.update(len(chunk))
@@ -1002,8 +999,7 @@ async def tqdm_download_segments(track_url: dict, fname: str, log_prefix: str = 
                 await asyncio.sleep(2 ** attempt)
 
     try:
-        async with aiohttp.ClientSession() as s:
-            async with aiofiles.open(tmp_fname, "wb") as f:
+        async with aiofiles.open(tmp_fname, "wb") as f:
                 bar_desc = f"{log_prefix} ✂️  {track_name}" if track_name else f"{log_prefix} ✂️ "
                 with tqdm(total=t_size, unit="iB", unit_scale=True, desc=bar_desc, disable=is_parallel, leave=False, bar_format="{desc}: {percentage:3.0f}% |{bar:20}| {n_fmt}/{total_fmt}") as bar:
                     seg_uuid = None

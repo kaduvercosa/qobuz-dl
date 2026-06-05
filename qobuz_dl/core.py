@@ -7,6 +7,30 @@ import shutil
 from pathlib import Path
 from typing import Optional, List, Tuple
 
+# ===========================================================================
+# 🚀 OTIMIZAÇÃO GLOBAL DE REDE (INJEÇÃO)
+# Intercepta o aiohttp para forçar conexões rápidas sem SSL e com DNS nativo
+# em todo o projeto, incluindo o pacote externo 'qopy'.
+# ===========================================================================
+try:
+    import aiodns
+    _fast_resolver = aiohttp.AsyncResolver()
+except ImportError:
+    _fast_resolver = None
+
+_original_tcp_connector = aiohttp.TCPConnector
+
+class FastTCPConnector(_original_tcp_connector):
+    def __init__(self, *args, **kwargs):
+        kwargs['ssl'] = False
+        kwargs['limit'] = 0  # Remove limite de conexões simultâneas
+        if _fast_resolver and 'resolver' not in kwargs:
+            kwargs['resolver'] = _fast_resolver
+        super().__init__(*args, **kwargs)
+
+aiohttp.TCPConnector = FastTCPConnector
+# ===========================================================================
+
 from pathvalidate import sanitize_filename
 
 from qobuz_dl.bundle import Bundle
