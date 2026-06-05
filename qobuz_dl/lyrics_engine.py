@@ -36,7 +36,7 @@ logging.getLogger("deepl").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 class LyricsEngine:
-    def __init__(self, genius_token=None, deepl_api_key=None, translate=True, target_lang='PT-BR', translation_symbol=" ¬ ", synced_only=True):
+    def __init__(self, genius_token=None, deepl_api_key=None, translate=True, target_lang='PT-BR', translation_symbol=" ¬ ", synced_only=True, session=None):
         self.genius_token = genius_token
         self.genius = None
         self.deepl_api_key = deepl_api_key
@@ -52,6 +52,7 @@ class LyricsEngine:
         self.pt_false_positives = {"oh", "yeah", "ah", "baby", "na", "la", "uh", "hey", "ooh", "woah"}
 
         # Sessão HTTP centralizada para Connection Pooling
+        self.external_session = bool(session)
         self._shared_session = None
 
         if self.translate and self.deepl_api_key and DEEPL_AVAILABLE:
@@ -69,10 +70,11 @@ class LyricsEngine:
         if self._shared_session is None or self._shared_session.closed:
             connector = aiohttp.TCPConnector(ssl=False, limit=0)
             self._shared_session = aiohttp.ClientSession(connector=connector)
+            self.external_session = False # Marca que a sessão é própria
         return self._shared_session
 
     async def close(self):
-        if self._shared_session and not self._shared_session.closed:
+        if not self.external_session and self._shared_session and not self._shared_session.closed:
             await self._shared_session.close()
 
     def _init_fasttext(self):

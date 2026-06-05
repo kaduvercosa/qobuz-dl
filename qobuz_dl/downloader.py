@@ -157,7 +157,7 @@ class Download:
         self.single_batch_total = single_batch_total
         
         if self.fetch_lyrics:
-            self.lyrics_engine = LyricsEngine(genius_token=genius_token, deepl_api_key=deepl_api_key, translate=True, target_lang=self.target_lang)
+            self.lyrics_engine = LyricsEngine(genius_token=genius_token, deepl_api_key=deepl_api_key, translate=True, target_lang=self.target_lang, session=self.client.session)
 
         self.settings = settings or QobuzDLSettings()
         self.download_db = download_db
