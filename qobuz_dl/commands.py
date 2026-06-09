@@ -3,7 +3,7 @@ import re  # [!] Necessário para injetar as cores
 from typing import Any, Union
 
 from qobuz_dl import __version__
-from qobuz_dl.color import GREEN, RESET, CYAN, YELLOW  # Adicionei CYAN e YELLOW
+from qobuz_dl.color import GREEN, RESET, CYAN, YELLOW, BLUE
 
 def fun_args(subparsers: argparse._SubParsersAction, default_limit: Union[int, str]) -> argparse.ArgumentParser:
     interactive = subparsers.add_parser(
@@ -388,7 +388,7 @@ def qobuz_dl_args(default_quality: Union[int, str] = 6, default_limit: Union[int
         usage=custom_usage,
         description=(
             f"{GREEN}  \t\t\t\t[VERSÃO {__version__}] \n\n{RESET}"
-            f'''\t       /$$$$$$   /$$$$$$  /$$$$$$$  /$$   /$$ /$$$$$$$$       /$$$$$$$  /$$      
+            f'''{BLUE}\t       /$$$$$$   /$$$$$$  /$$$$$$$  /$$   /$$ /$$$$$$$$       /$$$$$$$  /$$      
               / $$__ $$ /$$__  $$| $$__  $$| $$  | $$|_____/$$/      | $$__  $$| $$      
               | $$  \ $| $$  \ $$| $$  \ $$| $$  | $$   /  $$/       | $$  \ $$| $$      
               | $$  | $| $$  | $$| $$$$$$$ | $$  | $$  /  $$/        | $$  | $$| $$      
@@ -396,7 +396,7 @@ def qobuz_dl_args(default_quality: Union[int, str] = 6, default_limit: Union[int
               | $$/$$ $| $$  | $$| $$  \ $$| $$  | $$|  $$___/       | $$  | $$| $$      
               |  $$$$$$|  $$$$$$/| $$$$$$$/|  $$$$$$/|_$$$$$$$$      | $$$$$$$/| $$$$$$$$
                \____ $$$ \______/ |_______/  \______/|________/      |_______/ |________/
-                    \_$$                             '''),
+                    \_$$                             {RESET}'''),
         formatter_class=QobuzHelpFormatter, # [!] Chamando nosso formatter colorido!
         add_help=False
     )
@@ -420,9 +420,9 @@ def qobuz_dl_args(default_quality: Union[int, str] = 6, default_limit: Union[int
         title=f"{YELLOW}commands{RESET}", # Título amarelo
         description="run qobuz-dl <command> --help for more info (e.g. qobuz-dl dl --help)",
         dest="command",
-        # [!] O metavar FOI REMOVIDO DAQUI para ele não aparecer escrito em cima do 'interactive'
+        
     )
-
+    
     interactive = fun_args(subparsers, default_limit)
     download = dl_args(subparsers)
     lucky = lucky_args(subparsers)
@@ -438,9 +438,7 @@ def qobuz_dl_args(default_quality: Union[int, str] = 6, default_limit: Union[int
         description="Autonomous radar to fetch and download new releases based on config.",
         help="scan and download new releases (radar mode)"
     )
-    
 
-    # --- INÍCIO DA INTEGRAÇÃO DO COMANDO OST NO MENU ---
     subparsers.add_parser(
         "ost_hunter",
         aliases=["ost"],
