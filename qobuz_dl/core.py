@@ -66,6 +66,8 @@ class Tema:
     SYS    = f"{BLUE}[SISTEMA]{OFF}  ❯ "
     URL    = f"{BLUE}[URL]{OFF}      ❯ "
     BUSCA  = f"{BLUE}[BUSCA]{OFF}    ❯ "
+    TERMO  = f"{BLUE}[TERMO]{OFF}    ❯ "
+    TEXTO  = f"{BLUE}[TEXTO]{OFF}    ❯ "
     FILA   = f"{BLUE}[FILA]{OFF}     ❯ "
     ALERTA = f"{BLUE}[AVISO]{OFF}    ❯ "
 
@@ -202,7 +204,7 @@ class QobuzDL:
     async def initialize_client(self, email: str, pwd: str, app_id: str, secrets: list):
         self.client = qopy.Client(email, pwd, app_id, secrets, self.settings.user_auth_token, force_english=self.force_english)
         await self.client.start()
-        print(f"{Tema.SYS}{Tema.AVISO}Sessão Ativa | Qualidade: {QUALITIES[int(self.quality)]}{Tema.OFF}\n")
+        print(f"{Tema.SYS}{Tema.AVISO}Sessão Ativa | Qualidade: {QUALITIES[int(self.quality)]}{Tema.OFF}")
 
     def get_tokens(self):
         bundle = Bundle()
@@ -496,7 +498,7 @@ class QobuzDL:
                 options = await self.search_by_type(None, selected_type, limit=self.interactive_limit, fav_subtype=fav_subtype)
                 query_title = f"My Favorite {fav_subtype.title()}"
             else:
-                query = input(f"\n{Tema.BUSCA}Termo de pesquisa (ou Ctrl+C para sair):\n{Tema.BUSCA}{Tema.TITULO}> {Tema.OFF}").strip()
+                query = input(f"\n{Tema.TERMO}Termo de pesquisa (ou Ctrl+C para sair):\n{Tema.TEXTO}{Tema.TITULO} {Tema.OFF}").strip()
                 if not query: continue
                 print(f"{Tema.BUSCA}Procurando por '{query}'...")
                 options = await self.search_by_type(query, selected_type, self.interactive_limit)
@@ -526,7 +528,7 @@ class QobuzDL:
                 b_mid = f"{O}├{'─' * (w_name+2)}┼{'─' * 15}┤"
                 t_head = f"{b_top}\n{h_row}\n{b_mid}"
 
-            title = f'*** RESULTADOS PARA "{query_title}" ***\n\n[Use setas para mover | Espaço para marcar/desmarcar | Enter para confirmar]\n\n{t_head}'
+            title = f'*** RESULTADOS PARA "{query_title}" ***\n[Use setas para mover | Espaço para marcar/desmarcar | Enter para confirmar]\n\n{t_head}'
             options_texts = [opt.get("text") for opt in options]
             selected_items = pick.pick(options_texts, title, multiselect=True, min_selection_count=0)
 

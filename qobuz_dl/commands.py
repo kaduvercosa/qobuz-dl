@@ -387,10 +387,16 @@ def qobuz_dl_args(default_quality: Union[int, str] = 6, default_limit: Union[int
         prog="qobuz-dl",
         usage=custom_usage,
         description=(
-            f"{GREEN}[QOBUZ MASTER EDITION v{__version__}]\n\n{RESET}"
-            "The Ultimate Lossless and Hi-Res music downloader for Qobuz.\n"
-            "Veja exemplos e formas de uso em https://github.com/kaduvercosa/qobuz-dl"
-        ),
+            f"{GREEN}  \t\t\t\t[VERSÃO {__version__}] \n\n{RESET}"
+            f'''\t       /$$$$$$   /$$$$$$  /$$$$$$$  /$$   /$$ /$$$$$$$$       /$$$$$$$  /$$      
+              / $$__ $$ /$$__  $$| $$__  $$| $$  | $$|_____/$$/      | $$__  $$| $$      
+              | $$  \ $| $$  \ $$| $$  \ $$| $$  | $$   /  $$/       | $$  \ $$| $$      
+              | $$  | $| $$  | $$| $$$$$$$ | $$  | $$  /  $$/        | $$  | $$| $$      
+              | $$  | $| $$  | $$| $$__  $$| $$  | $$ /  $$___  ===  | $$  | $$| $$      
+              | $$/$$ $| $$  | $$| $$  \ $$| $$  | $$|  $$___/       | $$  | $$| $$      
+              |  $$$$$$|  $$$$$$/| $$$$$$$/|  $$$$$$/|_$$$$$$$$      | $$$$$$$/| $$$$$$$$
+               \____ $$$ \______/ |_______/  \______/|________/      |_______/ |________/
+                    \_$$                             '''),
         formatter_class=QobuzHelpFormatter, # [!] Chamando nosso formatter colorido!
         add_help=False
     )
@@ -427,8 +433,6 @@ def qobuz_dl_args(default_quality: Union[int, str] = 6, default_limit: Union[int
 
     # Comandos "Standalone" (Interceptados pelo sys.argv antes do argparse)
 
-        # Comandos "Standalone" (Interceptados pelo sys.argv antes do argparse)
-
     subparsers.add_parser(
         "radar",
         description="Autonomous radar to fetch and download new releases based on config.",
@@ -443,9 +447,6 @@ def qobuz_dl_args(default_quality: Union[int, str] = 6, default_limit: Union[int
         description="Search and selectively download Soundtrack Albums or generate OST playlists.",
         help="hunt and collect movie/anime soundtracks (ost mode)"
     )
-    # --- FIM DA INTEGRAÇÃO ---
-    
-
 
     subparsers.add_parser(
         "stats",
@@ -453,7 +454,13 @@ def qobuz_dl_args(default_quality: Union[int, str] = 6, default_limit: Union[int
         help="show local library statistics and analytics"
     )
 
-    
+    subparsers.add_parser(
+        "transfer",
+        aliases=["tr"],
+        description="Transfer favorites (albums, artists, tracks, playlists) between two Qobuz accounts.",
+        help="transfer favorites between Qobuz accounts (transfer mode)"
+    )
+
     for cmd in (interactive, download, lucky, sync_pl_cmd):
         add_common_arg(cmd, default_folder, default_quality)
 

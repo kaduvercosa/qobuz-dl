@@ -383,7 +383,15 @@ async def amain():
         sys.exit(0)
     # --- FIM DA INTEGRAÇÃO DO ANIME HUNTER ---
 
-
+    # --- INÍCIO DA INTEGRAÇÃO DO TRANSFER ---
+    if len(sys.argv) > 1 and sys.argv[1] in ("transfer", "tr"):
+        from qobuz_dl.account_transfer import amain as transfer_amain
+        try:
+            await transfer_amain()
+        except KeyboardInterrupt:
+            print(f"\n\n{RED}[!] Transferência interrompida pelo utilizador (CTRL+C).{OFF}\n")
+        sys.exit(0)
+    # --- FIM DA INTEGRAÇÃO DO TRANSFER ---
 
     if len(sys.argv) > 1 and sys.argv[1] == "stats":
         from qobuz_dl.db import get_folder_stats
@@ -576,7 +584,6 @@ async def amain():
         "secrets": secrets
     }
     await qobuz_plugin.authenticate(credentials)
-    # --- FIM DA INTEGRAÇÃO ---
 
     try:
         # Passamos o Maestro e o Qobuz para que os comandos antigos não quebrem!

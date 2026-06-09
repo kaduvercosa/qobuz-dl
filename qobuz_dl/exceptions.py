@@ -1,28 +1,37 @@
 """
-Exceções personalizadas para o projeto qobuz-dl.
-Centralizar estas exceções ajuda a identificar, capturar e tratar 
-erros específicos de negócio sem recorrer a exceções genéricas do Python.
+exceptions.py
+Exceções personalizadas do qobuz-dl-master.
+Centralizar aqui facilita captura seletiva e mensagens claras.
 """
 
+
 class AuthenticationError(Exception):
-    """Lançada quando há uma falha no login (ex: email, palavra-passe ou token incorretos)."""
+    """Falha no login: e-mail, senha ou token inválidos."""
 
 
 class IneligibleError(Exception):
-    """Lançada quando a conta não tem os direitos ou a subscrição necessários para a operação."""
+    """Conta sem direitos ou assinatura necessários para a operação."""
 
 
 class InvalidAppIdError(Exception):
-    """Lançada quando o App ID fornecido à API do Qobuz é considerado inválido."""
+    """App ID fornecido à API do Qobuz é inválido."""
 
 
 class InvalidAppSecretError(Exception):
-    """Lançada quando o App Secret (chave de segurança) falha a validação na API."""
+    """App Secret falhou na validação da API."""
 
 
 class InvalidQuality(Exception):
-    """Lançada quando o ID de qualidade de áudio solicitado (ex: 5, 6, 7, 27) não existe ou não é suportado."""
+    """ID de qualidade (5/6/7/27) não existe ou não é suportado."""
 
 
 class NonStreamable(Exception):
-    """Lançada quando uma faixa ou álbum está bloqueado por região ou indisponível para streaming/download."""
+    """Faixa ou álbum bloqueado por região ou indisponível para download."""
+
+
+class RateLimitError(Exception):
+    """API retornou HTTP 429 -- limite de requisições atingido."""
+
+
+class AccountFavoritesLimitError(Exception):
+    """Conta atingiu o limite máximo de favoritos permitidos pelo plano."""

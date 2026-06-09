@@ -42,7 +42,7 @@ class Client:
     Lida com autenticação, pesquisa, metadados e obtenção de URLs de streaming/download.
     """
     def __init__(self, email: str, pwd: str, app_id: str, secrets: list, user_auth_token: str = None, force_english: bool = True):
-        logger.info(f"{YELLOW}Logging...{OFF}")
+        logger.info(f"{YELLOW}Logando...{OFF}")
         self.secrets = secrets
         self.id = str(app_id)
         self.force_english = force_english
@@ -54,7 +54,7 @@ class Client:
                 if fresh_id:
                     self.id = fresh_id
                     self.secrets = list(b.get_secrets().values())
-                    logger.info(f"{GREEN}[+] App ID dynamically updated: {self.id}{OFF}")
+                    logger.info(f"{GREEN}[+] App ID atualizado: {self.id}{OFF}")
             except Exception as e:
                 logger.warning(f"Não foi possível atualizar app_id/secrets dinamicamente: {e}")
 
@@ -402,7 +402,13 @@ class Client:
             
     async def add_favorite_album(self, album_id: str) -> Dict:
         return await self.api_call("favorite/create", album_ids=str(album_id), artist_ids="", track_ids="")
-        
+
+    async def add_favorite_artist(self, artist_id: str) -> Dict:
+        return await self.api_call("favorite/create", album_ids="", artist_ids=str(artist_id), track_ids="")
+
+    async def add_favorite_track(self, track_id: str) -> Dict:
+        return await self.api_call("favorite/create", album_ids="", artist_ids="", track_ids=str(track_id))
+
     async def add_playlist_tracks(self, playlist_id: str, track_ids: str) -> Dict:
         return await self.api_call("playlist/addTracks", playlist_id=str(playlist_id), track_ids=str(track_ids))
         
