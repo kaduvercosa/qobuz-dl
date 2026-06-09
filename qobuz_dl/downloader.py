@@ -345,19 +345,22 @@ class Download:
             aborted_by_user = True
             await safe_print_async(f"\n{Tema.ERRO}[!] Operação Abortada...{Tema.OFF}")
                 
-        if aborted_by_user: time.sleep(1.5)
+        if aborted_by_user:
+            await asyncio.sleep(1.5)
             
         if is_standard_album and working_dirn == inprogress_dirn:
             final_dirn = target_dirn if (failed_tracks == 0 and not aborted_by_user) else incomplete_dirn
-            try: working_dirn.rename(final_dirn)
-            except OSError: final_dirn = working_dirn
+            try: 
+                working_dirn.rename(final_dirn)
+            except OSError: 
+                final_dirn = working_dirn
             
             if aborted_by_user: await safe_print_async(f"{Tema.AVISO}[!] Download abortado. Marcado como [INCOMPLETE].{Tema.OFF}")
             elif failed_tracks > 0: await safe_print_async(f"\n{Tema.AVISO}[!] Download parcial. Marcado como [INCOMPLETE].{Tema.OFF}")
         else:
             final_dirn = working_dirn
         
-        if aborted_by_user: os._exit(1)
+        if aborted_by_user: sys.exit(1)
             
         handle_download_id(self.download_db, self.item_id, add_id=True, media_type="album", quality=self.quality, file_format=file_format, quality_met=quality_met, bit_depth=bit_depth, sampling_rate=sampling_rate, saved_path=str(final_dirn), url=url, release_date=release_date, artist=album_attr.get("album_artist", "Unknown"), album=album_attr.get("album_title", "Unknown"))
         

@@ -96,19 +96,24 @@ class QobuzDLSettings:
         """
         section = "qobuz" if config.has_section("qobuz") else "DEFAULT"
         
+    def arg_or_config_bool(arg_name, section_name, key_name, default=False):
+        arg_value = getattr(arguments, arg_name, None)
+        if arg_value is not None:
+            return arg_value
+        return config.getboolean(section_name, key_name, fallback=default)
         # O dicionário kwargs agrupa todos os valores. 
         # O desempacotamento (**kwargs) vai alimentar o Dataclass automaticamente.
-        kwargs: Dict[str, Any] = {
+    kwargs: Dict[str, Any] = {
             # Opções Básicas
             'email': config.get(section, "email", fallback=""),
             'password': config.get(section, "password", fallback=""),
             'default_folder': getattr(arguments, 'directory', None) or config.get(section, "default_folder", fallback="QobuzDownloads"),
             'default_quality': getattr(arguments, 'quality', None) or config.get(section, "default_quality", fallback="6"),
             'default_limit': config.get(section, "default_limit", fallback="20"),
-            'no_m3u': getattr(arguments, 'no_m3u', False) or config.getboolean(section, "no_m3u", fallback=False),
-            'albums_only': getattr(arguments, 'albums_only', False) or config.getboolean(section, "albums_only", fallback=False),
-            'no_fallback': getattr(arguments, 'no_fallback', False) or config.getboolean(section, "no_fallback", fallback=False),
-            'no_database': getattr(arguments, 'no_db', False) or config.getboolean(section, "no_database", fallback=False),
+            'no_m3u': arg_or_config_bool('no_m3u', section, 'no_m3u', False),
+            'albums_only': arg_or_config_bool('albums_only', section, 'albums_only', False),
+            'no_fallback': arg_or_config_bool('no_fallback', section, 'no_fallback', False),
+            'no_database': arg_or_config_bool('no_database', section, 'no_database', False),
             'app_id': config.get(section, "app_id", fallback=""),
             'secrets': [s.strip() for s in config.get(section, "secrets", fallback="").split(",") if s.strip()],
             'folder_format': getattr(arguments, 'folder_format', None) or config.get(section, "folder_format", fallback=DEFAULT_FOLDER),
