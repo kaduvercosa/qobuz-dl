@@ -7,7 +7,8 @@ import logging
 import configparser
 from datetime import date
 from pathlib import Path
-from typing import Optional 
+from typing import Optional
+import time
 
 # ─────────────────────────────────────────────
 # Silencia logs do Pyrogram
@@ -82,7 +83,7 @@ def _registrar_entrada_log(
         "qualidade": qualidade,
         "faixas":   n_faixas,
         "link":     link_album,
-        "hora":     __import__("datetime").datetime.now().strftime("%H:%M"),
+        "hora":    datetime.datetime.now().strftime("%H:%M"),
     })
     _salvar_log_diario(dados)
 
@@ -172,17 +173,14 @@ async def enviar_resumo_diario(app, ch_geral: int) -> None:
                 ch_geral, texto, disable_web_page_preview=True
             )
             Path(arq_resumo_id).write_text(str(nova_msg.id))
-    except Exception:
+    except Exception as e:
+        log(f"Aviso: falha ao editar resumo -- {e}")
         # Mensagem sumiu -- recria
         try:
-            nova_msg = await app.send_message(
-                ch_geral, texto, disable_web_page_preview=True
-            )
+            nova_msg = await app.send_message(ch_geral, texto, disable_web_page_preview=True)
             Path(arq_resumo_id).write_text(str(nova_msg.id))
-        except Exception as e:
-            log(f"Aviso: falha no resumo diário -- {e}")
-
-
+        except Exception as e2:
+            log(f"Aviso: falha ao recriar resumo -- {e2}")
 
 # ─────────────────────────────────────────────
 # Helpers de texto
@@ -457,7 +455,7 @@ async def upload_album_completo(
     CH_MUSICAS  = cfg.getint("channels", "musicas")
     CH_ALBUNS   = cfg.getint("channels", "albuns")
     CH_ARTISTAS = cfg.getint("channels", "artistas")
-    CH_GERAL    = cfg.getint("channels", "geral", fallback=0)  # 0 = desabilitado
+    CH_GERAL    = cfg.getint("channels", "geral", fallback=None)  # 0 = desabilitado
 
     app = Client(session, api_id=api_id, api_hash=api_hash)
 

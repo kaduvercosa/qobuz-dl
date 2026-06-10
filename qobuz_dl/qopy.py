@@ -454,6 +454,7 @@ class Client:
                 await self.api_call("track/getFileUrl", id=5966783, fmt_id=5, sec=secret)
                 self.sec = secret
                 break
-            except Exception: continue
-        if not self.sec and self.secrets: self.sec = self.secrets[0]
-        if not self.sec: raise InvalidAppSecretError("No secret found.")
+            except Exception:
+                continue
+        if not self.sec:
+            raise InvalidAppSecretError("No secret found. All secrets failed validation")

@@ -109,6 +109,8 @@ async def _process_single_file(semaphore: asyncio.Semaphore, file_path: Path, en
             has_lyrics = meta["has_lyrics"]
             
             if not title or not artist:
+                status_result = "skipped"
+                msg = f"{YELLOW} [SEM METADADOS] {filepath.name}{OFF}"
                 return
 
             raw_artist = album_artist if album_artist and album_artist.lower() != "various artists" else artist
@@ -192,7 +194,7 @@ async def _process_single_file(semaphore: asyncio.Semaphore, file_path: Path, en
 
 async def inject_lyrics_retroactively(directory_path: str, genius_token: str = None, 
                                       deepl_api_key: str = None, overwrite: bool = False, 
-                                      target_lang: str = "PT-BR") -> None:
+                                      target_lang: str = "PT-BR", max_workers: int = 3) -> None:
     safe_print(f"\n{CYAN}[*] Starting retroactive lyrics scan in: {directory_path}{OFF}\n")
 
     if overwrite:
