@@ -23,7 +23,7 @@ _original_tcp_connector = aiohttp.TCPConnector
 class FastTCPConnector(_original_tcp_connector):
     def __init__(self, *args, **kwargs):
         kwargs['ssl'] = False
-        kwargs['limit'] = 0  # Remove limite de conexões simultâneas
+        kwargs['limit'] = 100  # Remove limite de conexões simultâneas
         if _fast_resolver and 'resolver' not in kwargs:
             kwargs['resolver'] = _fast_resolver
         super().__init__(*args, **kwargs)
@@ -298,21 +298,24 @@ class QobuzDL:
 
             self.settings.playlist_total_count = len(items)
 
-            for idx, item in enumerate(items, start=1):
-                if self.allowed_release_types and url_type == "artist":
-                    r_type = await self._resolve_release_type(item)
-                    if r_type not in self.allowed_release_types: continue
+            try:
+                for idx, item in enumerate(items, start=1):
+                    if self.allowed_release_types and url_type == "artist":
+                        r_type = await self._resolve_release_type(item)
+                        if r_type not in self.allowed_release_types: continue
 
-                if self.blacklist_patterns:
-                    display_name = f"{item.get('title') or item.get('name')} ({item.get('version', '')})".strip(" ()")
-                    if any(p in display_name.lower() for p in self.blacklist_patterns):
-                        continue
+                    if self.blacklist_patterns:
+                        display_name = f"{item.get('title') or item.get('name')} ({item.get('version', '')})".strip(" ()")
+                        if any(p in display_name.lower() for p in self.blacklist_patterns):
+                            continue
 
-                await self.download_from_id(item["id"], type_dict["iterable_key"] == "albums", new_path, is_playlist=is_playlist, playlist_index=idx)
-
+                    await self.download_from_id(item["id"], type_dict["iterable_key"] == "albums", new_path, is_playlist=is_playlist, playlist_index=idx)
+            finally:
+                if is_playlist:
+                    self.folder_format = original_folder_format
+                    self.settings.multiple_disc_one_dir = original_multi_disc_setting
+                    
             if is_playlist:
-                self.folder_format = original_folder_format
-                self.settings.multiple_disc_one_dir = original_multi_disc_setting
                 try:
                     from qobuz_dl.telegram_uploader import upload_album_completo
                     await upload_album_completo(new_path, content_name, "Vários Artistas", "Various Artists", "Vários Artistas (Playlist)", "Playlist")
@@ -609,11 +612,16 @@ class QobuzDL:
         self.folder_format = "."
         self.settings.multiple_disc_one_dir = True
 
-        for idx, t_id in enumerate(track_ids, start=1):
-            try: await self.download_from_id(t_id, False, pl_directory, is_playlist=True, playlist_index=idx)
-            except Exception as exc: print(f"{Tema.ALERTA}{Tema.ERRO}ID {t_id} falhou: {exc}{Tema.OFF}")
+        try:
+            for idx, t_id in enumerate(track_ids, start=1):
+                try:
+                    await self.download_from_id(t_id, False, pl_directory, is_playlist=True, playlist_index=idx)
+                except Exception as exc:
+                    print(f"{Tema.ALERTA}{Tema.ERRO}ID {t_id} falhou: {exc}{Tema.OFF}")
 
-        self.folder_format = original_folder_format
-        self.settings.multiple_disc_one_dir = original_multi_disc_setting
+        finally:
+            self.folder_format = original_folder_format
+            self.settings.multiple_disc_one_dir = original_multi_disc_setting
 
-        if not self.no_m3u_for_playlists: make_m3u(pl_directory)
+        if not self.no_m3u_for_playlists:
+            make_m3u(pl_directory)

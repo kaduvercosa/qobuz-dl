@@ -12,7 +12,8 @@ def create_db(db_path: Union[Path, str]) -> str:
     """
     Cria a base de dados SQLite ou atualiza o esquema (schema) se for uma versão antiga.
     """
-    with sqlite3.connect(db_path) as conn:
+    # Adicionado timeout de 15s para evitar "database is locked" em operações simultâneas
+    with sqlite3.connect(db_path, timeout=15.0) as conn:
         cursor = conn.cursor()
         
         cursor.execute("SELECT count(name) FROM sqlite_master WHERE type='table' AND name='downloads'")
@@ -44,11 +45,14 @@ def create_db(db_path: Union[Path, str]) -> str:
                 """)
                 try:
                     conn.execute("INSERT INTO downloads (id) SELECT id FROM downloads_old")
+                    # Só dropa a tabela antiga se o insert foi 100% bem sucedido
+                    conn.execute("DROP TABLE downloads_old")
+                    logger.info(f"{YELLOW}Database successfully updated!{OFF}")
                 except sqlite3.Error as e:
                     logger.error(f"{RED}Failed to migrate old data: {e}{OFF}")
-                
-                conn.execute("DROP TABLE downloads_old")
-                logger.info(f"{YELLOW}Database successfully updated!{OFF}")
+                    # Desfaz a alteração de nome em caso de pânico
+                    conn.execute("DROP TABLE downloads")
+                    conn.execute("ALTER TABLE downloads_old RENAME TO downloads")
                 
             elif 'artist' not in columns:
                 logger.info(f"{YELLOW}Upgrading database schema: Adding artist and album columns...{OFF}")
@@ -109,7 +113,8 @@ def handle_download_id(
     if not db_path:
         return None
 
-    with sqlite3.connect(db_path) as conn:
+    # Timeout essencial para o modo Batch (Parallel Downloads)
+    with sqlite3.connect(db_path, timeout=15.0) as conn:
         if add_id:
             try:
                 conn.execute(
@@ -140,7 +145,7 @@ def get_stats(db_path: Union[Path, str, None]) -> Optional[Dict[str, Any]]:
     if not db_path:
         return None
     try:
-        with sqlite3.connect(db_path) as conn:
+        with sqlite3.connect(db_path, timeout=15.0) as conn:
             cursor = conn.cursor()
             stats: Dict[str, Any] = {}
 
@@ -184,6 +189,7 @@ def get_folder_stats(directory: Union[Path, str]) -> Dict[str, Any]:
     album_dirs: Set[str] = set()
     dir_path = Path(directory)
 
+    # Mantemos o iterador universal porque o Linux é case-sensitive (.FLAC vs .flac)
     for fpath in dir_path.rglob('*'):
         if not fpath.is_file() or fpath.suffix.lower() not in {'.flac', '.mp3'}:
             continue

@@ -4,6 +4,7 @@ import logging
 import time
 import unicodedata
 import aiohttp
+import difflib
 from pathlib import Path
 from typing import List, Tuple, Dict, Any, Optional, Union
 
@@ -19,6 +20,33 @@ logger.setLevel(logging.INFO)
 
 EXTENSIONS = {".mp3", ".flac"}
 
+
+# ─── FUNÇÕES DE VALIDAÇÃO DE CAPA (FILTRO DE SANIDADE) ──────────────────────────
+
+def limpar_texto(texto: str) -> str:
+    """Remove acentos e deixa tudo minúsculo para uma comparação justa."""
+    if not texto: return ""
+    texto = unicodedata.normalize('NFKD', texto).encode('ASCII', 'ignore').decode('utf-8')
+    return texto.lower().strip()
+
+def validar_capa_apple(titulo_qobuz: str, titulo_apple: str, artista_qobuz: str, artista_apple: str) -> bool:
+    """Verifica se a Apple trouxe o álbum e o artista corretos comparando similaridade."""
+    q_titulo = limpar_texto(titulo_qobuz)
+    a_titulo = limpar_texto(titulo_apple)
+    
+    q_artista = limpar_texto(artista_qobuz)
+    a_artista = limpar_texto(artista_apple)
+
+    sim_titulo = difflib.SequenceMatcher(None, q_titulo, a_titulo).ratio()
+    sim_artista = difflib.SequenceMatcher(None, q_artista, a_artista).ratio()
+
+    # Se o título ou o artista tiverem menos de 75% de similaridade, bloqueia a capa
+    if sim_titulo < 0.75 or sim_artista < 0.75:
+        logger.debug(f"Capa da Apple rejeitada. Similaridade: Título={sim_titulo:.2f}, Artista={sim_artista:.2f}")
+        return False
+    return True
+
+# ────────────────────────────────────────────────────────────────────────────────
 
 class PartialFormatter(string.Formatter):
     """
@@ -345,7 +373,16 @@ async def get_apple_hq_cover(upc: Optional[str] = None, isrc: Optional[str] = No
                     if resp.status == 200:
                         data = await resp.json(content_type=None)
                         if data.get("resultCount", 0) > 0:
-                            art_url = data["results"][0].get("artworkUrl100", "")
+                            result = data["results"][0]
+                            
+                            apple_title = result.get("collectionName", "")
+                            apple_artist = result.get("artistName", "")
+                            
+                            if artist and album and not validar_capa_apple(album, apple_title, artist, apple_artist):
+                                logger.debug(f"Descartando capa Apple: esperava '{album}', recebeu '{apple_title}'")
+                                return None
+
+                            art_url = result.get("artworkUrl100", "")
                             if art_url:
                                 return re.sub(r'\d+x\d+[a-zA-Z-]*\.jpg', '10000x10000-999.jpg', art_url)
         except Exception:
@@ -376,12 +413,18 @@ async def get_apple_hq_cover(upc: Optional[str] = None, isrc: Optional[str] = No
                         data = await resp.json(content_type=None)
                         
                         for item in data.get("results", []):
-                            apple_album = item.get("collectionName", "").lower()
-                            apple_album_clean = apple_album.replace(" - single", "").replace(" - ep", "").strip()
+                            apple_title = item.get("collectionName", "")
+                            apple_artist = item.get("artistName", "")
+                            apple_album_clean = apple_title.lower().replace(" - single", "").replace(" - ep", "").strip()
                             
                             if clean_album == apple_album_clean or clean_album in apple_album_clean:
-                                art_url = item.get("artworkUrl100", "")
-                                if art_url:
-                                    return re.sub(r'\d+x\d+[a-zA-Z-]*\.jpg', '10000x10000-999.jpg', art_url)
+                                if validar_capa_apple(album, apple_title, artist, apple_artist):
+                                    art_url = item.get("artworkUrl100", "")
+                                    if art_url:
+                                        return re.sub(r'\d+x\d+[a-zA-Z-]*\.jpg', '10000x10000-999.jpg', art_url)
+                                else:
+                                    logger.debug(f"Descartando capa Apple (fallback texto): esperava '{album}', recebeu '{apple_title}'")
         except Exception:
             pass  # Engole o erro silenciosamente e deixa o Qobuz assumir
+    
+    return None

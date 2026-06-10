@@ -2,6 +2,7 @@ import logging
 import shutil
 import sys
 import os
+import io
 import time
 import re
 import signal
@@ -329,7 +330,10 @@ class Download:
                 for res in results:
                     if isinstance(res, Exception):
                         failed_tracks += 1
-                    elif res is False: failed_tracks += 1
+                        # Adicione esta linha para ver o motivo da falha
+                        logger.error(f"Erro na track: {res}")
+                    elif res is False:
+                        failed_tracks += 1
             except (KeyboardInterrupt, SystemExit, asyncio.CancelledError):
                 abort_event.set()
                 aborted_by_user = True
@@ -361,8 +365,24 @@ class Download:
             final_dirn = working_dirn
         
         if aborted_by_user: sys.exit(1)
-            
-        handle_download_id(self.download_db, self.item_id, add_id=True, media_type="album", quality=self.quality, file_format=file_format, quality_met=quality_met, bit_depth=bit_depth, sampling_rate=sampling_rate, saved_path=str(final_dirn), url=url, release_date=release_date, artist=album_attr.get("album_artist", "Unknown"), album=album_attr.get("album_title", "Unknown"))
+        
+        if failed_tracks == 0:
+            handle_download_id(
+                self.download_db, 
+                self.item_id, 
+                add_id=True, 
+                media_type="album", 
+                quality=self.quality, 
+                file_format=file_format, 
+                quality_met=quality_met, 
+                bit_depth=bit_depth, 
+                sampling_rate=sampling_rate, 
+                saved_path=str(final_dirn), 
+                url=url, 
+                release_date=release_date, 
+                artist=album_attr.get("album_artist", "Unknown"), 
+                album=album_attr.get("album_title", "Unknown")
+            )
         
         if failed_tracks == 0 and not aborted_by_user:
             try:
@@ -641,34 +661,26 @@ class Download:
             if cover_path_to_check.exists() and os.path.getsize(cover_path_to_check) >= 16500000:
                 try:
                     from PIL import Image
-                    await safe_print_async(f"{t_tag} {Tema.AVISO}Capa > 16.5MB! Redimensionando apenas as proporções...{Tema.OFF}")
-                
-                    current_size = os.path.getsize(cover_path_to_check)
-                    target_size = 16000000
+                    await safe_print_async(f"{t_tag} {Tema.AVISO}Capa > 16.5MB! Redimensionando proporções na memória...{Tema.OFF}")
                     
                     resample_filter = getattr(Image, "Resampling", Image).LANCZOS
                 
                     with Image.open(cover_path_to_check) as img:
-                        orig_format = img.format or "PNG"
-                    
-                        ratio = (target_size / current_size) ** 0.5
-                    
-                        new_w = int(img.width * ratio * 0.95)
-                        new_h = int(img.height * ratio * 0.95)
-                        
+                        orig_format = img.format or "JPEG"
                         img_copy = img.copy()
-                    
-                    img_copy.thumbnail((new_w, new_h), resample_filter)
-                    
-                    img_copy.save(cover_path_to_check, format=orig_format)
 
-                    while os.path.getsize(cover_path_to_check) >= 16500000:
-                        with Image.open(cover_path_to_check) as img:
-                            img_copy = img.copy()
+                    # Cria um buffer na memória
+                    buffer = io.BytesIO()
+                    img_copy.save(buffer, format=orig_format)
+
+                    while buffer.tell() >= 16500000:
                         img_copy.thumbnail((int(img_copy.width * 0.9), int(img_copy.height * 0.9)), resample_filter)
-                        img_copy.save(cover_path_to_check, format=orig_format)
-                except ImportError:
-                    await safe_print_async(f"{t_tag} {Tema.ERRO}Capa gigante, mas o módulo 'Pillow' não está instalado!{Tema.OFF}")
+                        buffer = io.BytesIO() # Reseta o buffer
+                        img_copy.save(buffer, format=orig_format)
+
+                    with open(cover_path_to_check, "wb") as f:
+                        f.write(buffer.getvalue())
+
                 except Exception as e:
                     await safe_print_async(f"{t_tag} {Tema.ERRO}Falha ao processar capa: {e}{Tema.OFF}")
 
@@ -1002,13 +1014,13 @@ async def tqdm_download(session, url: str, fname: str, log_prefix: str = "", is_
             if d_size >= t_size: return 
 
         except asyncio.TimeoutError:
-            if attempt < 6:
+            if attempt < 4:
                 await asyncio.sleep(delays[attempt])
                 continue
             if Path(fname).exists(): Path(fname).unlink()
             raise Exception("Timeout definitivo")
         except Exception as e:
-            if attempt < 6 and "404" not in str(e):
+            if attempt < 4 and "404" not in str(e):
                 await asyncio.sleep(delays[attempt])
                 continue
             if Path(fname).exists(): Path(fname).unlink()
@@ -1074,7 +1086,7 @@ async def tqdm_download_segments(session, track_url: dict, fname: str, log_prefi
             
         proc = await asyncio.create_subprocess_exec(
             "ffmpeg", "-nostdin", "-v", "error", "-y", "-i", tmp_fname, 
-            "-c:a", "copy", "-f", "flac", fname, 
+            "-c:a", "copy", fname, 
             stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE
         )
         

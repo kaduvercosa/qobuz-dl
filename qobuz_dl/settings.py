@@ -96,14 +96,14 @@ class QobuzDLSettings:
         """
         section = "qobuz" if config.has_section("qobuz") else "DEFAULT"
         
-    def arg_or_config_bool(arg_name, section_name, key_name, default=False):
-        arg_value = getattr(arguments, arg_name, None)
-        if arg_value is not None:
-            return arg_value
-        return config.getboolean(section_name, key_name, fallback=default)
+        def arg_or_config_bool(arg_name, section_name, key_name, default=False):
+            arg_value = getattr(arguments, arg_name, None)
+            if arg_value is not None:
+                return arg_value
+            return config.getboolean(section_name, key_name, fallback=default)
         # O dicionário kwargs agrupa todos os valores. 
         # O desempacotamento (**kwargs) vai alimentar o Dataclass automaticamente.
-    kwargs: Dict[str, Any] = {
+        kwargs: Dict[str, Any] = {
             # Opções Básicas
             'email': config.get(section, "email", fallback=""),
             'password': config.get(section, "password", fallback=""),

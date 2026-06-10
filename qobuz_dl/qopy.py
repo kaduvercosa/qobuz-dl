@@ -68,6 +68,9 @@ class Client:
         self.session_key = None
         self.uat = None
         
+        # Trava de segurança para geração de sessão em paralelo
+        self._session_lock = asyncio.Lock()
+        
         self._initial_email = email
         self._initial_pwd = pwd
         self._initial_uat = user_auth_token
@@ -268,7 +271,6 @@ class Client:
         url = self.base + epoint
         req_kwargs = {"headers": self.headers.copy()}
         
-        # INJEÇÃO CORRETA DO TOKEN EM POSTS
         if epoint in ["user/login", "favorite/create", "playlist/addTracks", "playlist/create"]:
             method = "POST"
             if self.uat and epoint != "user/login":
@@ -284,7 +286,6 @@ class Client:
 
         status, text, json_resp = await self._do_request(method, url, req_kwargs, epoint)
 
-        # PROTEÇÃO CONTRA FALHAS SILENCIOSAS: Levanta exceção se a API recusar (útil para o radar)
         if status >= 400 and epoint not in ["user/get"]:
             error_details = json_resp if json_resp else text
             raise Exception(f"HTTP {status} - {error_details}")
@@ -346,8 +347,9 @@ class Client:
                         valid_track_ids.append(best_match_id)
                     elif highest_ratio >= PROMPT_THRESHOLD and best_match_id:
                         print(f"\n{YELLOW}[?] Borderline match detected ({highest_ratio*100:.0f}% similarity){OFF}")
-                        choice = input(f"{CYAN}    Do you want to download this track anyway? [y/n]: {OFF}").strip().lower()
-                        if choice == 'y':
+                        # Jogado para fora do event loop para não congelar outros downloads assíncronos
+                        choice = await asyncio.to_thread(input, f"{CYAN}    Do you want to download this track anyway? [y/n]: {OFF}")
+                        if choice.strip().lower() == 'y':
                             valid_track_ids.append(best_match_id)
                     else:
                         print(f"{YELLOW}[!] Skipping: '{query}' (Best match: {highest_ratio*100:.0f}%){OFF}")
@@ -361,19 +363,19 @@ class Client:
 
     async def search_albums(self, query: str, limit: int = 20) -> Dict:
         try: return await self.api_call("catalog/search", query=query, type="albums", limit=limit)
-        except: return {}
+        except Exception: return {}
 
     async def search_tracks(self, query: str, limit: int = 20) -> Dict:
         try: return await self.api_call("catalog/search", query=query, type="tracks", limit=limit)
-        except: return {}
+        except Exception: return {}
 
     async def search_playlists(self, query: str, limit: int = 20) -> Dict:
         try: return await self.api_call("catalog/search", query=query, type="playlists", limit=limit)
-        except: return {}
+        except Exception: return {}
 
     async def search_artists(self, query: str, limit: int = 20) -> Dict:
         try: return await self.api_call("catalog/search", query=query, type="artists", limit=limit)
-        except: return {}
+        except Exception: return {}
 
     async def get_favorites(self, fav_type: str = "albums", limit: int = 100, offset: int = 0) -> Dict:
         try: 
@@ -425,12 +427,15 @@ class Client:
                 if "url" in track: return track
             except Exception: pass
 
+        # Implementação do Lock para evitar race conditions na geração de sessões
         if self.session_id is None:
-            session = await self.api_call("session/start")
-            self.session_id = session["session_id"]
-            self.session_infos = session["infos"]
-            self.session_key = self._derive_session_key()
-            self.headers.update({"X-Session-Id": self.session_id})
+            async with self._session_lock:
+                if self.session_id is None:  # Verificação dupla de segurança
+                    session = await self.api_call("session/start")
+                    self.session_id = session["session_id"]
+                    self.session_infos = session["infos"]
+                    self.session_key = self._derive_session_key()
+                    self.headers.update({"X-Session-Id": self.session_id})
 
         track = await self.api_call("file/url", id=id, fmt_id=fmt_id)
         if "bits_depth" in track and "bit_depth" not in track: track["bit_depth"] = track["bits_depth"]
@@ -449,6 +454,6 @@ class Client:
                 await self.api_call("track/getFileUrl", id=5966783, fmt_id=5, sec=secret)
                 self.sec = secret
                 break
-            except: continue
+            except Exception: continue
         if not self.sec and self.secrets: self.sec = self.secrets[0]
         if not self.sec: raise InvalidAppSecretError("No secret found.")

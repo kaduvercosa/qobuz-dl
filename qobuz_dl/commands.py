@@ -13,7 +13,7 @@ def fun_args(subparsers: argparse._SubParsersAction, default_limit: Union[int, s
         aliases=["i", "fun"],
         formatter_class=QobuzHelpFormatter, # [!] Aplica cores e alinhamento
         add_help=False,                     # [!] Remove o "optional arguments" padrão
-        usage=f"qobuz-dl interactive {CYAN}[options]{RESET}" # [!] Limpa a parede de texto do topo
+        usage=f"qobuz-dl interactive {BLUE}[options]{RESET}" # [!] Limpa a parede de texto do topo
     )
     
     # Criamos um grupo específico com título amarelo
@@ -35,7 +35,7 @@ def lucky_args(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
         help="lucky mode",
         formatter_class=QobuzHelpFormatter,
         add_help=False,
-        usage=f"qobuz-dl lucky {CYAN}<QUERY> [options]{RESET}"
+        usage=f"qobuz-dl lucky {BLUE}<QUERY> [options]{RESET}"
     )
     
     grp = lucky.add_argument_group(f'{YELLOW}lucky options{RESET}')
@@ -62,7 +62,7 @@ def dl_args(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParser:
         help="input mode",
         formatter_class=QobuzHelpFormatter,
         add_help=False,
-        usage=f"qobuz-dl dl {CYAN}<SOURCE> [options]{RESET}"
+        usage=f"qobuz-dl dl {BLUE}<SOURCE> [options]{RESET}"
     )
     
     grp = download.add_argument_group(f'{YELLOW}download options{RESET}')
@@ -89,7 +89,7 @@ def lyrics_args(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPars
         help="lyrics injection mode",
         formatter_class=QobuzHelpFormatter,
         add_help=False,
-        usage=f"qobuz-dl lyrics {CYAN}<DIR> [options]{RESET}"
+        usage=f"qobuz-dl lyrics {BLUE}<DIR> [options]{RESET}"
     )
     
     grp = lyrics.add_argument_group(f'{YELLOW}lyrics options{RESET}')
@@ -115,7 +115,7 @@ def fix_lyrics_args(subparsers: argparse._SubParsersAction) -> argparse.Argument
         help="interactive lyrics fixer mode",
         formatter_class=QobuzHelpFormatter,
         add_help=False,
-        usage=f"qobuz-dl fix-lyrics {CYAN}[DIR]{RESET}"
+        usage=f"qobuz-dl fix-lyrics {BLUE}[DIR]{RESET}"
     )
     
     grp = fix_lyrics.add_argument_group(f'{YELLOW}fix-lyrics options{RESET}')
@@ -138,7 +138,7 @@ def sync_playlist_args(subparsers: argparse._SubParsersAction) -> argparse.Argum
         help="sync a local folder with a Qobuz playlist",
         formatter_class=QobuzHelpFormatter,
         add_help=False,
-        usage=f"qobuz-dl sync-playlist {CYAN}<URL> [options]{RESET}"
+        usage=f"qobuz-dl sync-playlist {BLUE}<URL> [options]{RESET}"
     )
     
     grp = sync_pl.add_argument_group(f'{YELLOW}sync-playlist options{RESET}')
@@ -374,14 +374,14 @@ class QobuzHelpFormatter(argparse.RawTextHelpFormatter):
             
             # Se a coluna do comando não estiver vazia, injetamos o CYAN nela!
             if invocation.strip():
-                result = f"{indent}{CYAN}{invocation}{RESET}{padding}{help_text}"
+                result = f"{indent}{BLUE}{invocation}{RESET}{padding}{help_text}"
                 
         return result
 
 def qobuz_dl_args(default_quality: Union[int, str] = 6, default_limit: Union[int, str] = 20, default_folder: str = "QobuzDownloads") -> argparse.ArgumentParser:
     
     # [!] Definimos o usage manualmente para limpar o topo e podermos tirar o metavar
-    custom_usage = f"qobuz-dl [-h] [-r] [-p] [--sync-db [PATH]] [-sc] {CYAN}<command>{RESET} ..."
+    custom_usage = f"qobuz-dl [-h] [-r] [-p] [--sync-db [PATH]] [-sc] {BLUE}<command>{RESET} ..."
     
     parser = argparse.ArgumentParser(
         prog="qobuz-dl",
@@ -392,8 +392,8 @@ def qobuz_dl_args(default_quality: Union[int, str] = 6, default_limit: Union[int
               / $$__ $$ /$$__  $$| $$__  $$| $$  | $$|_____/$$/      | $$__  $$| $$      
               | $$  \ $| $$  \ $$| $$  \ $$| $$  | $$   /  $$/       | $$  \ $$| $$      
               | $$  | $| $$  | $$| $$$$$$$ | $$  | $$  /  $$/        | $$  | $$| $$      
-              | $$  | $| $$  | $$| $$__  $$| $$  | $$ /  $$___  ===  | $$  | $$| $$      
-              | $$/$$ $| $$  | $$| $$  \ $$| $$  | $$|  $$___/       | $$  | $$| $$      
+              | $$  | $| $$  | $$| $$__  $$| $$  | $$ /  $$/    ===  | $$  | $$| $$      
+              | $$/$$ $| $$  | $$| $$  \ $$| $$  | $$|  $$/          | $$  | $$| $$      
               |  $$$$$$|  $$$$$$/| $$$$$$$/|  $$$$$$/|_$$$$$$$$      | $$$$$$$/| $$$$$$$$
                \____ $$$ \______/ |_______/  \______/|________/      |_______/ |________/
                     \_$$                             {RESET}'''),

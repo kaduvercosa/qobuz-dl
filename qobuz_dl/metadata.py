@@ -6,6 +6,7 @@ import shutil
 import time
 from pathlib import Path
 from typing import Dict, Any, Optional, List, Union, TypedDict
+from functools import lru_cache
 
 from mutagen.flac import FLAC, Picture
 import mutagen.id3 as id3
@@ -102,6 +103,8 @@ def _find_cover_image(root_dir: Union[str, Path]) -> Optional[Path]:
                 return cover_path
     return None
 
+# O PULO DO GATO: Memoriza a resolução da capa para não ler o disco a cada faixa
+@lru_cache(maxsize=10)
 def _get_cover_info(cover_path: Path) -> str:
     try:
         size_mb = cover_path.stat().st_size / (1024 * 1024)
@@ -192,14 +195,18 @@ def tag_flac(filename: str, root_dir: Union[str, Path], final_name: str, d: Qobu
 
     audio.save()
 
-    # O Cofre de Tentativas para renomear em mounts do FUSE (iSH)
-    for _ in range(5):
+    # Cofre de tentativas (Micro-pausas para não congelar as outras threads no asyncio)
+    for _ in range(15):
         try:
             shutil.move(filename, final_name)
             return
         except Exception:
-            time.sleep(1.0)
-    os.rename(filename, final_name) # Última tentativa forçada se o shutil falhar
+            time.sleep(0.1) 
+    
+    try:
+        os.rename(filename, final_name)
+    except OSError:
+        pass # Falha definitiva silenciosa para não quebrar o loop do downloader
 
 def tag_mp3(filename: str, root_dir: Union[str, Path], final_name: str, d: QobuzItem, album: QobuzAlbum, istrack: bool = True, em_image: bool = False, settings: Optional[QobuzDLSettings] = None) -> None:
     if settings is None:
@@ -239,14 +246,18 @@ def tag_mp3(filename: str, root_dir: Union[str, Path], final_name: str, d: Qobuz
         
     audio.save(filename, v2_version=3)
 
-    # O Cofre de Tentativas para renomear em mounts do FUSE (iSH)
-    for _ in range(5):
+    # Cofre de tentativas (Micro-pausas para não congelar as outras threads no asyncio)
+    for _ in range(15):
         try:
             shutil.move(filename, final_name)
             return
         except Exception:
-            time.sleep(1.0)
-    os.rename(filename, final_name) # Última tentativa forçada se o shutil falhar
+            time.sleep(0.1)
+            
+    try:
+        os.rename(filename, final_name)
+    except OSError:
+        pass # Falha definitiva silenciosa para não quebrar o loop do downloader
 
 def _get_tags_to_add(qobuz_album: QobuzAlbum, qobuz_item: QobuzItem, settings: Optional[QobuzDLSettings] = None) -> Dict[str, Any]:
     if settings is None:
