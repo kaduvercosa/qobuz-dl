@@ -175,18 +175,37 @@ pip3 install .
 
 1.1 Abra o iSH e execute:
 
-```bash
+
 # 1. Atualizar repositórios e instalar dependências essenciais
+```bash
 apk update
+```
+
+```bash
 apk add python3 py3-pip
+```
+
+```bash
 pip install --upgrade pip setuptools wheel pybind11 --ignore-installed --no-cache-dir
+```
+
+```bash
 apk add gcc musl-dev python3-dev libffi-dev make
+```
+
+```bash
 apk add py3-aiohttp py3-pycryptodome py3-beautifulsoup4 py3-lxml py3-pillow
+```
 
 # 2. Instalar dependências Python que requerem compilação prévia
+
+```bash
 python3 -m pip install --upgrade "typing-extensions>=4.0.0" beautifulsoup4 langdetect lyricsgenius mutagen
+```
 
 # 3. Instalar o qobuz-dl (com flag para Alpine moderno)
+
+```bash
 pip install qobuz-dl-master
 ```
 
