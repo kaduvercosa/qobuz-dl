@@ -6,10 +6,13 @@ import io
 import time
 import re
 import signal
+import json
+import hashlib
 from pathlib import Path
 from typing import Tuple, Dict, Any, Optional, Union
 import textwrap
 
+import yarl
 import aiohttp
 import aiofiles
 import asyncio
@@ -330,7 +333,6 @@ class Download:
                 for res in results:
                     if isinstance(res, Exception):
                         failed_tracks += 1
-                        # Adicione esta linha para ver o motivo da falha
                         logger.error(f"Erro na track: {res}")
                     elif res is False:
                         failed_tracks += 1
@@ -693,20 +695,105 @@ class Download:
             
         msg_tree = []
         
-        if self.fetch_lyrics and hasattr(self, 'lyrics_engine') and not abort_event.is_set():
-            s_artist = _safe_get(track_meta, "performer", "name") or _safe_get(track_meta, "artist", "name", default="Unknown")
-            if _safe_get(track_meta, "album", "artist", "name") not in [None, "Various Artists"]:
-                s_artist = _safe_get(track_meta, "album", "artist", "name")
+        # =========================================================================
+        # SISTEMA DE LETRAS HÍBRIDO: 1º QOBUZ NATIVO -> 2º LRCLIB (FALLBACK)
+        # =========================================================================
+        if self.fetch_lyrics and not abort_event.is_set():
+            letra_nativa_ok = False
+            
+            # 1. TENTA A API NATIVA DO QOBUZ
+            try:
+                track_id_str = str(track_meta["id"])
+                req_ts = int(time.time())
                 
-            letra_ok, trans_count, total_lines, resp_code = await self.lyrics_engine.fetch_and_inject(
-                file_path=str(final_file), album_artist=s_artist, track=track_meta.get("title"),
-                album=_safe_get(track_meta, "album", "title", default=""), save_lrc=not self.no_lrc_files
-            )
-            if letra_ok:
-                trad_str = f"{trans_count}/{total_lines}" if trans_count else "Não"
-                msg_tree.append(f"{t_tag_letra} 📝 Letra: {resp_code} (Trad: {trad_str})")
-            else:
-                msg_tree.append(f"{t_tag_letra} 📝 Letra: Não encontrada")
+                # Monta a string base e o hash MD5 (Bypass da proteção)
+                base_str = f"tracklyricsUrltrack_id{track_id_str}{req_ts}{self.client.sec}"
+                req_sig = hashlib.md5(base_str.encode("utf-8")).hexdigest()
+                
+                lyrics_endpoint = f"{self.client.base}track/lyricsUrl?track_id={track_id_str}&request_ts={req_ts}&request_sig={req_sig}"
+                
+                # Requisição inicial para obter o link da Amazon CloudFront
+                async with self.client.session.get(lyrics_endpoint, headers=self.client.headers) as api_resp:
+                    if api_resp.status == 200:
+                        lyrics_resp = await api_resp.json()
+                        
+                        if lyrics_resp and "lyrics_url" in lyrics_resp:
+                            lyrics_url = lyrics_resp["lyrics_url"]
+                            
+                            safe_url = yarl.URL(lyrics_url, encoded=True)
+                            
+                            # Segunda requisição para baixar o JSON com as letras da Amazon
+                            async with self.client.session.get(safe_url) as l_resp:
+                                if l_resp.status == 200:
+                                    l_content = await l_resp.text()
+                                    
+                                    try:
+                                        q_data = json.loads(l_content)
+                                        lrc_lines = []
+                                        
+                                        def format_ts(ms):
+                                            minutos = ms // 60000
+                                            segundos = (ms % 60000) / 1000
+                                            return f"{minutos:02d}:{segundos:05.2f}"
+                                            
+                                        linhas_letra = q_data.get("original", {}).get("lines", [])
+                                        
+                                        for linha_data in linhas_letra:
+                                            texto = linha_data.get("line", "").strip()
+                                            # ignora completamente linhas vazias para nao gerar [00:00:00]
+                                            if not texto:
+                                                continue
+                                                
+                                            start_line_ms = linha_data.get("start", 0)
+                                                
+                                            lrc_lines.append(f"[{format_ts(start_line_ms)}] {texto}")
+                                        
+                                        raw_lrc_content = "\n".join(lrc_lines)
+                                        
+                                        # Fase 2: Tradução e Injeção
+                                        trans_count = 0
+                                        total_lines = 0
+                                        final_lrc_content = raw_lrc_content
+                                        
+                                        if hasattr(self, 'lyrics_engine'):
+                                            translated_text, t_count, t_lines = await self.lyrics_engine._process_translation(
+                                                raw_lrc_content, is_synced=True
+                                            )
+                                            if translated_text:
+                                                final_lrc_content = translated_text
+                                                trans_count = t_count
+                                                total_lines = t_lines
+                                                
+                                            self.lyrics_engine._inject_metadata(str(final_file), final_lrc_content)
+                                        
+                                        if not self.no_lrc_files:
+                                            lrc_path = final_file.with_suffix(".lrc")
+                                            lrc_path.write_text(final_lrc_content, encoding="utf-8")
+                                        
+                                        trad_str = f"{trans_count}/{total_lines}" if trans_count > 0 else "Não"
+                                        msg_tree.append(f"{t_tag_letra} 📝 Letra: NATIVA Qobuz (Sync) (Trad: {trad_str})")
+                                        letra_nativa_ok = True
+                                        
+                                    except Exception as e:
+                                        pass
+            except Exception as e:
+                pass
+
+            # 2. FALLBACK: LRCLIB VIA LYRICS_ENGINE
+            if not letra_nativa_ok and hasattr(self, 'lyrics_engine'):
+                s_artist = _safe_get(track_meta, "performer", "name") or _safe_get(track_meta, "artist", "name", default="Unknown")
+                if _safe_get(track_meta, "album", "artist", "name") not in [None, "Various Artists"]:
+                    s_artist = _safe_get(track_meta, "album", "artist", "name")
+                    
+                letra_ok, trans_count, total_lines, resp_code = await self.lyrics_engine.fetch_and_inject(
+                    file_path=str(final_file), album_artist=s_artist, track=track_meta.get("title"),
+                    album=_safe_get(track_meta, "album", "title", default=""), save_lrc=not self.no_lrc_files
+                )
+                if letra_ok:
+                    trad_str = f"{trans_count}/{total_lines}" if trans_count else "Não"
+                    msg_tree.append(f"{t_tag_letra} 📝 Letra: {resp_code} (Trad: {trad_str})")
+                else:
+                    msg_tree.append(f"{t_tag_letra} 📝 Letra: Não encontrada")
                 
         msg_tree.append(f"{t_tag_status} ✔️ {Tema.SUCESSO}Finalizado{Tema.OFF}\n")
 
