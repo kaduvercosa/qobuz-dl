@@ -11,6 +11,7 @@ import hashlib
 from pathlib import Path
 from typing import Tuple, Dict, Any, Optional, Union
 import textwrap
+import unicodedata
 
 import yarl
 import aiohttp
@@ -685,6 +686,30 @@ class Download:
 
                 except Exception as e:
                     await safe_print_async(f"{t_tag} {Tema.ERRO}Falha ao processar capa: {e}{Tema.OFF}")
+
+        # CORREÇÃO DE ACENTUAÇÃO E NOMES DUPLICADOS
+        correct_performer = _safe_get(track_meta, "performer", "name")
+        raw_performers = track_meta.get("performers")
+        
+        if correct_performer and raw_performers:
+
+            def remove_accents(input_str):
+                return ''.join(c for c in unicodedata.normalize('NFD', input_str) if unicodedata.category(c) != 'Mn')
+
+            persons = raw_performers.split(" - ")
+            cleaned_persons = []
+            
+            for person in persons:
+                parts = person.split(", ")
+                person_name = parts[0]
+                
+                # Compara o nome dos créditos com o nome oficial (ignorando acentos e maiusculas)
+                if remove_accents(person_name).lower() == remove_accents(correct_performer).lower():
+                    parts[0] = correct_performer # Força a versão impecável com acento(ex: Jão)
+                    
+                cleaned_persons.append(", ".join(parts))
+                
+            track_meta["performers"] = " - ".join(cleaned_persons)
 
         tag_function = metadata.tag_mp3 if final_fmt == 5 else metadata.tag_flac
         try:

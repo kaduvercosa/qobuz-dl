@@ -178,11 +178,20 @@ class LyricsEngine:
         if self.translate and self.deepl_translator:
             for i, (l_type, ts, txt) in enumerate(mapping):
                 if l_type in ('synced', 'text'):
-                    clean_txt = re.sub(r'[^\w\s]', '', txt.lower()).strip()
+                # 1. Remove as marcações de tempo do Enhanced LRC (<00:00.00>) para a análise
+                    txt_no_tags = re.sub(r'<\d+:\d+(?:\.\d+)?>', '', txt)
+                    
+                    # 2. Limpa pontuações e números residuais
+                    clean_txt = re.sub(r'[^\w\s]', '', txt_no_tags.lower())
+                    clean_txt = re.sub(r'\d+', '', clean_txt).strip()
+                    
                     words = set(clean_txt.split())
                     
+                    # 3. Checa se sobrou apenas as palavras de exceção ("oh", "yeah", etc)
                     is_filler = bool(words) and words.issubset(self.pt_false_positives)
-                    lang, conf = self._detect_lang(txt)
+                    lang, conf = self._detect_lang(txt_no_tags)
+
+                    
                     is_pt = lang and lang.startswith('pt') and conf > 0.75
 
                     if not is_pt and not is_filler:
