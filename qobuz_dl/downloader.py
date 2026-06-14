@@ -738,15 +738,29 @@ class Download:
                                             
                                         linhas_letra = q_data.get("original", {}).get("lines", [])
                                         
+                                        use_enhanced_lrc = getattr(self.settings, 'enhanced_lrc', False)
+                                        
                                         for linha_data in linhas_letra:
                                             texto = linha_data.get("line", "").strip()
+
                                             # ignora completamente linhas vazias para nao gerar [00:00:00]
                                             if not texto:
                                                 continue
                                                 
                                             start_line_ms = linha_data.get("start", 0)
+                                            words = linha_data.get("words", [])
+                                            
+                                            # Se o usuário ativou a opção e o Qobuz forneceu as palavras sincronizadas
+                                            if use_enhanced_lrc and words:
+                                                line_str = f"[{format_ts(start_line_ms)}]"
+                                                for word_data in words:
+                                                    w_start = word_data.get("start", 0)
+                                                    w_text = word_data.get("word", "")
+                                                    line_str += f"<{format_ts(w_start)}>{w_text} "
                                                 
-                                            lrc_lines.append(f"[{format_ts(start_line_ms)}] {texto}")
+                                                lrc_lines.append(line_str.strip())
+                                            else:
+                                                lrc_lines.append(f"[{format_ts(start_line_ms)}]{texto}")
                                         
                                         raw_lrc_content = "\n".join(lrc_lines)
                                         

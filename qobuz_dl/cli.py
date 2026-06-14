@@ -218,7 +218,7 @@ def _reset_config(config_file: Path) -> int:
 
     # Aplica todas as definições base silenciosas
     config["qobuz"].update({
-        "default_limit": "500", "no_m3u": "false", "albums_only": "false", 
+        "default_limit": "500", "enhanced_lrc": "false", "no_m3u": "false", "albums_only": "false", 
         "no_fallback": "false", "og_cover": "true", "embed_art": "true", 
         "no_cover": "false", "no_database": "false", "no_lrc_files": "false", 
         "legacy_charmap": "false", "blacklist": "blacklist.txt",
@@ -449,6 +449,7 @@ async def amain():
         password = token if token else config.get(section, "password")
         
         fetch_lyrics = config.getboolean(section, "fetch_lyrics", fallback=False)
+        enhanced_lrc = config.getboolean(section, "enhanced_lrc", fallback=False)
         genius_token = config.get(section, "genius_token", fallback=None)
         deepl_api_key = config.get(section, "deepl_api_key", fallback=None)
         target_lang = config.get(section, "target_lang", fallback="PT-BR")
@@ -533,6 +534,7 @@ async def amain():
     directory_to_use = ensure_long_path(os.path.expanduser(arguments.directory if hasattr(arguments, 'directory') and arguments.directory else default_folder))
     settings = QobuzDLSettings.from_arguments_configparser(arguments, config)
     settings.legacy_charmap = config.getboolean(section, "legacy_charmap", fallback=False)
+    settings.enhanced_lrc = enhanced_lrc
     
     validate_config_formats({
         "folder_format": getattr(arguments, 'folder_format', None) or config.get(section, "folder_format", fallback=DEFAULT_FOLDER),
