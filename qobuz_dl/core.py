@@ -204,7 +204,7 @@ class QobuzDL:
     async def initialize_client(self, email: str, pwd: str, app_id: str, secrets: list):
         self.client = qopy.Client(email, pwd, app_id, secrets, self.settings.user_auth_token, force_english=self.force_english)
         await self.client.start()
-        print(f"{Tema.SYS}{Tema.AVISO}Sessão Ativa | Qualidade: {QUALITIES[int(self.quality)]}{Tema.OFF}")
+        print(f"{Tema.SYS}{Tema.AVISO}Sessão Ativa | Qualidade: {QUALITIES[int(self.quality)]}{Tema.OFF}\n")
 
     def get_tokens(self):
         bundle = Bundle()
@@ -213,7 +213,7 @@ class QobuzDL:
 
     async def download_from_id(self, item_id: str, album: bool = True, alt_path: Optional[str] = None, is_playlist: bool = False, playlist_index: Optional[int] = None, is_single_batch: bool = False, single_batch_index: int = 1, single_batch_total: int = 1):
         if handle_download_id(self.downloads_db, item_id, add_id=False, quality=self.quality):
-            print(f"{Tema.ALERTA}{Tema.AVISO}ID ({item_id}) ignorado (já existe no banco local).{Tema.OFF}")
+            print(f"{Tema.ALERTA}{Tema.AVISO}ID ({item_id}) ignorado (já existe no banco local).{Tema.OFF}\n")
             return
 
         try:

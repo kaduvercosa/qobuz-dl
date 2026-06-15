@@ -42,7 +42,7 @@ class Client:
     Lida com autenticação, pesquisa, metadados e obtenção de URLs de streaming/download.
     """
     def __init__(self, email: str, pwd: str, app_id: str, secrets: list, user_auth_token: str = None, force_english: bool = True):
-        logger.info(f"{YELLOW}Logando...{OFF}")
+        logger.info(f"{YELLOW}LOGANDO...{OFF}")
         self.secrets = secrets
         self.id = str(app_id)
         self.force_english = force_english
@@ -138,7 +138,7 @@ class Client:
             cred = user_info.get("credential") or user_info.get("user", {}).get("credential", {})
             self.label = cred.get("parameters", {}).get("short_label", "Studio")
             self.user_id = user_info.get("id") or user_info.get("user", {}).get("id")
-            logger.info(f"{GREEN}Logged: OK (Membership: {self.label}){OFF}")
+            logger.info(f"{GREEN}[*] Status do Login: OK (Plano: {self.label}){OFF}")
         except Exception:
             logger.info(f"{YELLOW}[!] Assinatura Não Encontrada: FREE.{OFF}")
             self.label = "Studio"

@@ -220,7 +220,7 @@ class Download:
         
         album_attr = self._build_metadata_dict(album_meta, album_title, bit_depth, sampling_rate, file_format, True)
         
-        await safe_print_async(f"=========================ALBÚM=========================")
+        await safe_print_async(f"========================= ALBÚM =========================")
         await safe_print_async(f"\n{Tema.TAG}▶{Tema.OFF} 💿 {Tema.TITULO}{album_title}{Tema.OFF}")
         await safe_print_async(f"   {Tema.DETALHES}├──{Tema.OFF} Artista: {album_attr.get('album_artist', 'Unknown')}")
         await safe_print_async(f"   {Tema.DETALHES}├──{Tema.OFF} Qualidade Máx: {file_format} ({bit_depth}b/{sampling_rate}kHz)")
@@ -359,6 +359,8 @@ class Download:
             final_dirn = target_dirn if (failed_tracks == 0 and not aborted_by_user) else incomplete_dirn
             try: 
                 working_dirn.rename(final_dirn)
+                from qobuz_dl.db import rename_library_path_prefix
+                rename_library_path_prefix(self.download_db, working_dirn, final_dirn)
             except OSError: 
                 final_dirn = working_dirn
             
@@ -434,21 +436,21 @@ class Download:
                 counter_tag = f"[{t_no}/{str(total_tracks).zfill(2)}]"
                 
                 if self.playlist_track_number == 1:
-                    await safe_print_async(f"=========================PLAYLIST=========================")
+                    await safe_print_async(f"========================= PLAYLIST =========================")
                 
                 await safe_print_async(f"\n{Tema.TAG}▶ {counter_tag}{Tema.OFF} 🎵 {Tema.TITULO}{artist} - {track_title}{Tema.OFF}")
                 await safe_print_async(f"   {Tema.DETALHES}└──{Tema.OFF} Qualidade Máx: {file_format} ({bit_depth}b/{sampling_rate}kHz)\n")
             else:
                 if self.is_single_batch:
                     if self.single_batch_index == 1:
-                        await safe_print_async(f"=========================SINGLES=========================")
+                        await safe_print_async(f"========================= SINGLES =========================")
 
                     t_no = str(self.single_batch_index).zfill(2)
                     t_tot = str(self.single_batch_total).zfill(2)
                     await safe_print_async(f"\n{Tema.TAG}▶ [{t_no}/{t_tot}]{Tema.OFF} 🎵 {Tema.TITULO}{artist} - {track_title}{Tema.OFF}")
                     await safe_print_async(f"   {Tema.DETALHES}└──{Tema.OFF} Qualidade Máx: {file_format} ({bit_depth}b/{sampling_rate}kHz)\n")
                 else:
-                    await safe_print_async(f"=========================SINGLE=========================")
+                    await safe_print_async(f"========================= SINGLE =========================")
                     await safe_print_async(f"\n{Tema.TAG}▶{Tema.OFF} 🎵 {Tema.TITULO}{artist} - {track_title}{Tema.OFF}")
                     await safe_print_async(f"   {Tema.DETALHES}└──{Tema.OFF} Qualidade Máx: {file_format} ({bit_depth}b/{sampling_rate}kHz)\n")
                 
@@ -492,7 +494,7 @@ class Download:
                 t_tag_text = f"[{t_no}/{str(total_tracks).zfill(2)}]".ljust(8)
                 t_tag = f"{Tema.TAG}{t_tag_text}{Tema.OFF}"
             else:
-                t_tag = f"{Tema.TAG}[SINGLE]{Tema.OFF}"
+                t_tag = f"{Tema.TAG}[-INFO-]{Tema.OFF}"
             
             # Passamos o nosso quartinho individual (cover_dir) para a tagger usar!
             download_success = await self._download_and_tag(str(dirn), 1, parse, track_meta, track_meta, True, int(self.quality) == 5, False, False, t_tag, cover_dir=cover_dir_to_pass)
@@ -664,22 +666,38 @@ class Download:
             if cover_path_to_check.exists() and os.path.getsize(cover_path_to_check) >= 16500000:
                 try:
                     from PIL import Image
-                    await safe_print_async(f"{t_tag} {Tema.AVISO}Capa > 16.5MB! Redimensionando proporções na memória...{Tema.OFF}")
+                    
+                    # Captura o tamanho original em MB
+                    orig_size_bytes = os.path.getsize(cover_path_to_check)
+                    orig_mb = orig_size_bytes / (1024 * 1024)
                     
                     resample_filter = getattr(Image, "Resampling", Image).LANCZOS
                 
                     with Image.open(cover_path_to_check) as img:
                         orig_format = img.format or "JPEG"
+                        orig_w, orig_h = img.width, img.height # Captura as dimensões originais
                         img_copy = img.copy()
 
                     # Cria um buffer na memória
                     buffer = io.BytesIO()
                     img_copy.save(buffer, format=orig_format)
 
+                    # Loop de compressão/redimensionamento
                     while buffer.tell() >= 16500000:
                         img_copy.thumbnail((int(img_copy.width * 0.9), int(img_copy.height * 0.9)), resample_filter)
                         buffer = io.BytesIO() # Reseta o buffer
                         img_copy.save(buffer, format=orig_format)
+
+                    # Captura o novo tamanho em MB e as novas dimensões
+                    new_mb = buffer.tell() / (1024 * 1024)
+                    new_w, new_h = img_copy.width, img_copy.height
+                    
+                    # Formata os valores decimais para usar vírgula(padrão PT-BR)
+                    str_orig_mb = f"{orig_mb:.1f}".replace(".", ",")
+                    str_new_mb = f"{new_mb:.1f}".replace(".", ",")
+                    
+                    # Imprime a mensagem técnica e detalhada
+                    await safe_print_async(f"{t_tag} {Tema.AVISO} Capa > 16,5MB! Redimensionando de {str_orig_mb}MB ({orig_w}x{orig_h}) para {str_new_mb}MB ({new_w}x{new_h}){Tema.OFF}")
 
                     with open(cover_path_to_check, "wb") as f:
                         f.write(buffer.getvalue())
@@ -717,7 +735,27 @@ class Download:
         except Exception as e:
             await safe_print_async(f"{t_tag_status} ❌ {Tema.ERRO}Erro ao injetar metadados: {e}{Tema.OFF}\n")
             return False
-            
+
+        # --- Atualiza espelho da biblioteca (library_files) ---
+        try:
+            from qobuz_dl.db import upsert_library_file
+            f_stat = final_file.stat()
+            upsert_library_file(
+                self.download_db,
+                path=final_file,
+                artist=filename_attr.get("track_artist", ""),
+                album_artist=filename_attr.get("albumartist", ""),
+                album=filename_attr.get("album_title", ""),
+                title=filename_attr.get("track_title", ""),
+                file_format=("MP3" if final_fmt == 5 else "FLAC"),
+                bit_depth=actual_bd,
+                sampling_rate=actual_sr,
+                file_size=f_stat.st_size,
+                mtime=f_stat.st_mtime,
+            )
+        except Exception:
+            pass
+
         msg_tree = []
         
         # =========================================================================

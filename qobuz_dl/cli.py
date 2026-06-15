@@ -394,21 +394,38 @@ async def amain():
     # --- FIM DA INTEGRAÇÃO DO TRANSFER ---
 
     if len(sys.argv) > 1 and sys.argv[1] == "stats":
-        from qobuz_dl.db import get_folder_stats
+        from qobuz_dl.db import create_db, get_library_stats, get_folder_stats
         _cfg = configparser.ConfigParser(interpolation=None)
         _cfg.read(CONFIG_FILE)
         _sec = "qobuz" if _cfg.has_section("qobuz") else "DEFAULT"
         scan_dir = os.path.expanduser(_cfg.get(_sec, "directory", fallback=None) or _cfg.get(_sec, "default_folder", fallback="Qobuz Downloads"))
 
         print(f"\n{CYAN}--- QOBUZ-DL MASTER -- LIBRARY STATISTICS ---{OFF}")
-        print(f"{YELLOW}Scanning: {scan_dir}{OFF}\n")
 
-        if not Path(scan_dir).is_dir():
-            print(f"{RED}[!] Directory not found: {scan_dir}{OFF}")
-            print(f"{YELLOW}    Make sure your download folder exists and is correctly set in config.ini{OFF}\n")
-            sys.exit(1)
+        force_full_scan = "--full-scan" in sys.argv or "--rescan" in sys.argv
+        stats = None
+        source_label = ""
 
-        stats = get_folder_stats(scan_dir)
+        if not force_full_scan:
+            try:
+                create_db(QOBUZ_DB)
+                lib_stats = get_library_stats(str(QOBUZ_DB))
+                if lib_stats and lib_stats['total_tracks'] > 0:
+                    stats = lib_stats
+                    source_label = "banco de dados local (instantâneo)"
+            except Exception:
+                pass
+
+        if stats is None:
+            print(f"{YELLOW}Scanning: {scan_dir}{OFF}\n")
+            if not Path(scan_dir).is_dir():
+                print(f"{RED}[!] Directory not found: {scan_dir}{OFF}")
+                print(f"{YELLOW}    Make sure your download folder exists and is correctly set in config.ini{OFF}\n")
+                sys.exit(1)
+            stats = get_folder_stats(scan_dir)
+            source_label = "varredura completa do disco"
+
+        print(f"{YELLOW}Fonte: {source_label}{OFF}\n")
 
         if stats['total_tracks'] == 0:
             print(f"{YELLOW}No audio files found. Start downloading to populate your library!{OFF}")
@@ -434,6 +451,7 @@ async def amain():
 
         print(f"\n{CYAN}--------------------------------------------{OFF}\n")
         sys.exit(0)
+
 
     config = configparser.ConfigParser(interpolation=None)
     config.read(CONFIG_FILE)
