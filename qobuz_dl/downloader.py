@@ -863,8 +863,12 @@ class Download:
                     s_artist = _safe_get(track_meta, "album", "artist", "name")
                     
                 letra_ok, trans_count, total_lines, resp_code = await self.lyrics_engine.fetch_and_inject(
-                    file_path=str(final_file), album_artist=s_artist, track=track_meta.get("title"),
-                    album=_safe_get(track_meta, "album", "title", default=""), save_lrc=not self.no_lrc_files
+                    file_path=str(final_file),
+                    album_artist=s_artist,
+                    track=track_meta.get("title"),
+                    album=_safe_get(track_meta, "album", "title", default=""),
+                    duration=track_meta.get("duration", 0),
+                    save_lrc=not self.no_lrc_files
                 )
                 if letra_ok:
                     trad_str = f"{trans_count}/{total_lines}" if trans_count else "Não"

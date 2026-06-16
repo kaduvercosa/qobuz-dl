@@ -129,6 +129,7 @@ async def _process_single_file(semaphore: asyncio.Semaphore, file_path: Path, en
                 album_artist=search_artist,
                 track=title,
                 album=meta["album"],
+                duration=meta["duration"],
                 save_lrc=True,
                 overwrite=overwrite
             )
