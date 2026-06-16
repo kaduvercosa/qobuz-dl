@@ -7,6 +7,7 @@ from threading import Lock
 import asyncio
 import aiohttp
 from typing import Tuple, Dict, Any, List
+from pick import pick
 
 from mutagen.flac import FLAC
 from mutagen.mp3 import MP3
@@ -110,7 +111,7 @@ async def _process_single_file(semaphore: asyncio.Semaphore, file_path: Path, en
             
             if not title or not artist:
                 status_result = "skipped"
-                msg = f"{YELLOW} [SEM METADADOS] {filepath.name}{OFF}"
+                msg = f"{YELLOW} [SEM METADADOS] {file_path.name}{OFF}"
                 return
 
             raw_artist = album_artist if album_artist and album_artist.lower() != "various artists" else artist
@@ -470,3 +471,193 @@ async def _handle_manual_lyric_search(track_info: dict, engine: Any) -> None:
         print(f"{RED}[!] Failed to inject lyrics.{OFF}")
 
     await asyncio.sleep(2)
+    
+    # ====================================================
+    # MODO TRADUTOR INTERATIVO (Apenas traduz letras locais)
+    # ====================================================
+
+def _get_existing_lyrics_text(file_path: Path) -> str:
+    """Tenta extrair a letra já existente do arquivo .lrc ou da tag do áudio."""
+    lrc_path = file_path.with_suffix(".lrc")
+    if lrc_path.exists():
+        try:
+            return lrc_path.read_text(encoding="utf-8")
+        except: pass
+        
+    try:
+        if file_path.suffix.lower() == ".flac":
+            audio = FLAC(file_path)
+            return audio.get("LYRICS", [""])[0] or audio.get("UNSYNCEDLYRICS", [""])[0]
+        elif file_path.suffix.lower() == ".mp3":
+            audio = id3.ID3(file_path)
+            uslt_tags = audio.getall("USLT")
+            if uslt_tags:
+                return uslt_tags[0].text
+    except: pass
+    return ""
+
+def _test_deepl_api(api_key: str) -> bool:
+    """Faz um teste rápido na API do DeepL antes de começar a ler arquivos.""" 
+    try:
+        import deepl
+        if not api_key:
+            safe_print(f"{RED}[!] Nenhuma chave do DeepL foi fornecida nas configurações.{OFF}")
+            return False
+            
+        safe_print(f"{CYAN}[*] Autenticando com a API do DeepL...{OFF}")
+        translator = deepl.Translator(api_key)
+
+        # Bate no servidor para puxar a cota atual
+        usage = translator.get_usage()
+        count = usage.character.count
+        limit = usage.character.limit
+        
+        if limit == 1000000 or limit is None:
+            limit = 500000
+        
+        if usage.any_limit_reached or count >= limit:
+            safe_print(f"{RED}[!] ERRO FATAL: A sua cota real do DeepL (500k) esgotou! Use: qobuz-dl set-deepl <SUA_NOVA_CHAVE_AQUI> para alterar..{OFF}")
+            return False
+
+        if limit:
+            pct = (count / limit) * 100
+            safe_print(f"{GREEN}[+] DeepL Online! (Uso: {count}/{limit} caracteres - {pct:.1f}%){OFF}\n")
+        else:
+            safe_print(f"{GREEN}[+] DeepL Online! (Uso: {count} caracteres){OFF}\n")
+            
+        return True
+        
+    except ImportError:
+        safe_print(f"{RED}[!] A biblioteca 'deepl' não está instalada.{OFF}")
+        return False
+    except Exception as e:
+        safe_print(f"{RED}[!] Falha ao autenticar no DeepL: Chave inválida ou erro de rede.\nDetalhes: {e}{OFF}")
+        return False
+
+async def interactive_translate_lyrics(directory_path: str, deepl_api_key: str = None, target_lang: str = "PT-BR") -> None:
+
+    if not _test_deepl_api(deepl_api_key):
+        return
+
+    target_dir = Path(directory_path)
+    if not target_dir.is_dir():
+        print(f"{RED}[!] Erro: O diretório '{directory_path}' não existe.{OFF}")
+        return
+        
+    if not deepl_api_key:
+        print(f"{YELLOW}[!] Aviso: Nenhuma chave do DeepL configurada. A tradução não funcionará.{OFF}")
+        
+    engine = LyricsEngine(deepl_api_key=deepl_api_key, translate=True, target_lang=target_lang)
+    all_files = sorted([p for p in target_dir.rglob('*') if p.is_file() and p.suffix.lower() in {'.flac', '.mp3'}])
+    
+    if not all_files:
+        print(f"{RED}[!] Nenhum arquivo de áudio compatível encontrado.{OFF}")
+        return
+
+    file_options = []
+    file_mapping = {}
+
+    print(f"{CYAN}[*] Escaneando {len(all_files)} arquivos para encontrar letras nativas...{OFF}")
+
+    for path in all_files:
+        meta = _extract_metadata(path)
+        raw_lyrics = _get_existing_lyrics_text(path)
+        
+        # Só exibe no menu as faixas que já possuem uma letra para ser traduzida
+        if meta["title"] and meta["artist"] and raw_lyrics:
+            is_translated = engine.translation_symbol in raw_lyrics
+            
+            if is_translated:
+                status_tag = "[Traduzido]"
+            else:
+                # 1. Limpa as tags normais [00:00:00]
+                clean_text = re.sub(r'\[\d+:\d+(?:\.\d+)?\]', '', raw_lyrics)
+                #  2. Limpa as tags Enhanced <00:00.00>
+                clean_text = re.sub(r'<\d+:\d+(?:\.\d+)?>', '', clean_text)
+                # 3. Limpa marcações de metadados como [Verse 1], [Chorus 1]
+                clean_text = re.sub(r'\[.*?\]', '', clean_text)
+
+                
+                sample_text = clean_text[:500].strip()
+                
+                lang, conf = engine._detect_lang(sample_text)
+                
+                pt_words = {"não", "você", "que", "de", "amor", "eu", "para", "com", "uma", "um", "meu", "minha", "se", "na", "no"}
+                sample_words = set(re.findall(r'\b\w+\b', sample_text.lower()))
+                is_pt_fallback = len(pt_words.intersection(sample_words)) >= 3
+                
+                if (lang and lang.startswith('pt') and conf >= 0.5) or is_pt_fallback:
+                    status_tag = "[PT-BR]"                else:
+                    status_tag = "[Pendente]"
+            
+            display_str = f"{status_tag} {meta['title']} - {meta['artist']}{path.suffix}"
+            file_options.append(display_str)
+            file_mapping[display_str] = {
+                "path": str(path),
+                "title": meta["title"],
+                "artist": meta["artist"],
+                "raw_lyrics": raw_lyrics,
+                "is_translated": is_translated
+            }
+
+    if not file_options:
+        print(f"{YELLOW}[!] Nenhum arquivo com letra nativa foi encontrado para traduzir.{OFF}")
+        return
+
+    file_options.sort()
+    file_options.append(">> Cancelar / Sair")
+
+    title_text = "Selecione as faixas que deseja TRADUZIR (apenas arquivos com letra local são exibidos)\n(Espaço para marcar, ENTER para confirmar, CTRL+C para sair):"
+
+    try:
+        selected = pick(file_options, title_text, multiselect=True, min_selection_count=1)
+    except KeyboardInterrupt:
+        return
+
+    if not selected:
+        return
+        
+    selected_displays = [s[0] for s in selected]
+    if ">> Cancelar / Sair" in selected_displays:
+        if len(selected_displays) == 1: return
+        selected_displays.remove(">> Cancelar / Sair")
+
+    print(f"\n{CYAN}[*] Você selecionou {len(selected_displays)} faixas para traduzir.{OFF}")
+
+    count_translated = 0
+    count_skipped = 0
+
+    for display in selected_displays:
+        track_info = file_mapping[display]
+        title = track_info["title"]
+        artist = track_info["artist"]
+        raw_lyrics = track_info["raw_lyrics"]
+        path = track_info["path"]
+
+        if track_info["is_translated"]:
+            safe_print(f"{YELLOW}  [*] Ignorado (Já Traduzido): {title} - {artist}{OFF}")
+            count_skipped += 1
+            continue
+
+        safe_print(f"{GREEN}[*] Traduzindo: {title} - {artist}...{OFF}")
+        
+        is_synced = engine._is_strictly_synced(raw_lyrics)
+        
+        try:
+            final_lyrics, trans_count, total_lines = await engine._process_translation(raw_lyrics, is_synced=is_synced)
+            
+            if trans_count > 0:
+                engine._inject_metadata(str(path), final_lyrics)
+                engine._save_lrc_file(str(path), final_lyrics)
+                safe_print(f"{CYAN}  └── Sucesso! Linhas traduzidas: {trans_count}/{total_lines}{OFF}")
+                count_translated += 1
+            else:
+                safe_print(f"{RED}  └── Falha na API ou texto não precisava de tradução.{OFF}")
+                count_skipped += 1
+        except Exception as e:
+            safe_print(f"{RED}  └── Erro ao traduzir: {e}{OFF}")
+            count_skipped += 1
+            
+    safe_print(f"\n{GREEN}[+] Modo Tradutor Concluído!{OFF}")
+    safe_print(f"{CYAN}  - Arquivos Traduzidos: {count_translated}{OFF}")
+    safe_print(f"{YELLOW}  - Arquivos Ignorados/Falhos: {count_skipped}{OFF}\n")

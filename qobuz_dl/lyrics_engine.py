@@ -79,7 +79,20 @@ class LyricsEngine:
         if self.translate and self.deepl_api_key and DEEPL_AVAILABLE:
             try:
                 self.deepl_translator = deepl.Translator(deepl_api_key)
+
+                usage = self.deepl_translator.get_usage()
+                count = usage.character.count
+                limit = usage.character.limit
+                
+                if limit == 1000000 or limit is None:
+                    limit = 500000
+                    
+                if usage.any_limit_reached or count >= limit:
+                    print(f"{Tema.RED}[!] Aviso: A sua cota real do DeepL (500k) esgotou. As traduções foram desativadas.{Tema.OFF}")
+                    self.translate = False
+
             except Exception as e:
+                print(f"{Tema.RED}[!] Erro de API DeepL: Chave inválida ou offline. Traduções desativadas.{Tema.OFF}")
                 logger.error(f"Erro DeepL: {e}")
                 self.translate = False
         
@@ -200,6 +213,9 @@ class LyricsEngine:
                 for idx_in_translate, res in enumerate(results):
                     original_idx = texts_to_translate[idx_in_translate][0]
                     translation_map[original_idx] = res.text
+            except deepl.exceptions.QuotaExceededException:
+                print(f"\n{Tema.YELLOW}[!] Cota do DeepL esgotada a meio do processo! Traduções desativadas para as restantes.{Tema.OFF}")
+                self.translate = False
             except Exception as e:
                 logger.error(f"Erro tradução DeepL: {e}")
 

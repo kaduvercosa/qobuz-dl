@@ -655,22 +655,19 @@ class Download:
 
         await asyncio.sleep(2.0)
 
-        # -------------------------------------------------------------
         # O PULO DO GATO: Direciona o Tagger para o "quartinho" isolado
         tag_dir = cover_dir if cover_dir else root_dir
-        # -------------------------------------------------------------
         
         # Verifica se a capa existe e se é maior que 15MB (15.000.000 bytes)
         cover_path_to_check = Path(tag_dir) / "embed_cover.jpg"
         async with cover_resize_lock:
             if cover_path_to_check.exists() and os.path.getsize(cover_path_to_check) >= 16500000:
-                try:
+
+                def _process_heavy_image():
                     from PIL import Image
-                    
                     # Captura o tamanho original em MB
                     orig_size_bytes = os.path.getsize(cover_path_to_check)
                     orig_mb = orig_size_bytes / (1024 * 1024)
-                    
                     resample_filter = getattr(Image, "Resampling", Image).LANCZOS
                 
                     with Image.open(cover_path_to_check) as img:
@@ -690,17 +687,21 @@ class Download:
 
                     # Captura o novo tamanho em MB e as novas dimensões
                     new_mb = buffer.tell() / (1024 * 1024)
-                    new_w, new_h = img_copy.width, img_copy.height
                     
-                    # Formata os valores decimais para usar vírgula(padrão PT-BR)
-                    str_orig_mb = f"{orig_mb:.1f}".replace(".", ",")
-                    str_new_mb = f"{new_mb:.1f}".replace(".", ",")
-                    
-                    # Imprime a mensagem técnica e detalhada
-                    await safe_print_async(f"{t_tag} {Tema.AVISO} Capa > 16,5MB! Redimensionando de {str_orig_mb}MB ({orig_w}x{orig_h}) para {str_new_mb}MB ({new_w}x{new_h}){Tema.OFF}")
-
                     with open(cover_path_to_check, "wb") as f:
                         f.write(buffer.getvalue())
+
+                    return orig_mb, img_copy.width, img_copy.height, new_mb, img_copy.width, img_copy.height
+                    
+                try:
+                    o_mb, o_w, o_h, n_mb, n_w, n_h = await asyncio.to_thread(_process_heavy_image)
+                    
+                    # Formata os valores decimais para usar vírgula(padrão PT-BR)
+                    str_orig_mb = f"{o_mb:.1f}".replace(".", ",")
+                    str_new_mb = f"{n_mb:.1f}".replace(".", ",")
+                    
+                    # Imprime a mensagem técnica e detalhada
+                    await safe_print_async(f"{t_tag} {Tema.AVISO} Capa > 16,5MB! Redimensionando de {str_orig_mb}MB ({o_w}x{o_h}) para {str_new_mb}MB ({n_w}x{n_h}){Tema.OFF}")
 
                 except Exception as e:
                     await safe_print_async(f"{t_tag} {Tema.ERRO}Falha ao processar capa: {e}{Tema.OFF}")
@@ -731,7 +732,17 @@ class Download:
 
         tag_function = metadata.tag_mp3 if final_fmt == 5 else metadata.tag_flac
         try:
-            tag_function(filename, tag_dir, str(final_file), track_meta, album_meta, is_track, self.embed_art, settings=self.settings)
+            await asyncio.to_thread(
+                tag_function,
+                filename,
+                tag_dir,
+                str(final_file),
+                track_meta,
+                album_meta,
+                is_track,
+                self.embed_art,
+                settings=self.settings
+            )
         except Exception as e:
             await safe_print_async(f"{t_tag_status} ❌ {Tema.ERRO}Erro ao injetar metadados: {e}{Tema.OFF}\n")
             return False
@@ -1172,7 +1183,7 @@ async def tqdm_download(session, url: str, fname: str, log_prefix: str = "", is_
                 async with aiofiles.open(fname, 'ab' if d_size > 0 else 'wb') as file:
                     bar_desc = f"{log_prefix}  ⬇️  {track_name}" if track_name else f"{log_prefix}  ⬇️ "
                     with tqdm(total=t_size, unit="iB", unit_scale=True, desc=bar_desc, initial=d_size, disable=is_parallel, leave=False, bar_format="{desc}: {percentage:3.0f}% |{bar:20}| {n_fmt}/{total_fmt}") as bar:
-                        async for data in r.content.iter_chunked(1048576):
+                        async for data in r.content.iter_chunked(262144):
                             if abort_event.is_set(): return
                             if data:
                                 await file.write(data)
@@ -1206,15 +1217,6 @@ async def tqdm_download_segments(session, track_url: dict, fname: str, log_prefi
     tmpl = track_url["url_template"]
     key = track_url["raw_key"]
 
-    async def get_seg_size(sess, i):
-        if abort_event.is_set(): return 0
-        try:
-            async with sess.head(tmpl.replace("$SEGMENT$", str(i)), timeout=5) as r:
-                return int(r.headers.get("content-length", 0))
-        except: return 0
-
-    t_size = sum(await asyncio.gather(*(get_seg_size(session, i) for i in range(n_seg + 1))))
-
     async def fetch_seg(sess, i, bar):
         if abort_event.is_set(): return bytearray()
         for attempt in range(4):
@@ -1222,10 +1224,10 @@ async def tqdm_download_segments(session, track_url: dict, fname: str, log_prefi
                 async with sess.get(tmpl.replace("$SEGMENT$", str(i)), timeout=15) as r:
                     r.raise_for_status()
                     data = bytearray()
-                    async for chunk in r.content.iter_chunked(1048576):
+                    async for chunk in r.content.iter_chunked(262144):
                         if abort_event.is_set(): return bytearray()
                         data.extend(chunk)
-                        if not is_parallel: bar.update(len(chunk))
+                        if not is_parallel: bar.update(1)
                     return data
             except Exception:
                 if attempt == 3: raise
@@ -1234,24 +1236,33 @@ async def tqdm_download_segments(session, track_url: dict, fname: str, log_prefi
     try:
         async with aiofiles.open(tmp_fname, "wb") as f:
             bar_desc = f"{log_prefix} ✂️  {track_name}" if track_name else f"{log_prefix} ✂️ "
-            with tqdm(total=t_size, unit="iB", unit_scale=True, desc=bar_desc, disable=is_parallel, leave=False, bar_format="{desc}: {percentage:3.0f}% |{bar:20}| {n_fmt}/{total_fmt}") as bar:
+            with tqdm(total=n_seg, unit="seg", desc=bar_desc, disable=is_parallel, leave=False, bar_format="{desc}: {percentage:3.0f}% |{bar:20}| {n_fmt}/{total_fmt}") as bar:
                 seg_uuid = None
                 for i in range(2):
                     data = await fetch_seg(session, i, bar)
                     if abort_event.is_set(): return
                     if i == 1:
                         seg_uuid = _get_qobuz_segment_uuid(data)
-                    await f.write(_decrypt_qobuz_segment(data, key, seg_uuid))
+
+                    decrypted_data = await asyncio.to_thread(_decrypt_qobuz_segment, data, key, seg_uuid)
+                    await f.write(decrypted_data)
 
                 if n_seg >= 2:
                     sem = asyncio.Semaphore(8)
                     async def bounded_fetch(i):
                         async with sem: return await fetch_seg(session, i, bar)
-                    for data in await asyncio.gather(*(bounded_fetch(i) for i in range(2, n_seg + 1))):
-                        if not abort_event.is_set(): await f.write(_decrypt_qobuz_segment(data, key, seg_uuid))
 
-        if abort_event.is_set(): return
-            
+                    for data in await asyncio.gather(*(bounded_fetch(i) for i in range(2, n_seg + 1))):
+                        if not abort_event.is_set():
+                            decrypted_data = await asyncio.to_thread(_decrypt_qobuz_segment,data, key, seg_uuid)
+                            await f.write(decrypted_data)
+
+    finally:
+        if abort_event.is_set() and Path(tmp_fname).exists():
+            try: Path(tmp_fname).unlink()
+            except OSError: pass
+            return
+
         proc = await asyncio.create_subprocess_exec(
             "ffmpeg", "-nostdin", "-v", "error", "-y", "-i", tmp_fname, 
             "-c:a", "copy", fname, 
@@ -1264,11 +1275,10 @@ async def tqdm_download_segments(session, track_url: dict, fname: str, log_prefi
         except asyncio.CancelledError:
             proc.terminate()
             raise
-
-    finally:
-        if Path(tmp_fname).exists():
-            try: Path(tmp_fname).unlink()
-            except OSError: pass
+        finally:
+            if Path(tmp_fname).exists():
+                try: Path(tmp_fname).unlink()
+                except OSError: pass
 
 def _get_qobuz_segment_uuid(segment_data):
     pos = 0

@@ -449,15 +449,68 @@ async def amain():
                 for i, (artist, count) in enumerate(stats['top_artists'], 1):
                     print(f"  {i}. {artist} ({count} tracks)")
 
-        print(f"\n{CYAN}--------------------------------------------{OFF}\n")
+        print(f"\n{CYAN}--------------------------------------------{OFF}\n") 
         sys.exit(0)
 
+    # COMEÇO DA INTEGRACAO DO MODO TRADUTOR INTERATIVO
+    if len(sys.argv) > 1 and sys.argv[1] in ("translate", "tl"):
+        from qobuz_dl.retro_tagger import interactive_translate_lyrics
+        try:
+            _cfg = configparser.ConfigParser(interpolation=None)
+            _cfg.read(CONFIG_FILE)
+            _sec = "qobuz"if _cfg.has_section("qobuz") else "DEFAULT"
+            
+            target_directory = sys.argv[2] if len(sys.argv) > 2 else _cfg.get(_sec, "directory", fallback="Qobuz Downloads")
+            _deepl = _cfg.get(_sec, "deepl_api_key", fallback=None)
+            _lang = _cfg.get(_sec, "target_lang", fallback="PT-BR")
+            
+            await interactive_translate_lyrics(ensure_long_path(target_directory), deepl_api_key=_deepl, target_lang=_lang)
+        except KeyboardInterrupt:
+            print(f"\n\n{RED}[!] Tradutor interrompido pelo utilizador (CTRL+C).{OFF}\n")
+        sys.exit(0)
+    # FIM DA INTEGRAÇÃO DO MODO TRADUTOR
+    
+    # TROCA DA CHAVE DA API DO DEEPL
+    if len(sys.argv) > 1 and sys.argv[1] == "set-deepl":
+        if len(sys.argv) < 3:
+            print(f"{RED}[!] Uso correto: qobuz-dl set deepl <SUA_NOVA_CHAVE_AQUI>{OFF}\n")
+            sys.exit(1)
+
+        nova_chave = sys.argv[2].strip()
+
+        from qobuz_dl.retro_tagger import _test_deepl_api
+        
+        # 1. Faz o teste de pré-voo ANTES de abrir o arquivo
+        is_valid = _test_deepl_api(nova_chave)
+        
+        
+        # 2. Se a chave for inválida ou sem cota, aborta e não salva!
+        if not is_valid:
+            print(f"\n{RED}[!] Operação abortada. A chave não foi salva no config.ini por que falhou no teste.{OFF}\n")
+            sys.exit(1)
+            
+        # 3. Se passou no teste, prossegue com o salvamento seguro
+        _cfg = configparser.ConfigParser(interpolation=None)
+        _cfg.read(CONFIG_FILE)
+        
+        # Garante que a sessão existe
+        if not _cfg.has_section("qobuz"):
+            _cfg.add_section("qobuz")
+
+        # Atualiza a chave
+        _cfg.set("qobuz", "deepl_api_key", nova_chave)
+        
+        # Salva as alteracoes de volta no arquivo
+        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+            _cfg.write(f)
+
+        print(f"\n{GREEN}[+] Chave do Deepl atualizada com sucesso no arquivo config.ini!{OFF}")
+        sys.exit(0)
 
     config = configparser.ConfigParser(interpolation=None)
     config.read(CONFIG_FILE)
 
-    # Exporta o caminho do config.ini para que o telegram_uploader encontre
-    # a seção [telegram] e [channels] independente de onde é chamado
+    # Exporta o caminho do config.ini para que o telegram_uploader encontre a seção [telegram] e [channels] independente de onde é chamado
     os.environ.setdefault("QOBUZ_DL_CONFIG", str(CONFIG_FILE))
 
     try:
