@@ -10,7 +10,7 @@ from mutagen.id3 import ID3, USLT, ID3NoHeaderError
 class Tema:
     """
     =========================================
-    🎨 SISTEMA DE CORES ADAPTÁVEL (CLARO/ESCURO)
+    SISTEMA DE CORES ADAPTAVEL (CLARO/ESCURO)
     =========================================
     """
     CYAN    = "\033[36m"
@@ -29,18 +29,10 @@ class Tema:
     ERRO      = RED            
     DETALHES  = ""             
 
-# Imports opcionais
 try: 
     import lyricsgenius
 except ImportError: 
     lyricsgenius = None
-    
-try: 
-    import deepl
-    DEEPL_AVAILABLE = True
-except ImportError: 
-    deepl = None
-    DEEPL_AVAILABLE = False
     
 try: 
     import fasttext
@@ -54,15 +46,13 @@ except ImportError:
     langdetect_detect = None
 
 logging.getLogger("httpx").setLevel(logging.WARNING)
-logging.getLogger("deepl").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 class LyricsEngine:
-    def __init__(self, genius_token=None, deepl_api_key=None, translate=True, target_lang='PT-BR', translation_symbol=" ¬ ", synced_only=True, session=None):
+    # Mantive o parametro deepl_api_key apenas para nao quebrar o cli.py, mas ele e ignorado.
+    def __init__(self, genius_token=None, deepl_api_key=None, translate=True, target_lang='PT-BR', translation_symbol=" ~ ", synced_only=True, session=None):
         self.genius_token = genius_token
         self.genius = None
-        self.deepl_api_key = deepl_api_key
-        self.deepl_translator = None
         self.translate = translate
         self.target_lang = target_lang
         self.translation_symbol = translation_symbol
@@ -75,26 +65,6 @@ class LyricsEngine:
 
         self.external_session = bool(session)
         self._shared_session = session
-
-        if self.translate and self.deepl_api_key and DEEPL_AVAILABLE:
-            try:
-                self.deepl_translator = deepl.Translator(deepl_api_key)
-
-                usage = self.deepl_translator.get_usage()
-                count = usage.character.count
-                limit = usage.character.limit
-                
-                if limit == 1000000 or limit is None:
-                    limit = 500000
-                    
-                if usage.any_limit_reached or count >= limit:
-                    print(f"{Tema.RED}[!] Aviso: A sua cota real do DeepL (500k) esgotou. As traduções foram desativadas.{Tema.OFF}")
-                    self.translate = False
-
-            except Exception as e:
-                print(f"{Tema.RED}[!] Erro de API DeepL: Chave inválida ou offline. Traduções desativadas.{Tema.OFF}")
-                logger.error(f"Erro DeepL: {e}")
-                self.translate = False
         
         if self.genius_token and lyricsgenius:
             self.genius = lyricsgenius.Genius(self.genius_token, verbose=False, remove_section_headers=True)
@@ -158,6 +128,28 @@ class LyricsEngine:
             pass
         return False
 
+    async def _fetch_free_translation(self, text):
+        url = "https://translate.googleapis.com/translate_a/single"
+        lang_code = self.target_lang.lower()[:2]
+        params = {
+            "client": "gtx",
+            "sl": "auto",
+            "tl": lang_code,
+            "dt": "t",
+            "q": text
+        }
+        try:
+            session = await self.get_session()
+            async with session.get(url, params=params, timeout=10) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    translated_text = "".join([linha[0] for linha in data[0] if linha[0]])
+                    return translated_text
+        except Exception as error:
+            logger.error(f"Erro na API do Google: {error}")
+            
+        return text
+
     async def _process_translation(self, lyrics, is_synced=True):
         lines = lyrics.split('\n')
         mapping = []
@@ -183,13 +175,10 @@ class LyricsEngine:
                 else: 
                     mapping.append(('empty', None, ''))
 
-        if self.translate and self.deepl_translator:
+        if self.translate:
             for i, (l_type, ts, txt) in enumerate(mapping):
                 if l_type in ('synced', 'text'):
-                    # 1. Remove as marcações de tempo do Enhanced LRC para a análise
                     txt_no_tags = re.sub(r'<\d+:\d+(?:\.\d+)?>', '', txt)
-                    
-                    # 2. Limpa pontuações e números residuais
                     clean_txt = re.sub(r'[^\w\s]', '', txt_no_tags.lower())
                     clean_txt = re.sub(r'\d+', '', clean_txt).strip()
                     
@@ -205,19 +194,27 @@ class LyricsEngine:
         count = 0
         if texts_to_translate:
             try:
-                raw_texts = [t[1] for t in texts_to_translate]
-                results = await asyncio.to_thread(self.deepl_translator.translate_text, raw_texts, target_lang=self.target_lang)
-                if not isinstance(results, list): 
-                    results = [results]
+                raw_texts = "\n".join([t[1] for t in texts_to_translate])
+                translated_block = await self._fetch_free_translation(raw_texts)
+                translated_lines = translated_block.split('\n')
                 
-                for idx_in_translate, res in enumerate(results):
-                    original_idx = texts_to_translate[idx_in_translate][0]
-                    translation_map[original_idx] = res.text
-            except deepl.exceptions.QuotaExceededException:
-                print(f"\n{Tema.YELLOW}[!] Cota do DeepL esgotada a meio do processo! Traduções desativadas para as restantes.{Tema.OFF}")
-                self.translate = False
+                # Prevenir desalinhamento caso o Google engula alguma quebra de linha
+                if len(translated_lines) == len(texts_to_translate):
+                    for idx_array, (original_idx, txt) in enumerate(texts_to_translate):
+                        translation_map[original_idx] = translated_lines[idx_array].strip()
+                else:
+                    # Fallback de seguranca linha por linha
+                    sem = asyncio.Semaphore(5)
+                    async def translate_single(idx, text_to_trans):
+                        async with sem:
+                            return idx, await self._fetch_free_translation(text_to_trans)
+                            
+                    tasks = [translate_single(idx, txt) for idx, txt in texts_to_translate]
+                    resultados = await asyncio.gather(*tasks)
+                    for idx, trad in resultados:
+                        translation_map[idx] = trad.strip()
             except Exception as e:
-                logger.error(f"Erro tradução DeepL: {e}")
+                logger.error(f"Erro traducao Google: {e}")
 
         res_lines = []
         for i, (l_type, ts, txt) in enumerate(mapping):
@@ -237,9 +234,6 @@ class LyricsEngine:
         total_valid_lines = len([m for m in mapping if m[0] in ('synced', 'text')])
         return '\n'.join(res_lines), count, total_valid_lines
 
-    # ---------------------------------------------------------
-    # SCRAPERS TURBINADOS (Timeouts baixos = 8 Segundos)
-    # ---------------------------------------------------------
     async def _fetch_lyrics_plus(self, artist, title):
         try:
             query = urllib.parse.quote(f"{title} {artist}")
@@ -319,7 +313,6 @@ class LyricsEngine:
         except: 
             return None
 
-    # Função isolada do LRCLIB com a DURAÇÃO implementada!
     async def _fetch_lrclib_lyrics(self, artist, title, album, duration=0):
         try:
             session = await self.get_session()
@@ -337,9 +330,6 @@ class LyricsEngine:
             pass
         return None
 
-    # ---------------------------------------------------------
-    # A CORRIDA (ASYNC RACE) - COM A DURAÇÃO EXATA
-    # ---------------------------------------------------------
     async def fetch_and_inject(self, file_path, album_artist, track, album, duration=0, save_lrc=True, overwrite=False, return_message=False):
         if not overwrite and self._has_lyrics(file_path, check_lrc=True):
             return (True, 0, 0, "Local")
@@ -360,7 +350,7 @@ class LyricsEngine:
         tasks = [
             asyncio.create_task(run_fetch("Musixmatch", self._fetch_musixmatch_lyrics(clean_artist, track))),
             asyncio.create_task(run_fetch("LyricsPlus", self._fetch_lyrics_plus(clean_artist, track))),
-            asyncio.create_task(run_fetch("LRCLIB", self._fetch_lrclib_lyrics(clean_artist, track, album, duration))), # LRCLIB ganha a duração exata
+            asyncio.create_task(run_fetch("LRCLIB", self._fetch_lrclib_lyrics(clean_artist, track, album, duration))),
             asyncio.create_task(run_fetch("Netease", self._fetch_netease_lyrics(clean_artist, track)))
         ]
 
@@ -404,7 +394,7 @@ class LyricsEngine:
             self._inject_metadata(file_path, final_lyrics)
             return (True, trans_count, total_lines, f"200 [{best_plain_provider}]")
 
-        return (False, 0, 0, "Não Encontrada")
+        return (False, 0, 0, "Nao Encontrada")
 
     def _inject_metadata(self, file_path, lyrics):
         if not lyrics: return
@@ -445,5 +435,5 @@ class LyricsEngine:
             return (True, trans_count, total_lines)
             
         except Exception as e:
-            logger.error(f"Erro na injeção manual: {e}")
+            logger.error(f"Erro na injecao manual: {e}")
             return (False, 0, 0)
