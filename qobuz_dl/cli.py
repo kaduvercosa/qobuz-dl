@@ -14,7 +14,7 @@ from qobuz_dl.bundle import Bundle
 from qobuz_dl.color import GREEN, RED, YELLOW, OFF, CYAN, BLUE
 from qobuz_dl.commands import qobuz_dl_args
 from qobuz_dl.core import QobuzDL
-from qobuz_dl.downloader import DEFAULT_FOLDER, DEFAULT_TRACK, abort_event
+from qobuz_dl.downloader import DEFAULT_FOLDER, DEFAULT_TRACK, abort_event, close_shared_cover_session
 from qobuz_dl.settings import QobuzDLSettings
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -664,6 +664,7 @@ async def amain():
         await _handle_commands(maestro, qobuz, arguments)
     finally:
         await qobuz_plugin.shutdown()
+        await close_shared_cover_session()
 
 
 def main():
