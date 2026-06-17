@@ -638,34 +638,54 @@ async def amain():
         booklet_only=getattr(arguments, 'booklet_only', False),
         blacklist=getattr(arguments, 'blacklist', None) or blacklist_config,
     )
-    
-    # --- INÍCIO DA INTEGRAÇÃO DO MAESTRO ---
+
+        # --- INICIO DA INTEGRACAO DO MAESTRO ---
     from core.maestro import MaestroEngine
     from core.qobuz_provider import QobuzProvider
+    import asyncio
+    from qobuz_dl.bundle import Bundle
     
     # Iniciar o Motor
     maestro = MaestroEngine()
     
-    # O Plugin abraça o seu motor clássico
+    # O Plugin abraca o seu motor classico
     qobuz_plugin = QobuzProvider(qobuz)
     maestro.register_provider(qobuz_plugin)
     
-    # Autenticar via Plugin
+    # A SOLUCAO: Buscar as chaves frescas em segundo plano para nao congelar o iSH!
+    def fetch_fresh_keys():
+        b = Bundle()
+        return str(b.get_app_id()), list(b.get_secrets().values())
+
+    #print("\n[*] A verificar chaves de seguranca da API em segundo plano...")
+    try:
+        fresh_app_id, fresh_secrets = await asyncio.to_thread(fetch_fresh_keys)
+        if fresh_app_id:
+            app_id = fresh_app_id
+            secrets = fresh_secrets
+            #print("[+] Chaves atualizadas com sucesso para o Maestro!")
+    except Exception as e:
+        print(f"[*] Aviso: Erro ao buscar chaves novas ({e})")
+
+    # Passa as chaves validadas para o Maestro
     credentials = {
         "email": email,
         "password": password,
         "app_id": app_id,
         "secrets": secrets
     }
+    
+    #print("[*] Autenticando Maestro...")
     await qobuz_plugin.authenticate(credentials)
 
     try:
-        # Passamos o Maestro e o Qobuz para que os comandos antigos não quebrem!
+        # Passamos o Maestro e o Qobuz para que os comandos antigos nao quebrem!
+        #print("[*] Iniciando Orquestracao...")
         await _handle_commands(maestro, qobuz, arguments)
     finally:
         await qobuz_plugin.shutdown()
+        from qobuz_dl.downloader import close_shared_cover_session
         await close_shared_cover_session()
-
 
 def main():
     import asyncio

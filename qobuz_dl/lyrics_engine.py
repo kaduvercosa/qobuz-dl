@@ -50,7 +50,7 @@ logger = logging.getLogger(__name__)
 
 class LyricsEngine:
     # Mantive o parametro deepl_api_key apenas para nao quebrar o cli.py, mas ele e ignorado.
-    def __init__(self, genius_token=None, deepl_api_key=None, translate=True, target_lang='PT-BR', translation_symbol=" ~ ", synced_only=True, session=None):
+    def __init__(self, genius_token=None, deepl_api_key=None, translate=True, target_lang='PT-BR', translation_symbol="  ~ ", synced_only=True, session=None):
         self.genius_token = genius_token
         self.genius = None
         self.translate = translate

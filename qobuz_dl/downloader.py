@@ -210,10 +210,14 @@ class Download:
 
     async def download_release(self) -> None:
         count = 0
-        album_meta = await self.client.get_album_meta(self.item_id)
+        try:
+            album_meta = await self.client.get_album_meta(self.item_id)
+        except Exception as e:
+            await safe_print_async(f"\n{Tema.ERRO}[!] Erro ao buscar albúm: {e} (Pode estar bloqueado na sua região).{Tema.OFF}")
+            return
 
         if not album_meta.get("streamable"):
-            raise NonStreamable("This release is not streamable")
+            await safe_print_async(f"\n{Tema.AVISO}[!] Albúm não liberado para streaming (Restrição de Licenciamento).{Tema.OFF}")
 
         if self.albums_only and (album_meta.get("release_type") != "album" or album_meta.get("artist").get("name") == "Various Artists"):
             return
@@ -275,22 +279,8 @@ class Download:
         abort_event.clear()
 
         try:
-            # [OTIMIZAÇÃO #4] Antes, tracklist (.txt), busca de capa (Apple ->
-            # fallback Qobuz) e goodies rodavam TODOS sequencialmente, e só
-            # depois disso as faixas de áudio começavam a baixar. Ou seja, o
-            # tempo do lookup externo na Apple + download da capa era 100%
-            # tempo morto somado por cima do tempo de download do álbum.
-            #
-            # Agora isso roda dentro de uma coroutine própria
-            # (_prepare_artwork_and_extras) que entra na MESMA lista de tasks
-            # das faixas, então roda concorrentemente com elas (ver "tasks"
-            # mais abaixo). Pra garantir que nenhuma faixa tente embutir/ler
-            # uma capa que ainda não terminou de ser escrita em disco, usamos
-            # um asyncio.Event (artwork_ready): cada faixa só espera por ele
-            # IMEDIATAMENTE ANTES de taggear (não antes de baixar o áudio) --
-            # ver o início do bloco de tagging em _download_and_tag(). Como o
-            # download do áudio quase sempre demora mais que a busca da capa,
-            # esse wait normalmente nem chega a pausar nada.
+            # [OTIMIZAÇÃO #4] Antes, tracklist (.txt), busca de capa (Apple -> fallback Qobuz) e goodies rodavam TODOS sequencialmente, e só depois disso as faixas de áudio começavam a baixar. Ou seja, o tempo do lookup externo na Apple + download da capa era 100% tempo morto somado por cima do tempo de download do álbum.
+            # Agora isso roda dentro de uma coroutine própria (_prepare_artwork_and_extras) que entra na MESMA lista de tasks das faixas, então roda concorrentemente com elas (ver "tasks" mais abaixo). Pra garantir que nenhuma faixa tente embutir/ler uma capa que ainda não terminou de ser escrita em disco, usamos um asyncio.Event (artwork_ready): cada faixa só espera por ele IMEDIATAMENTE ANTES de taggear (não antes de baixar o áudio) -- ver o início do bloco de tagging em _download_and_tag(). Como o download do áudio quase sempre demora mais que a busca da capa, esse wait normalmente nem chega a pausar nada.
             artwork_ready = asyncio.Event()
 
             async def _prepare_artwork_and_extras():
@@ -357,7 +347,13 @@ class Download:
                             self.client.get_track_url(track_item["id"], fmt_id=self.quality)
                         )
                     except Exception as e:
-                        await safe_print_async(f"{t_tag} {Tema.DETALHES}───{Tema.OFF} {Tema.ERRO}❌ Erro na API: {e}{Tema.OFF}\n")
+                        desc_name = track_item.get('title', 'Faixa Desconhecida')
+                        if "400" in str(e) or "Invalid Request Signature" in str(e):
+                            await safe_print_async(f"{t_tag} ─── 🎧 {Tema.TITULO}{desc_name}{Tema.OFF}\n")
+                            await safe_print_async(f"{t_tag} ─── ⏭️ Pulando (Música Indisponível / Restrição Regional){Tema.OFF}\n")
+                        else:
+                            await safe_print_async(f"{t_tag} ─── 🎧 {Tema.TITULO}{desc_name}{Tema.OFF}\n")
+                            await safe_print_async(f"{t_tag} ─── ❌ {Tema.ERRO}Erro na API: {e}{Tema.OFF}\n")
                         return False
 
                     if "sample" not in parse and parse.get("sampling_rate"):
@@ -473,9 +469,22 @@ class Download:
             await self.lyrics_engine.close()
 
     async def download_track(self) -> None:
-        parse = await self.client.get_track_url(self.item_id, self.quality)
+        try:
+            parse = await self.client.get_track_url(self.item_id, self.quality)
+        except Exception as e:
+            if "400"in str(e) or "Invalid Request Signature" in str(e):
+                await safe_print_async(f"{Tema.TAG}▶{Tema.OFF} 🎵 {Tema.AVISO}Faixa Indisponível: (Restrição Regional/Licenciamento){Tema.OFF}\n")
+            else:
+                await safe_print_async(f"{Tema.TAG}▶{Tema.OFF} 🎵 {Tema.ERRO}Erro da API: {e}{Tema.OFF}\n")
+            return
+
         if "sample" not in parse and parse["sampling_rate"]:
-            track_meta = await self.client.get_track_meta(self.item_id)
+            try:
+                track_meta = await self.client.get_track_meta(self.item_id)
+            except Exception as e:
+                await safe_print_async(f"{Tema.TAG}▶{Tema.OFF} 🎵 {Tema.ERRO}Erro ao obter metadados: {e}{Tema.OFF}\n")
+                return
+
             if getattr(self, 'is_playlist', False) and self.playlist_track_number:
                 track_meta["track_number"] = self.playlist_track_number
             

@@ -37,7 +37,7 @@ _BASE_URL = "https://play.qobuz.com"
 
 # Configurações do Cache
 CACHE_FILE = Path(tempfile.gettempdir()) / "qobuz_bundle_cache.json"
-CACHE_EXPIRY_SECONDS = 86400  # 24 horas (60 * 60 * 24)
+CACHE_EXPIRY_SECONDS = 3600
 
 
 class Bundle:
