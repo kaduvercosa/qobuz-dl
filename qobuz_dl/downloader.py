@@ -110,6 +110,16 @@ DEFAULT_FORMATS = {
 
 EMB_COVER_NAME = "embed_cover.jpg"
 
+# [OTIMIZAÇÃO] Antes era um "await asyncio.sleep(2.0)" fixo, sem nome nem
+# explicação, espalhado dentro de _download_and_tag. 2s de pausa "de segurança"
+# pós-download antes de abrir o arquivo pra taggear é bastante conservador: o
+# aiofiles já fecha (flush) o arquivo de forma síncrona antes do download
+# retornar, então normalmente não há motivo técnico pra esperar tanto.
+# Reduzido pra 0.4s. Se em algum teste no iSH aparecer erro de "arquivo em
+# uso"/corrompido ao taggear, é só aumentar esse valor (ou investigar a causa
+# real do atraso em vez de só jogar mais tempo de sleep nele).
+POST_DOWNLOAD_SETTLE_DELAY = 0.4
+
 
 class Download:
     def __init__(
@@ -265,30 +275,58 @@ class Download:
         abort_event.clear()
 
         try:
-            await self._generate_tracklist(album_meta, str(working_dirn), album_title, file_format, bit_depth, sampling_rate)
+            # [OTIMIZAÇÃO #4] Antes, tracklist (.txt), busca de capa (Apple ->
+            # fallback Qobuz) e goodies rodavam TODOS sequencialmente, e só
+            # depois disso as faixas de áudio começavam a baixar. Ou seja, o
+            # tempo do lookup externo na Apple + download da capa era 100%
+            # tempo morto somado por cima do tempo de download do álbum.
+            #
+            # Agora isso roda dentro de uma coroutine própria
+            # (_prepare_artwork_and_extras) que entra na MESMA lista de tasks
+            # das faixas, então roda concorrentemente com elas (ver "tasks"
+            # mais abaixo). Pra garantir que nenhuma faixa tente embutir/ler
+            # uma capa que ainda não terminou de ser escrita em disco, usamos
+            # um asyncio.Event (artwork_ready): cada faixa só espera por ele
+            # IMEDIATAMENTE ANTES de taggear (não antes de baixar o áudio) --
+            # ver o início do bloco de tagging em _download_and_tag(). Como o
+            # download do áudio quase sempre demora mais que a busca da capa,
+            # esse wait normalmente nem chega a pausar nada.
+            artwork_ready = asyncio.Event()
 
-            album_upc = album_meta.get("upc", "")
-            first_track_isrc = ""
-            try:
-                first_track_isrc = album_meta.get("tracks", {}).get("items", [])[0].get("isrc", "")
-            except Exception:
-                pass
-                
-            apple_cover = await get_apple_hq_cover(album_upc, first_track_isrc, album_attr.get('album_artist', ''), album_title)
-            final_cover = apple_cover if apple_cover else album_meta["image"]["large"]
+            async def _prepare_artwork_and_extras():
+                try:
+                    await self._generate_tracklist(album_meta, str(working_dirn), album_title, file_format, bit_depth, sampling_rate)
 
-            if not self.settings.no_cover:
-                await _get_extra(final_cover, str(working_dirn), art_size="org", spaces=3)
+                    album_upc = album_meta.get("upc", "")
+                    first_track_isrc = ""
+                    try:
+                        first_track_isrc = album_meta.get("tracks", {}).get("items", [])[0].get("isrc", "")
+                    except Exception:
+                        pass
 
-            if self.settings.embed_art:
-                cover_path, embed_path = working_dirn / "cover.jpg", working_dirn / EMB_COVER_NAME
-                if cover_path.exists(): shutil.copy2(cover_path, embed_path)
-                else: await _get_extra(final_cover, str(working_dirn), extra=EMB_COVER_NAME, art_size="org", spaces=3)
+                    apple_cover = await get_apple_hq_cover(album_upc, first_track_isrc, album_attr.get('album_artist', ''), album_title)
+                    final_cover = apple_cover if apple_cover else album_meta["image"]["large"]
 
-            if "goodies" in album_meta:
-                await _download_goodies(album_meta, str(working_dirn))
-                
+                    if not self.settings.no_cover:
+                        await _get_extra(final_cover, str(working_dirn), art_size="org", spaces=3)
+
+                    if self.settings.embed_art:
+                        cover_path, embed_path = working_dirn / "cover.jpg", working_dirn / EMB_COVER_NAME
+                        if cover_path.exists(): shutil.copy2(cover_path, embed_path)
+                        else: await _get_extra(final_cover, str(working_dirn), extra=EMB_COVER_NAME, art_size="org", spaces=3)
+
+                    if "goodies" in album_meta:
+                        await _download_goodies(album_meta, str(working_dirn))
+                finally:
+                    # Garantido mesmo se algo acima falhar/lançar exceção --
+                    # senão uma faixa esperando esse evento em
+                    # _download_and_tag() poderia travar pra sempre.
+                    artwork_ready.set()
+
             if getattr(self, 'booklet_only', False):
+                # Sem faixas de áudio pra baixar mesmo nesse modo, então não
+                # há nada pra rodar em paralelo -- segue sequencial como antes.
+                await _prepare_artwork_and_extras()
                 await safe_print_async(f"\n{Tema.AVISO}[!] Apenas encartes solicitado. Pulando áudio.{Tema.OFF}\n")
                 if is_standard_album and working_dirn == inprogress_dirn:
                     try: working_dirn.rename(incomplete_dirn)
@@ -299,7 +337,7 @@ class Download:
              
             sem = asyncio.Semaphore(active_workers)
             
-            async def bound_process_track(dirn, t_count, track_item, a_meta, is_multi, is_para):
+            async def bound_process_track(dirn, t_count, track_item, a_meta, is_multi, is_para, artwork_event=None):
                 async with sem:
                     if abort_event.is_set(): return False
                     
@@ -308,8 +346,16 @@ class Download:
                     t_tag = f"{Tema.TAG}{t_tag_text}{Tema.OFF}"
 
                     try:
-                        full_track_meta = await self.client.get_track_meta(track_item["id"])
-                        parse = await self.client.get_track_url(track_item["id"], fmt_id=self.quality)
+                        # [OTIMIZAÇÃO #5] get_track_meta() e get_track_url()
+                        # são chamadas independentes (uma não depende do
+                        # resultado da outra), então disparamos as duas ao
+                        # mesmo tempo em vez de esperar uma terminar pra só
+                        # então começar a outra. Antes: 2 round-trips em
+                        # sequência. Agora: 2 round-trips em paralelo.
+                        full_track_meta, parse = await asyncio.gather(
+                            self.client.get_track_meta(track_item["id"]),
+                            self.client.get_track_url(track_item["id"], fmt_id=self.quality)
+                        )
                     except Exception as e:
                         await safe_print_async(f"{t_tag} {Tema.DETALHES}───{Tema.OFF} {Tema.ERRO}❌ Erro na API: {e}{Tema.OFF}\n")
                         return False
@@ -318,20 +364,29 @@ class Download:
                         media_num = track_item.get("media_number") if is_multi else None
                         
                         return await self._download_and_tag(
-                            dirn, t_count, parse, full_track_meta, a_meta, False, int(self.quality) == 5, media_num, is_para, t_tag
+                            dirn, t_count, parse, full_track_meta, a_meta, False, int(self.quality) == 5, media_num, is_para, t_tag, artwork_ready_event=artwork_event
                         )
                     return False
 
-            tasks = []
+            # [OTIMIZAÇÃO #4] _prepare_artwork_and_extras() entra como a
+            # primeira "task" da lista, pra rodar concorrentemente com as
+            # faixas no mesmo gather() abaixo.
+            tasks = [_prepare_artwork_and_extras()]
             for continuous_track_index, i in enumerate(album_meta["tracks"]["items"], start=1):
                 if abort_event.is_set(): break
                 if is_multiple: i["track_number"] = continuous_track_index
-                tasks.append(bound_process_track(str(working_dirn), count, i, album_meta, is_multiple, is_parallel))
+                tasks.append(bound_process_track(str(working_dirn), count, i, album_meta, is_multiple, is_parallel, artwork_ready))
                 count += 1
 
             try:
                 results = await asyncio.gather(*tasks, return_exceptions=True)
-                for res in results:
+                # results[0] é da preparação de capa/tracklist/goodies, não
+                # conta como faixa pra fins de failed_tracks -- só logamos se
+                # tiver dado erro, pra não perder visibilidade do problema.
+                artwork_result, track_results = results[0], results[1:]
+                if isinstance(artwork_result, Exception):
+                    logger.error(f"Erro ao preparar capa/tracklist/goodies: {artwork_result}")
+                for res in track_results:
                     if isinstance(res, Exception):
                         failed_tracks += 1
                         logger.error(f"Erro na track: {res}")
@@ -530,7 +585,7 @@ class Download:
     # -------------------------------------------------------------
     # AGORA COM SUPORTE AO cover_dir OPCIONAL PARA O ISOLAMENTO
     # -------------------------------------------------------------
-    async def _download_and_tag(self, root_dir: str, tmp_count: int, track_url_dict: dict, track_meta: dict, album_meta: dict, is_track: bool, is_mp3: bool, multiple: Optional[int], is_parallel: bool, t_tag: str, cover_dir: str = None) -> bool:
+    async def _download_and_tag(self, root_dir: str, tmp_count: int, track_url_dict: dict, track_meta: dict, album_meta: dict, is_track: bool, is_mp3: bool, multiple: Optional[int], is_parallel: bool, t_tag: str, cover_dir: str = None, artwork_ready_event: Optional[asyncio.Event] = None) -> bool:
         a_meta_for_type = track_meta.get("album", {})
         if not a_meta_for_type:
             a_meta_for_type = album_meta
@@ -601,14 +656,37 @@ class Download:
         success, final_fmt = False, int(self.quality)
         actual_bd, actual_sr = None, None
 
-        for attempt_fmt in FALLBACK_TIERS[start_idx:]:
+        # [OTIMIZAÇÃO #1] track_url_dict já chegou pronto aqui (buscado um
+        # pouco antes, em bound_process_track/download_track) pro MESMO
+        # fmt_id que seria a 1ª tentativa deste loop (FALLBACK_TIERS[start_idx]
+        # == self.quality, no caso normal). Antes, essa 1ª iteração ignorava
+        # esse dict e chamava get_track_url() de novo pra exatamente a mesma
+        # faixa + mesmo formato -- uma requisição de API 100% duplicada em
+        # TODA faixa baixada (álbum, playlist ou single).
+        #
+        # Reaproveitamos o dict só quando é seguro:
+        #  - self.delay == 0: sem --delay configurado, o tempo entre aquele
+        #    fetch e este ponto é desprezível (sub-segundo), risco de URL
+        #    assinada expirar é praticamente nulo. Com --delay > 0, o sleep
+        #    em _apply_delay() (chamado ali acima) pode ter dado tempo da
+        #    URL expirar, então nesse caso preferimos buscar uma fresca,
+        #    como era feito antes.
+        #  - attempt_fmt == int(self.quality): proteção pro caso raro do
+        #    ValueError acima, onde start_idx vira 0 e o 1º attempt_fmt pode
+        #    não ser o mesmo fmt_id usado pra buscar track_url_dict.
+        can_reuse_first_fetch = self.delay == 0
+
+        for tier_idx, attempt_fmt in enumerate(FALLBACK_TIERS[start_idx:]):
             if abort_event.is_set(): return False
 
             async def get_fresh_url(fmt=attempt_fmt, force_segments=False):
                 return await self.client.get_track_url(track_meta["id"], fmt_id=fmt, force_segments=force_segments)
 
             try:
-                fresh_track = await get_fresh_url(force_segments=False)
+                if tier_idx == 0 and can_reuse_first_fetch and attempt_fmt == int(self.quality):
+                    fresh_track = track_url_dict
+                else:
+                    fresh_track = await get_fresh_url(force_segments=False)
                 if "url" in fresh_track:
                     try:
                         actual_bd = fresh_track.get("bit_depth")
@@ -653,7 +731,22 @@ class Download:
         track_meta["actual_sampling_rate"] = actual_sr
         track_meta["actual_format_id"] = final_fmt
 
-        await asyncio.sleep(2.0)
+        await asyncio.sleep(POST_DOWNLOAD_SETTLE_DELAY)
+
+        # [OTIMIZAÇÃO #4] No download de álbum, a busca/baixa da capa agora
+        # roda em paralelo com o download de áudio das faixas (ver
+        # _prepare_artwork_and_extras() em download_release). Isso significa
+        # que quando a faixa termina de baixar, a capa pode ainda não ter
+        # sido escrita em disco. Tudo que depende da capa -- a checagem de
+        # tamanho/resize abaixo E o embed na tag, mais adiante -- precisa
+        # esperar esse trabalho terminar antes de continuar.
+        #
+        # Em modo single-track/playlist, artwork_ready_event é None (não é
+        # passado), então esse wait é um no-op e o comportamento é idêntico
+        # ao de antes -- nesses fluxos a capa já é buscada sequencialmente
+        # antes de chamar _download_and_tag, sem essa concorrência.
+        if artwork_ready_event is not None:
+            await artwork_ready_event.wait()
 
         # O PULO DO GATO: Direciona o Tagger para o "quartinho" isolado
         tag_dir = cover_dir if cover_dir else root_dir
@@ -1092,6 +1185,36 @@ def _get_title(item: dict) -> str:
         title = f"{title} ({v})" if v.lower() not in title.lower() else title
     return title
 
+# [OTIMIZAÇÃO #2] Antes, _get_extra() criava uma aiohttp.ClientSession +
+# FastTCPConnector NOVOS DO ZERO a cada chamada (cada capa, cada goodie),
+# com handshake TLS novo todas as vezes. Em playlists com muitas faixas
+# (cada uma com sua própria pasta isolada de capa) isso multiplicava bastante
+# o overhead de conexão. Agora mantemos UMA sessão compartilhada, criada uma
+# única vez e reaproveitada (com keep-alive) em todas as chamadas de
+# _get_extra() durante a vida do processo.
+_cover_session: Optional[aiohttp.ClientSession] = None
+_cover_session_lock = asyncio.Lock()
+
+async def _get_shared_cover_session() -> aiohttp.ClientSession:
+    global _cover_session
+    async with _cover_session_lock:
+        if _cover_session is None or _cover_session.closed:
+            from qobuz_dl.core import FastTCPConnector
+            _cover_session = aiohttp.ClientSession(connector=FastTCPConnector())
+    return _cover_session
+
+async def close_shared_cover_session() -> None:
+    """
+    Opcional: chame isso no encerramento do programa (ex.: no fim do main()
+    em core.py) se quiser fechar a sessão compartilhada de capas de forma
+    limpa. Não é obrigatório -- sem isso, o pior caso é só um aviso cosmético
+    de "Unclosed client session" do aiohttp ao processo terminar.
+    """
+    global _cover_session
+    if _cover_session is not None and not _cover_session.closed:
+        await _cover_session.close()
+    _cover_session = None
+
 async def _get_extra(item: str, dirn: str, extra: str = "cover.jpg", art_size: str = None, og_quality: bool = False, is_playlist: bool = False, spaces: int = 3) -> None:
     if abort_event.is_set(): return
     e_file = Path(dirn) / extra
@@ -1122,11 +1245,11 @@ async def _get_extra(item: str, dirn: str, extra: str = "cover.jpg", art_size: s
         try_url = item.replace("_600.", f"_{q}.") if (q and not is_apple) else item
         
         try:
-            # Emprestando a sessão rápida do Qobuz para baixar a capa
-            from qobuz_dl.core import FastTCPConnector
-            connector = FastTCPConnector()
-            async with aiohttp.ClientSession(connector=connector) as sess:
-                await tqdm_download(sess, try_url, str(e_file), log_prefix=tag_capa, is_parallel=False)
+            # [OTIMIZAÇÃO #2] Reaproveita a sessão HTTP compartilhada em vez
+            # de criar uma aiohttp.ClientSession + connector novos a cada
+            # chamada (era: "async with aiohttp.ClientSession(...) as sess").
+            sess = await _get_shared_cover_session()
+            await tqdm_download(sess, try_url, str(e_file), log_prefix=tag_capa, is_parallel=False)
             
             if is_apple:
                 q_tag = f" {Tema.PURPLE}[Apple]{Tema.OFF}"

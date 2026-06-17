@@ -82,6 +82,16 @@ ID3_LEGEND = {
     "conductor": id3.TPE3,
     "ensemble": id3.TXXX,
     "work": id3.TIT1,
+    # [FIX] bitdepth/samplerate eram gravados no dict de tags
+    # (tags["BITDEPTH"]/tags["SAMPLERATE"] em _get_tags_to_add) mas não
+    # existiam aqui. Resultado: no FLAC funcionava normal (lá não passa por
+    # esse dict de legendas, qualquer chave vira Vorbis Comment direto), mas
+    # em todo arquivo MP3 essas duas tags eram descartadas em silêncio no
+    # loop de tag_mp3() -- nenhum erro, nenhum aviso, só desapareciam.
+    # Mapeadas pra TXXX (campo customizado), igual outras infos técnicas
+    # já existentes aqui (QOBUZTRACKID, barcode, etc).
+    "bitdepth": id3.TXXX,
+    "samplerate": id3.TXXX,
 }
 
 EMB_COVER_NAMES = [
@@ -156,7 +166,6 @@ def _embed_id3_img(cover_image: Path, audio: id3.ID3) -> None:
         mime_type, _ = mimetypes.guess_type(str(cover_image))
         audio.add(id3.APIC(encoding=3, mime=mime_type or "image/jpeg", type=3, desc="Cover", data=cover.read()))
 
-
 # ─── Funções Principais de Tagging ───────────────────────────────────────────
 def tag_flac(filename: str, root_dir: Union[str, Path], final_name: str, d: QobuzItem, album: QobuzAlbum, istrack: bool = True, em_image: bool = False, settings: Optional[QobuzDLSettings] = None) -> None:
     if settings is None:
@@ -205,8 +214,14 @@ def tag_flac(filename: str, root_dir: Union[str, Path], final_name: str, d: Qobu
     
     try:
         os.rename(filename, final_name)
-    except OSError:
-        pass # Falha definitiva silenciosa para não quebrar o loop do downloader
+    except OSError as e:
+        # [FIX] Antes essa falha desaparecia 100% em silêncio (except OSError:
+        # pass): o download "parecia" concluído com sucesso, mas o arquivo
+        # final podia nem existir no destino (disco cheio, permissão, path
+        # longo demais, etc). Mantemos o comportamento de não derrubar o
+        # loop do downloader, mas agora pelo menos fica registrado no log
+        # pra dar pra investigar depois.
+        logger.error(f"Falha ao mover/renomear arquivo final '{filename}' -> '{final_name}': {e}")
 
 def tag_mp3(filename: str, root_dir: Union[str, Path], final_name: str, d: QobuzItem, album: QobuzAlbum, istrack: bool = True, em_image: bool = False, settings: Optional[QobuzDLSettings] = None) -> None:
     if settings is None:
@@ -238,6 +253,20 @@ def tag_mp3(filename: str, root_dir: Union[str, Path], final_name: str, d: Qobuz
                     audio.add(id3tag(encoding=3, desc=k, text=v))
                 elif id3tag == id3.COMM:
                     audio.add(id3tag(encoding=3, lang='eng', desc='', text=[v] if isinstance(v, str) else v))
+                elif id3tag == id3.TDAT:
+                    # [FIX] TDAT no ID3v2.3 é, por spec, só DDMM (dia+mês,
+                    # 4 dígitos) -- não uma data ISO completa. Antes a string
+                    # inteira (ex.: "2024-05-01") era jogada direto nesse
+                    # frame, fora do spec (a maioria dos players é tolerante
+                    # e ignora isso, mas é tecnicamente incorreto).
+                    # Continuamos guardando a data completa normalmente em
+                    # DATE pro FLAC (Vorbis aceita ISO sem problema) -- esse
+                    # reformatação é só pro frame TDAT específico do MP3.
+                    # O ano continua coberto separadamente pelo frame TYER.
+                    date_str = v if isinstance(v, str) else (v[0] if v else "")
+                    m = re.match(r"(\d{4})-(\d{2})-(\d{2})", date_str)
+                    if m:
+                        audio["TDAT"] = id3tag(encoding=3, text=[f"{m.group(3)}{m.group(2)}"])
                 else:
                     audio[id3tag.__name__] = id3tag(encoding=3, text=[v] if isinstance(v, str) else v)
 
@@ -256,8 +285,10 @@ def tag_mp3(filename: str, root_dir: Union[str, Path], final_name: str, d: Qobuz
             
     try:
         os.rename(filename, final_name)
-    except OSError:
-        pass # Falha definitiva silenciosa para não quebrar o loop do downloader
+    except OSError as e:
+        # [FIX] Mesmo motivo do tag_flac() acima: agora registra no log em
+        # vez de falhar 100% em silêncio.
+        logger.error(f"Falha ao mover/renomear arquivo final '{filename}' -> '{final_name}': {e}")
 
 def _get_tags_to_add(qobuz_album: QobuzAlbum, qobuz_item: QobuzItem, settings: Optional[QobuzDLSettings] = None) -> Dict[str, Any]:
     if settings is None:
