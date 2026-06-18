@@ -657,15 +657,15 @@ async def amain():
         b = Bundle()
         return str(b.get_app_id()), list(b.get_secrets().values())
 
-    #print("\n[*] A verificar chaves de seguranca da API em segundo plano...")
+    print("\n\r\033[K[*] A verificar chaves de seguranca da API em segundo plano...", end="", flush=True)
     try:
         fresh_app_id, fresh_secrets = await asyncio.to_thread(fetch_fresh_keys)
         if fresh_app_id:
             app_id = fresh_app_id
             secrets = fresh_secrets
-            #print("[+] Chaves atualizadas com sucesso para o Maestro!")
+            print("\r\033[K[+] Chaves atualizadas com sucesso!", end="", flush=True)
     except Exception as e:
-        print(f"[*] Aviso: Erro ao buscar chaves novas ({e})")
+        print(f"\r\033[K[*] Aviso: Erro ao buscar chaves novas ({e})", end="", flush=True)
 
     # Passa as chaves validadas para o Maestro
     credentials = {
@@ -675,12 +675,18 @@ async def amain():
         "secrets": secrets
     }
     
-    #print("[*] Autenticando Maestro...")
+    #print("\r\033[K[*] Autenticando Maestro...\n", end="", flush=True)
     await qobuz_plugin.authenticate(credentials)
 
     try:
+        # Limpeza inteligente de arquivos .tmp antigos abandonados no disco
+        #print("\r[*] Varrendo e limpando arquivos temporários residuais...", end="", flush=True)
+
+        #print("\r\033[K[•] Arquivos verificados e scan completo..", end="", flush=True)
+        await asyncio.to_thread(_remove_leftovers, qobuz.directory)
+
         # Passamos o Maestro e o Qobuz para que os comandos antigos nao quebrem!
-        #print("[*] Iniciando Orquestracao...")
+        #print("\r\033[K[*] Iniciando Orquestração...")
         await _handle_commands(maestro, qobuz, arguments)
     finally:
         await qobuz_plugin.shutdown()

@@ -4,12 +4,13 @@ import sys
 import asyncio
 import aiohttp
 import shutil
+import re
 from pathlib import Path
 from typing import Optional, List, Tuple
 
 # ===========================================================================
-# 🚀 OTIMIZAÇÃO GLOBAL DE REDE (INJEÇÃO)
-# Intercepta o aiohttp para forçar conexões rápidas sem SSL e com DNS nativo
+# 🚀 OTIMIZACAO GLOBAL DE REDE (INJECAO)
+# Intercepta o aiohttp para forcar conexoes rapidas sem SSL e com DNS nativo
 # em todo o projeto, incluindo o pacote externo 'qopy'.
 # ===========================================================================
 try:
@@ -23,7 +24,7 @@ _original_tcp_connector = aiohttp.TCPConnector
 class FastTCPConnector(_original_tcp_connector):
     def __init__(self, *args, **kwargs):
         kwargs['ssl'] = False
-        kwargs['limit'] = 100  # Remove limite de conexões simultâneas
+        kwargs['limit'] = 100  # Remove limite de conexoes simultaneas
         if _fast_resolver and 'resolver' not in kwargs:
             kwargs['resolver'] = _fast_resolver
         super().__init__(*args, **kwargs)
@@ -83,25 +84,42 @@ def _align_text(text: str, width: int) -> str:
     return text.ljust(width)
 
 # ---------------------------------------------------------------------------
-# Lógica de tipo de lançamento
+# Logica de tipo de lancamento
 # ---------------------------------------------------------------------------
 def classificar_tipo_lancamento(raw_type: Optional[str], title: str = "", version: str = "", t_count: int = 0, duration: int = 0) -> str:
     r_type = (raw_type or "").lower().strip()
     title_l   = (title or "").lower()
     version_l = (version or "").lower()
 
-    if "live" in version_l or "(live" in title_l or "- live" in title_l: return "live"
-    if any(kw in title_l or kw in version_l for kw in ("best of", "greatest hits", "anthology", "collection", "compilation")): return "compilation"
-    if " ep" in title_l or version_l == "ep": return "ep"
+    # 1. LIVE (O \b garante que nao pegamos palavras como "alive" ou "deliver")
+    if re.search(r'\blive\b', version_l) or "(live" in title_l or "- live" in title_l or title_l.endswith(" live"):
+        return "live"
 
-    if r_type == "single" and (t_count >= 4 or duration >= 1_740): r_type = "ep"
-    elif r_type == "ep" and 1 <= t_count <= 3: r_type = "single"
-    elif r_type == "album" and 1 <= t_count <= 3: r_type = "single"
+    # 2. COMPILATION
+    if any(kw in title_l or kw in version_l for kw in ("best of", "greatest hits", "anthology", "collection", "compilation")):
+        return "compilation"
 
+    # 3. EP EXPLICITO (O \b garante que e a palavra "ep" exata, ignorando "episode" ou "epic")
+    if re.search(r'\bep\b', title_l) or re.search(r'\bep\b', version_l):
+        return "ep"
+
+    # 4. AUDITORIA DOS METADADOS (Baseado nas regras Apple Music / Spotify)
+    if r_type == "single":
+        if t_count >= 7 or duration >= 1800: r_type = "album"
+        elif t_count >= 4: r_type = "ep"
+        
+    elif r_type == "ep":
+        if t_count >= 7 or duration >= 1800: r_type = "album"
+        
+    elif r_type == "album":
+        if 1 <= t_count <= 3 and duration < 1800: r_type = "single"
+        elif 4 <= t_count <= 6 and duration < 1800: r_type = "ep"
+
+    # 5. FALLBACK SEGURA (Para itens sem tipo da API)
     if r_type not in ("album", "ep", "single", "live", "compilation"):
-        if t_count == 1 or (t_count == 0 and 0 < duration < 600): r_type = "single"
-        elif t_count <= 3 or (0 < duration < 1_740): r_type = "ep"
-        else: r_type = "album"
+        if t_count >= 7 or duration >= 1800: r_type = "album"
+        elif 4 <= t_count <= 6: r_type = "ep"
+        else: r_type = "single"
 
     return r_type
 
@@ -117,12 +135,11 @@ QUALITIES = {
 }
 
 # O pick renderiza "* [ ] " ou "  [ ] " antes de cada linha = 6 chars.
-# O cabeçalho precisa de 7 espaços para alinhar com o "│" das linhas de dados,
-# porque o pick usa um espaço extra antes do "│" do primeiro campo.
-_PICK_HEADER_OFFSET = "       "  # 7 espaços
+# O cabecalho precisa de 7 espacos para alinhar com o "│" das linhas de dados.
+_PICK_HEADER_OFFSET = "       "
 
 # ---------------------------------------------------------------------------
-# Dataclass de configuração
+# Dataclass de configuracao
 # ---------------------------------------------------------------------------
 class QobuzDLConfig:
     def __init__(self, directory: str = "QobuzDownloads", quality: int = 6, embed_art: bool = True, lucky_limit: int = 1, lucky_type: str = "album", interactive_limit: int = 20, ignore_singles_eps: bool = False, no_m3u_for_playlists: bool = False, quality_fallback: bool = True, cover_og_quality: bool = True, no_cover: bool = False, downloads_db: Optional[str] = None, folder_format: str = "{release_type}/{artist} - {album} ({year}) [{bit_depth}B-{sampling_rate}kHz]", track_format: str = "{track_number} - {track_title}", smart_discography: bool = False, fetch_lyrics: bool = False, no_lrc_files: bool = False, genius_token: Optional[str] = None, deepl_api_key: Optional[str] = None, force_english: bool = True, no_credits: bool = False, booklet_only: bool = False, blacklist: Optional[str] = None, target_lang: str = "PT-BR", delay: Optional[int] = None, settings: Optional[QobuzDLSettings] = None):
@@ -204,7 +221,7 @@ class QobuzDL:
     async def initialize_client(self, email: str, pwd: str, app_id: str, secrets: list):
         self.client = qopy.Client(email, pwd, app_id, secrets, self.settings.user_auth_token, force_english=self.force_english)
         await self.client.start()
-        print(f"{Tema.SYS}{Tema.AVISO}Sessão Ativa | Qualidade: {QUALITIES[int(self.quality)]}{Tema.OFF}\n")
+        print(f"{Tema.SYS}{Tema.AVISO}Sessao Ativa | Qualidade: {QUALITIES[int(self.quality)]}{Tema.OFF}\n")
 
     def get_tokens(self):
         bundle = Bundle()
@@ -213,7 +230,7 @@ class QobuzDL:
 
     async def download_from_id(self, item_id: str, album: bool = True, alt_path: Optional[str] = None, is_playlist: bool = False, playlist_index: Optional[int] = None, is_single_batch: bool = False, single_batch_index: int = 1, single_batch_total: int = 1):
         if handle_download_id(self.downloads_db, item_id, add_id=False, quality=self.quality):
-            print(f"{Tema.ALERTA}{Tema.AVISO}ID ({item_id}) ignorado (já existe no banco local).{Tema.OFF}\n")
+            print(f"{Tema.ALERTA}{Tema.AVISO}ID ({item_id}) ignorado (ja existe no banco local).{Tema.OFF}\n")
             return
 
         try:
@@ -229,7 +246,7 @@ class QobuzDL:
             )
             await dloader.download_id_by_type(not album)
         except (aiohttp.ClientError, asyncio.TimeoutError, NonStreamable) as exc:
-            print(f"{Tema.ALERTA}{Tema.ERRO}Erro ao obter lançamento: {exc}{Tema.OFF}")
+            print(f"{Tema.ALERTA}{Tema.ERRO}Erro ao obter lancamento: {exc}{Tema.OFF}")
         finally:
             if self.settings.delay and self.settings.delay > 0:
                 await asyncio.sleep(self.settings.delay)
@@ -261,16 +278,21 @@ class QobuzDL:
             url_type, item_id = get_url_info(url)
             type_dict = possibles[url_type]
         except (KeyError, IndexError):
-            print(f"{Tema.URL}{Tema.ERRO}URL Inválida: {url}{Tema.OFF}")
+            print(f"{Tema.URL}{Tema.ERRO}URL Invalida: {url}{Tema.OFF}")
             return
 
         if type_dict["func"]:
             content = [item async for item in type_dict["func"](item_id)]
             content_name = content[0]["name"]
+            is_playlist = (url_type == "playlist")
             
-            print(f"\n{Tema.URL}{Tema.TITULO}{content_name}{Tema.OFF} ({url_type})")
+            if not is_playlist:
+                print(f"\n{Tema.URL}{Tema.TITULO}{content_name}{Tema.OFF} ({url_type})")
 
-            new_path = create_and_return_dir(str(Path(self.directory) / sanitize_filename(content_name)))
+            if is_playlist:
+                new_path = create_and_return_dir(str(Path(self.directory) / "Playlist" / sanitize_filename(content_name)))
+            else:
+                new_path = create_and_return_dir(str(Path(self.directory) / sanitize_filename(content_name)))
 
             if self.smart_discography and url_type == "artist":
                 items = smart_discography_filter(content, save_space=True, skip_extras=True)
@@ -280,21 +302,22 @@ class QobuzDL:
             if self._is_interactive_session and url_type == "artist":
                 import pick
                 options = ["Album", "EP", "Single", "Live", "Compilation"]
-                title_text = f"Encontrados {len(items)} lançamentos para {content_name}.\nFiltre por tipo de lançamento (Espaço para selecionar):"
+                title_text = f"Encontrados {len(items)} lancamentos para {content_name}.\nFiltre por tipo de lancamento (Espaco para selecionar):"
                 selected_raw = pick.pick(options, title_text, multiselect=True, min_selection_count=1)
                 self.allowed_release_types = [opt[0].lower() for opt in selected_raw] if selected_raw else []
                 if not self.allowed_release_types: items = []
             else:
                 self.allowed_release_types = None
 
-            print(f"{Tema.FILA}{Tema.SUCESSO}{len(items)} itens agendados para processamento.{Tema.OFF}\n")
+            if not is_playlist:
+                print(f"{Tema.FILA}{Tema.SUCESSO}{len(items)} itens agendados para processamento.{Tema.OFF}\n")
 
-            is_playlist = (url_type == "playlist")
             if is_playlist:
                 original_folder_format = self.folder_format
                 original_multi_disc_setting = self.settings.multiple_disc_one_dir
                 self.folder_format = "."
                 self.settings.multiple_disc_one_dir = True
+                self.settings.playlist_name = content_name
 
             self.settings.playlist_total_count = len(items)
 
@@ -318,7 +341,7 @@ class QobuzDL:
             if is_playlist:
                 try:
                     from qobuz_dl.telegram_uploader import upload_album_completo
-                    await upload_album_completo(new_path, content_name, "Vários Artistas", "Various Artists", "Vários Artistas (Playlist)", "Playlist")
+                    await upload_album_completo(new_path, content_name, "Varios Artistas", "Various Artists", "Varios Artistas (Playlist)", "Playlist")
                 except Exception as e:
                     print(f"{Tema.ALERTA}{Tema.ERRO}Falha no Telegram (Playlist): {e}{Tema.OFF}")
 
@@ -360,7 +383,7 @@ class QobuzDL:
         total_urls = len(urls)
 
         if is_batch and max_batch_workers > 1 and txt_file is not None:
-            print(f"{Tema.SYS}{Tema.AVISO}Modo Batch Ativo: Processando {max_batch_workers} links simultâneos.{Tema.OFF}")
+            print(f"{Tema.SYS}{Tema.AVISO}Modo Batch Ativo: Processando {max_batch_workers} links simultaneos.{Tema.OFF}")
             original_workers = max_batch_workers
             self.settings.max_workers = 1
             sem = asyncio.Semaphore(max_batch_workers)
@@ -393,23 +416,35 @@ class QobuzDL:
             return
 
         if not valid_urls: return
-        print(f"\n{Tema.SYS}{Tema.TITULO}Leitura de TXT concluída{Tema.OFF}")
+        print(f"\n{Tema.SYS}{Tema.TITULO}Leitura de TXT concluida{Tema.OFF}")
         print(f"{Tema.FILA}{Tema.SUCESSO}{len(valid_urls)} links encontrados.{Tema.OFF}\n")
         await self.download_list_of_urls(valid_urls, txt_file=txt_file)
 
     def _setup_terminal_widths(self):
-        """Calcula os limites máximos permitidos com base no ecrã atual do iPad."""
+        """Calcula os limites maximos permitidos com base no ecra atual do iPad."""
         term_cols = shutil.get_terminal_size((120, 20)).columns
-        available = max(30, term_cols - 65) # Margem para as divisórias e espaços do Pick
+        available = max(30, term_cols - 65)
         self.max_w_art = int(available * 0.25)
         self.max_w_tit = int(available * 0.45)
         self.max_w_alb = int(available * 0.30)
 
     # ---------------------------------------------------------------------------
-    # Tabela Elástica Inteligente
+    # Tabela Elastica Inteligente
     # ---------------------------------------------------------------------------
     async def search_by_type(self, query: Optional[str], item_type: str, limit: int = 10, lucky: bool = False, fav_subtype: Optional[str] = None):
+        limit = int(limit)
         if item_type != "favorites" and (not query or len(query) < 3): return []
+        
+        # O SEGREDO AQUI: 'single' agora busca 'tracks' diretamente na API do Qobuz
+        api_type = item_type
+        if item_type == "album_ep": api_type = "album"
+        elif item_type == "single": api_type = "track"
+        
+        # Faz o mesmo mapeamento caso o usuario esteja buscando nos Favoritos
+        actual_fav_subtype = fav_subtype
+        if fav_subtype == "albums": actual_fav_subtype = "albums"
+        elif fav_subtype == "singles": actual_fav_subtype = "tracks"
+
         possibles = {
             "album":     {"func": self.client.search_albums,    "key": "albums",    "requires_extra": True},
             "artist":    {"func": self.client.search_artists,   "key": "artists",   "requires_extra": False},
@@ -417,14 +452,17 @@ class QobuzDL:
             "playlist":  {"func": self.client.search_playlists, "key": "playlists", "requires_extra": False},
             "favorites": {"func": self.client.get_favorites,    "key": "favorites", "requires_extra": True},
         }
+        
         try:
-            mode_dict = possibles[item_type]
+            mode_dict = possibles[api_type]
             if item_type == "favorites":
-                results = await mode_dict["func"](fav_type=fav_subtype, limit=limit)
-                iterable = results.get("favorites", {}).get(fav_subtype, {}).get("items", []) or results.get(fav_subtype, {}).get("items", [])
-                mode_dict["requires_extra"] = fav_subtype not in ("artists", "playlists")
+                fetch_limit = limit if actual_fav_subtype not in ("albums", "tracks") else 100
+                results = await mode_dict["func"](fav_type=actual_fav_subtype, limit=fetch_limit)
+                iterable = results.get("favorites", {}).get(actual_fav_subtype, {}).get("items", []) or results.get(actual_fav_subtype, {}).get("items", [])
+                mode_dict["requires_extra"] = actual_fav_subtype not in ("artists", "playlists")
             else:
-                results = await mode_dict["func"](query, limit)
+                fetch_limit = limit if item_type not in ("album_ep", "single") else 50
+                results = await mode_dict["func"](query, fetch_limit)
                 if not results or mode_dict["key"] not in results or "items" not in results[mode_dict["key"]]: return []
                 iterable = results[mode_dict["key"]]["items"]
 
@@ -433,45 +471,58 @@ class QobuzDL:
                 self._setup_terminal_widths()
                 raw_data = []
                 
-                # Passo 1: Descobrir o comprimento máximo dos textos
                 max_art = len("ARTISTA")
-                max_tit = len("TÍTULO")
-                col3_head = "GRAVADORA" if (item_type == "album" or fav_subtype == "albums") else "ÁLBUM"
+                max_tit = len("TITULO")
+                
+                # Controle visual: Faixas mostram o ALBUM. Albuns mostram a GRAVADORA.
+                is_track_search = (api_type == "track" or actual_fav_subtype == "tracks")
+                col3_head = "ALBUM" if is_track_search else "GRAVADORA"
                 max_alb = len(col3_head)
 
+                valid_count = 0
                 for i in iterable:
+                    # Se for busca de singles (tracks soltas), ignora filtros de album
+                    if is_track_search:
+                        rel_type = "Faixa"
+                        col3_val = i.get("album", {}).get("title", "Unknown")
+                    else:
+                        # Se for busca de Albuns e EPs, roda a matematica de classificacao
+                        r_type_str = classificar_tipo_lancamento(
+                            raw_type=i.get("release_type") or i.get("product_type"), 
+                            title=str(i.get("title", "")), 
+                            version=str(i.get("version", "")), 
+                            t_count=i.get("tracks_count", 0), 
+                            duration=i.get("duration", 0)
+                        )
+                        # Aplica o filtro severo APENAS se for busca de albuns
+                        if r_type_str not in ("album", "ep"): continue
+                        
+                        rel_type = "EP" if r_type_str == "ep" else r_type_str.title()
+                        col3_val = i.get("label", {}).get("name", "Independente")
+                    
                     artist = i.get("artist", {}).get("name") or i.get("performer", {}).get("name") or "Unknown"
                     title = i.get("title") or i.get("name") or "Unknown"
                     if i.get("version"): title = f"{title} ({i['version']})"
                     if i.get("parental_warning"): title = f"{title} [E]"
                     year = str(i.get("release_date_original") or i.get("release_date") or "    ")[:4]
                     
-                    r_type_str = classificar_tipo_lancamento(raw_type=i.get("release_type") or i.get("product_type"), title=str(i.get("title", "")), version=str(i.get("version", "")), t_count=i.get("tracks_count", 0), duration=i.get("duration", 0))
-                    rel_type = "EP" if r_type_str == "ep" else r_type_str.title()
                     quality = f"[HI-RES] {i.get('maximum_bit_depth', 24)}b/{i.get('maximum_sampling_rate', 96.0)}kHz" if i.get("hires_streamable") else "[ CD ] 16b/44.1kHz"
                     
-                    # Gravadora para álbuns, álbum para tracks
-                    if item_type == "album" or fav_subtype == "albums":
-                        col3_val = i.get("label", {}).get("name", "Independente")
-                    elif item_type == "track" or fav_subtype == "tracks":
-                        col3_val = i.get("album", {}).get("title", "Unknown")
-                    else:
-                        col3_val = "-"
-
                     max_art = min(self.max_w_art, max(max_art, len(artist)))
                     max_tit = min(self.max_w_tit, max(max_tit, len(title)))
                     max_alb = min(self.max_w_alb, max(max_alb, len(col3_val)))
                     
                     raw_data.append((artist, title, col3_val, rel_type, year, quality, i))
+                    
+                    valid_count += 1
+                    if valid_count >= limit: break
 
-                # Gravando as larguras exatas para a grelha
                 self.w_art, self.w_tit, self.w_alb = max_art, max_tit, max_alb
                 self.w_typ, self.w_yea, self.w_qua = 11, 4, 20
 
-                # Passo 2: Renderizar a Tabela Elástica
                 for artist, title, col3_val, rel_type, year, quality, i in raw_data:
                     text = f"│ {_align_text(artist, self.w_art)} │ {_align_text(title, self.w_tit)} │ {_align_text(col3_val, self.w_alb)} │ {_align_text(rel_type, self.w_typ)} │ {_align_text(year, self.w_yea)} │ {_align_text(quality, self.w_qua)} │"
-                    url_category = fav_subtype[:-1] if item_type == "favorites" and fav_subtype else item_type
+                    url_category = actual_fav_subtype[:-1] if item_type == "favorites" and actual_fav_subtype else api_type
                     url = f"{WEB_URL}{url_category}/{i.get('id', '')}"
                     item_list.append({"text": text, "url": url} if not lucky else url)
             else:
@@ -486,7 +537,7 @@ class QobuzDL:
                 self.w_name = max_name
                 for name, count_str, i in raw_data:
                     text = f"│ {_align_text(name, self.w_name)} │ {_align_text(count_str, 13)} │"
-                    url_category = fav_subtype[:-1] if item_type == "favorites" and fav_subtype else item_type
+                    url_category = actual_fav_subtype[:-1] if item_type == "favorites" and actual_fav_subtype else api_type
                     url = f"{WEB_URL}{url_category}/{i.get('id', '')}"
                     item_list.append({"text": text, "url": url} if not lucky else url)
             return item_list
@@ -497,7 +548,7 @@ class QobuzDL:
         final_url_list = []
         while True:
             if selected_type == "favorites":
-                print(f"\n{Tema.BUSCA}Procurando nos favoritos: {fav_subtype}...")
+                print(f"{Tema.BUSCA}Procurando nos favoritos: {fav_subtype}...")
                 options = await self.search_by_type(None, selected_type, limit=self.interactive_limit, fav_subtype=fav_subtype)
                 query_title = f"My Favorite {fav_subtype.title()}"
             else:
@@ -512,37 +563,54 @@ class QobuzDL:
                 if selected_type == "favorites": break
                 continue
 
-            # ---------------------------------------------------------------
-            # Cabeçalho da tabela -- offset de 7 espaços para alinhar com o
-            # prefixo "* [ ] " / "  [ ] " que o pick injeta em cada linha.
-            # ---------------------------------------------------------------
-            O = _PICK_HEADER_OFFSET  # 7 espaços
+            O = _PICK_HEADER_OFFSET
 
-            if selected_type in ("album", "track") or (selected_type == "favorites" and fav_subtype in ("albums", "tracks")):
-                col3_head = "GRAVADORA" if (selected_type == "album" or fav_subtype == "albums") else "ÁLBUM"
+            if selected_type in ("album_ep", "single") or (selected_type == "favorites" and fav_subtype in ("albums", "singles")):
+                is_track_search = (selected_type == "single" or fav_subtype == "singles")
+                col3_head = "ALBUM" if is_track_search else "GRAVADORA / ALBUM"
+                
                 b_top = f"{O}┌{'─' * (self.w_art+2)}┬{'─' * (self.w_tit+2)}┬{'─' * (self.w_alb+2)}┬{'─' * (self.w_typ+2)}┬{'─' * (self.w_yea+2)}┬{'─' * (self.w_qua+2)}┐"
-                h_row = f"{O}│ {'ARTISTA'.ljust(self.w_art)} │ {'TÍTULO'.ljust(self.w_tit)} │ {col3_head.ljust(self.w_alb)} │ {'TIPO'.ljust(self.w_typ)} │ {'ANO'.ljust(self.w_yea)} │ {'QUALIDADE'.ljust(self.w_qua)} │"
+                h_row = f"{O}│ {'ARTISTA'.ljust(self.w_art)} │ {'TITULO'.ljust(self.w_tit)} │ {col3_head.ljust(self.w_alb)} │ {'TIPO'.ljust(self.w_typ)} │ {'ANO'.ljust(self.w_yea)} │ {'QUALIDADE'.ljust(self.w_qua)} │"
                 b_mid = f"{O}├{'─' * (self.w_art+2)}┼{'─' * (self.w_tit+2)}┼{'─' * (self.w_alb+2)}┼{'─' * (self.w_typ+2)}┼{'─' * (self.w_yea+2)}┼{'─' * (self.w_qua+2)}┤"
                 t_head = f"{b_top}\n{h_row}\n{b_mid}"
             else:
                 w_name = getattr(self, "w_name", 50)
                 b_top = f"{O}┌{'─' * (w_name+2)}┬{'─' * 15}┐"
-                h_row = f"{O}│ {'NOME'.ljust(w_name)} │ {'LANÇAMENTOS'.ljust(13)} │"
+                h_row = f"{O}│ {'NOME'.ljust(w_name)} │ {'LANCAMENTOS'.ljust(13)} │"
                 b_mid = f"{O}├{'─' * (w_name+2)}┼{'─' * 15}┤"
                 t_head = f"{b_top}\n{h_row}\n{b_mid}"
 
-            title = f'*** RESULTADOS PARA "{query_title}" ***\n[Use setas para mover | Espaço para marcar/desmarcar | Enter para confirmar]\n\n{t_head}'
+            title = f'*** RESULTADOS PARA "{query_title}" ***\n[Use setas para mover | Espaco para marcar/desmarcar | Enter para confirmar]\n\n{t_head}'
             options_texts = [opt.get("text") for opt in options]
             selected_items = pick.pick(options_texts, title, multiselect=True, min_selection_count=0)
 
             if selected_items:
-                print(f"\n{Tema.SYS}{Tema.SUCESSO}{len(selected_items)} item(ns) selecionado(s) com sucesso!{Tema.OFF}")
+                print(f"\n{Tema.SYS}{Tema.SUCESSO}{len(selected_items)} item(ns) selecionado(s)!{Tema.OFF}")
                 await asyncio.sleep(0.8) 
 
+                intercept_artist = False
+                
                 for item, original_index in selected_items:
-                    if original_index >= 0: final_url_list.append(options[original_index]["url"])
+                    if original_index >= 0: 
+                        url = options[original_index]["url"]
+                        opt_data = options[original_index]
+                        
+                        # NOVO INTERCEPTADOR PARA ARTISTAS: Abre o Sub-menu!
+                        if selected_type == "artist" or (selected_type == "favorites" and fav_subtype == "artists"):
+                            intercept_artist = True
+                            artist_id = url.rstrip("/").split("/")[-1]
+                            text_parts = opt_data["text"].split("│")
+                            artist_name = text_parts[1].strip() if len(text_parts) > 1 else "Artista"
+                            
+                            albums_urls = await self._fetch_and_pick_artist_albums(artist_id, artist_name)
+                            final_url_list.extend(albums_urls)
+                        else:
+                            final_url_list.append(url)
 
                 os.system('clear')
+                
+                if intercept_artist and not final_url_list:
+                    continue
                 
                 if pick.pick(["⬇️ Iniciar Download", "🔍 Pesquisar Mais"], "O que deseja fazer agora?")[0] == "⬇️ Iniciar Download": 
                     break
@@ -554,6 +622,60 @@ class QobuzDL:
 
         return final_url_list
 
+    async def _fetch_and_pick_artist_albums(self, artist_id: str, artist_name: str) -> List[str]:
+        import pick
+        print(f"\n{Tema.BUSCA}A analisar discografia de {Tema.TITULO}{artist_name}{Tema.OFF}...")
+        
+        all_albums = []
+        try:
+            async for page in self.client.get_artist_meta(artist_id):
+                items = page.get("albums", {}).get("items", [])
+                all_albums.extend(items)
+        except Exception as e:
+            print(f"{Tema.ALERTA}{Tema.ERRO}Erro ao buscar discografia: {e}{Tema.OFF}")
+            
+        if not all_albums:
+            print(f"{Tema.ALERTA}{Tema.AVISO}Nenhum lancamento encontrado para este artista.{Tema.OFF}")
+            await asyncio.sleep(1)
+            return []
+            
+        raw_data = []
+        max_tit = len("TITULO")
+        for i in all_albums:
+            title = i.get("title") or i.get("name") or "Unknown"
+            if i.get("version"): title = f"{title} ({i['version']})"
+            if i.get("parental_warning"): title = f"{title} [E]"
+            year = str(i.get("release_date_original") or i.get("release_date") or "    ")[:4]
+            r_type_str = classificar_tipo_lancamento(raw_type=i.get("release_type") or i.get("product_type"), title=str(i.get("title", "")), version=str(i.get("version", "")), t_count=i.get("tracks_count", 0), duration=i.get("duration", 0))
+            rel_type = "EP" if r_type_str == "ep" else r_type_str.title()
+            quality = f"[HI-RES] {i.get('maximum_bit_depth', 24)}b/{i.get('maximum_sampling_rate', 96.0)}kHz" if i.get("hires_streamable") else "[ CD ] 16b/44.1kHz"
+            
+            max_tit = min(60, max(max_tit, len(title)))
+            raw_data.append((title, rel_type, year, quality, i, r_type_str))
+            
+        type_order = {"album": 1, "ep": 2, "single": 3, "live": 4, "compilation": 5}
+        raw_data.sort(key=lambda x: (type_order.get(x[5], 9), -int(x[2] if x[2].isdigit() else 0)))
+        
+        O = _PICK_HEADER_OFFSET
+        b_top = f"{O}┌{'─' * (max_tit+2)}┬{'─' * 13}┬{'─' * 6}┬{'─' * 22}┐"
+        h_row = f"{O}│ {'TITULO'.ljust(max_tit)} │ {'TIPO'.ljust(11)} │ {'ANO'.ljust(4)} │ {'QUALIDADE'.ljust(20)} │"
+        b_mid = f"{O}├{'─' * (max_tit+2)}┼{'─' * 13}┼{'─' * 6}┼{'─' * 22}┤"
+        t_head = f"{b_top}\n{h_row}\n{b_mid}"
+        
+        options_texts = []
+        options_urls = []
+        
+        for title, rel_type, year, quality, i, _ in raw_data:
+            text = f"│ {_align_text(title, max_tit)} │ {_align_text(rel_type, 11)} │ {_align_text(year, 4)} │ {_align_text(quality, 20)} │"
+            options_texts.append(text)
+            options_urls.append(f"{WEB_URL}album/{i.get('id', '')}")
+            
+        title_text = f"*** DISCOGRAFIA DE {artist_name.upper()} ***\nSelecione os lancamentos que deseja baixar (Espaco para marcar):\n\n{t_head}"
+        
+        selected = pick.pick(options_texts, title_text, multiselect=True, min_selection_count=0)
+        
+        return [options_urls[idx] for _, idx in selected] if selected else []
+
     async def interactive(self, download: bool = True):
         self._is_interactive_session = True
         
@@ -564,31 +686,39 @@ class QobuzDL:
             sys.exit("Please install pick library.")
 
         try:
-            item_types = ["Albums", "Tracks", "Artists", "Playlists", "Favorites"]
-            selected_type = pick.pick(item_types, "O que deseja pesquisar?")[0].lower()
+            item_types = ["Albuns e EPs", "Singles", "Artistas", "Playlists", "Favoritos"]
+            selected_type_raw = pick.pick(item_types, "O que deseja pesquisar?")[0]
             fav_subtype = ""
             
-            if selected_type == "favorites":
-                fav_subtype = pick.pick(["Albums", "Tracks", "Artists", "Playlists"], "Navegar em qual categoria de favoritos?")[0].lower()
+            if selected_type_raw == "Favoritos":
+                selected_type = "favorites"
+                fav_subtype_raw = pick.pick(["Albuns e EPs", "Singles", "Artistas", "Playlists"], "Navegar em qual categoria de favoritos?")[0]
+                if fav_subtype_raw == "Albuns e EPs": fav_subtype = "albums"
+                elif fav_subtype_raw == "Singles": fav_subtype = "singles"
+                elif fav_subtype_raw == "Artistas": fav_subtype = "artists"
+                else: fav_subtype = "playlists"
             else:
-                selected_type = selected_type[:-1]
+                if selected_type_raw == "Albuns e EPs": selected_type = "album_ep"
+                elif selected_type_raw == "Singles": selected_type = "single"
+                elif selected_type_raw == "Artistas": selected_type = "artist"
+                else: selected_type = "playlist"
 
             final_url_list = await self._interactive_search_loop(selected_type, fav_subtype)
 
             if final_url_list:
                 qualities = [{"q_string": "320kbps MP3", "q": 5}, {"q_string": "Lossless 16-bit", "q": 6}, {"q_string": "Hi-Res =< 96kHz", "q": 7}, {"q_string": "Hi-Res > 96kHz", "q": 27}]
-                self.quality = qualities[pick.pick([q.get("q_string") for q in qualities], "Defina a qualidade (downgrade automático se não existir):", default_index=1)[1]]["q"]
+                self.quality = qualities[pick.pick([q.get("q_string") for q in qualities], "Defina a qualidade (downgrade automatico se nao existir):", default_index=1)[1]]["q"]
                 
                 if download: await self.download_list_of_urls(final_url_list)
                 return final_url_list
 
         except KeyboardInterrupt:
-            print(f"\n{Tema.SYS}{Tema.ERRO}Operação abortada pelo utilizador.{Tema.OFF}")
+            print(f"{Tema.SYS}{Tema.ERRO}Operacao abortada pelo utilizador.{Tema.OFF}")
             return
 
     async def download_lastfm_pl(self, playlist_url: str):
         from qobuz_dl.lastfm_parser import fetch_lastfm_playlist
-        print(f"\n{Tema.URL}{Tema.AVISO}Integração Last.fm detetada{Tema.OFF}")
+        print(f"\n{Tema.URL}{Tema.AVISO}Integracao Last.fm detetada{Tema.OFF}")
         
         tracks_list = await fetch_lastfm_playlist(playlist_url)
         if not tracks_list:
@@ -596,15 +726,15 @@ class QobuzDL:
             return
 
         pl_id = playlist_url.rstrip("/").split("/")[-1]
-        pl_title = sanitize_filename(f"LastFM_Playlist_{pl_id}")
-        pl_directory = str(Path(self.directory) / pl_title)
+        pl_title = sanitize_filename(f"Playlist_LastFM: {pl_id}")
+        pl_directory = str(Path(self.directory) / "Playlist - LASTFM" / pl_title)
 
         print(f"{Tema.FILA}Baixando Playlist: {Tema.TITULO}{pl_title}{Tema.OFF}")
         print(f"{Tema.FILA}Cruzando {len(tracks_list)} faixas com a API Qobuz...")
         
         track_ids = await self.client.get_track_ids_from_list(tracks_list)
         if not track_ids:
-            print(f"{Tema.ALERTA}{Tema.ERRO}Falha: Nenhuma faixa coincidiu no catálogo da Qobuz.{Tema.OFF}")
+            print(f"{Tema.ALERTA}{Tema.ERRO}Falha: Nenhuma faixa coincidiu no catalogo da Qobuz.{Tema.OFF}")
             return
 
         original_folder_format = self.folder_format

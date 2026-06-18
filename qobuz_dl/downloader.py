@@ -59,6 +59,7 @@ class Tema:
 print_lock = asyncio.Lock()
 abort_event = asyncio.Event()
 cover_resize_lock = asyncio.Lock()
+db_write_lock = asyncio.Lock()
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -234,12 +235,25 @@ class Download:
         
         album_attr = self._build_metadata_dict(album_meta, album_title, bit_depth, sampling_rate, file_format, True)
         
-        await safe_print_async(f"========================= ALBÚM =========================")
-        await safe_print_async(f"\n{Tema.TAG}▶{Tema.OFF} 💿 {Tema.TITULO}{album_title}{Tema.OFF}")
-        await safe_print_async(f"   {Tema.DETALHES}├──{Tema.OFF} Artista: {album_attr.get('album_artist', 'Unknown')}")
-        await safe_print_async(f"   {Tema.DETALHES}├──{Tema.OFF} Qualidade Máx: {file_format} ({bit_depth}b/{sampling_rate}kHz)")
-        await safe_print_async(f"   {Tema.DETALHES}└──{Tema.OFF} Faixas na Fila: {_track_count}\n")
-        
+        from qobuz_dl.core import classificar_tipo_lancamento
+        r_type_str = classificar_tipo_lancamento(
+            raw_type=album_meta.get("release_type") or album_meta.get("product_type"),
+            title=album_title,
+            version=album_meta.get("version", ""),
+            t_count=_track_count,
+            duration=album_meta.get("duration", 0)
+        )
+        display_type = "SINGLE" if r_type_str == "single" else ("EP" if r_type_str == "ep" else "ALBUM")
+        icon = "🎵" if display_type == "SINGLE" else ("💽" if display_type == "EP" else "💿")
+
+        # Design UI Moderno: "Badge" com fundo Ciano e texto Preto
+        BADGE = f"\033[46m\033[30m\033[1m  {icon} {display_type}  \033[0m"
+
+        await safe_print_async(f"\n{BADGE} {Tema.TITULO}{album_title}{Tema.OFF}")
+        await safe_print_async(f"   {Tema.CYAN}├──{Tema.OFF} Artista: {album_attr.get('album_artist', 'Unknown')}")
+        await safe_print_async(f"   {Tema.CYAN}├──{Tema.OFF} Qualidade Max: {file_format} ({bit_depth}b/{sampling_rate}kHz)")
+        await safe_print_async(f"   {Tema.CYAN}└──{Tema.OFF} Faixas na Fila: {_track_count}\n")
+
         await self._determine_formats(album_meta=album_meta, album_attr=album_attr, tracks_meta=album_meta["tracks"]["items"],
                                 track_attr=None, is_track=False, file_format=file_format, settings=self.settings)
         
@@ -308,14 +322,11 @@ class Download:
                     if "goodies" in album_meta:
                         await _download_goodies(album_meta, str(working_dirn))
                 finally:
-                    # Garantido mesmo se algo acima falhar/lançar exceção --
-                    # senão uma faixa esperando esse evento em
-                    # _download_and_tag() poderia travar pra sempre.
+                    # Garantido mesmo se algo acima falhar/lançar exceção -- senão uma faixa esperando esse evento em _download_and_tag() poderia travar pra sempre.
                     artwork_ready.set()
 
             if getattr(self, 'booklet_only', False):
-                # Sem faixas de áudio pra baixar mesmo nesse modo, então não
-                # há nada pra rodar em paralelo -- segue sequencial como antes.
+                # Sem faixas de áudio pra baixar mesmo nesse modo, então não há nada pra rodar em paralelo -- segue sequencial como antes.
                 await _prepare_artwork_and_extras()
                 await safe_print_async(f"\n{Tema.AVISO}[!] Apenas encartes solicitado. Pulando áudio.{Tema.OFF}\n")
                 if is_standard_album and working_dirn == inprogress_dirn:
@@ -336,12 +347,7 @@ class Download:
                     t_tag = f"{Tema.TAG}{t_tag_text}{Tema.OFF}"
 
                     try:
-                        # [OTIMIZAÇÃO #5] get_track_meta() e get_track_url()
-                        # são chamadas independentes (uma não depende do
-                        # resultado da outra), então disparamos as duas ao
-                        # mesmo tempo em vez de esperar uma terminar pra só
-                        # então começar a outra. Antes: 2 round-trips em
-                        # sequência. Agora: 2 round-trips em paralelo.
+                        # [OTIMIZAÇÃO #5] get_track_meta() e get_track_url() são chamadas independentes (uma não depende do resultado da outra), então disparamos as duas ao mesmo tempo em vez de esperar uma terminar pra só então começar a outra. Antes: 2 round-trips em sequência. Agora: 2 round-trips em paralelo.
                         full_track_meta, parse = await asyncio.gather(
                             self.client.get_track_meta(track_item["id"]),
                             self.client.get_track_url(track_item["id"], fmt_id=self.quality)
@@ -364,9 +370,7 @@ class Download:
                         )
                     return False
 
-            # [OTIMIZAÇÃO #4] _prepare_artwork_and_extras() entra como a
-            # primeira "task" da lista, pra rodar concorrentemente com as
-            # faixas no mesmo gather() abaixo.
+            # [OTIMIZAÇÃO #4] _prepare_artwork_and_extras() entra como a primeira "task" da lista, pra rodar concorrentemente com as faixas no mesmo gather() abaixo.
             tasks = [_prepare_artwork_and_extras()]
             for continuous_track_index, i in enumerate(album_meta["tracks"]["items"], start=1):
                 if abort_event.is_set(): break
@@ -376,9 +380,7 @@ class Download:
 
             try:
                 results = await asyncio.gather(*tasks, return_exceptions=True)
-                # results[0] é da preparação de capa/tracklist/goodies, não
-                # conta como faixa pra fins de failed_tracks -- só logamos se
-                # tiver dado erro, pra não perder visibilidade do problema.
+                # results[0] é da preparação de capa/tracklist/goodies, não conta como faixa pra fins de failed_tracks -- só logamos se tiver dado erro, pra não perder visibilidade do problema.
                 artwork_result, track_results = results[0], results[1:]
                 if isinstance(artwork_result, Exception):
                     logger.error(f"Erro ao preparar capa/tracklist/goodies: {artwork_result}")
@@ -423,22 +425,24 @@ class Download:
         if aborted_by_user: sys.exit(1)
         
         if failed_tracks == 0:
-            handle_download_id(
-                self.download_db, 
-                self.item_id, 
-                add_id=True, 
-                media_type="album", 
-                quality=self.quality, 
-                file_format=file_format, 
-                quality_met=quality_met, 
-                bit_depth=bit_depth, 
-                sampling_rate=sampling_rate, 
-                saved_path=str(final_dirn), 
-                url=url, 
-                release_date=release_date, 
-                artist=album_attr.get("album_artist", "Unknown"), 
-                album=album_attr.get("album_title", "Unknown")
-            )
+            async with db_write_lock:
+                await asyncio.to_thread(
+                    handle_download_id,
+                    self.download_db, 
+                    self.item_id, 
+                    True, 
+                    "album", 
+                    self.quality, 
+                    file_format, 
+                    quality_met, 
+                    bit_depth, 
+                    sampling_rate, 
+                    str(final_dirn), 
+                    url, 
+                    release_date, 
+                    album_attr.get("album_artist", "Unknown"), 
+                    album_attr.get("album_title", "Unknown")
+                )
         
         if failed_tracks == 0 and not aborted_by_user:
             try:
@@ -460,7 +464,11 @@ class Download:
                 )
                 await upload_album_completo(str(final_dirn), t_album, t_faixa, t_album_artist, t_year, tipo=t_tipo)
             except Exception:
-                pass
+                try:
+                    with open("telegram_queue.txt", "a", encoding="utf-8") as fq:
+                        fq.write(f"{final_dirn}|{t_album}|{t_faixa}|{t_album_artist}|{t_year}|{t_tipo}\n")
+                except:
+                    pass
 
         await safe_print_async(f"{Tema.SUCESSO}[✔] Lançamento Concluído: {Tema.TITULO}{album_title}{Tema.OFF}\n")
         
@@ -496,28 +504,34 @@ class Download:
             
             if getattr(self, 'is_playlist', False):
                 total_tracks = getattr(self.settings, 'playlist_total_count', '??')
+                pl_name = getattr(self.settings, 'playlist_name', 'PLAYLIST')
+
                 t_no = str(self.playlist_track_number).zfill(2)
                 counter_tag = f"[{t_no}/{str(total_tracks).zfill(2)}]"
                 
                 if self.playlist_track_number == 1:
-                    await safe_print_async(f"========================= PLAYLIST =========================")
+                    # Badge para Playlist: Fundo Roxo, Texto Branco
+                    BADGE_PL = f"\033[45m\033[97m\033[1m  📋 PLAYLIST: {pl_name.upper()}  \033[0m\n"
+                    await safe_print_async(f"\n{BADGE_PL}")
                 
-                await safe_print_async(f"\n{Tema.TAG}▶ {counter_tag}{Tema.OFF} 🎵 {Tema.TITULO}{artist} - {track_title}{Tema.OFF}")
-                await safe_print_async(f"   {Tema.DETALHES}└──{Tema.OFF} Qualidade Máx: {file_format} ({bit_depth}b/{sampling_rate}kHz)\n")
+                await safe_print_async(f"{Tema.TAG}▶ {counter_tag}{Tema.OFF} 🎵 {Tema.TITULO}{artist} - {track_title}{Tema.OFF}")
+                await safe_print_async(f"   {Tema.CYAN}└──{Tema.OFF} Qualidade Max: {file_format} ({bit_depth}b/{sampling_rate}kHz)\n")
             else:
                 if self.is_single_batch:
                     if self.single_batch_index == 1:
-                        await safe_print_async(f"========================= SINGLES =========================")
+                        # Badge para Lote: Fundo Azul Escuro, Texto Branco
+                        BADGE_B = f"\033[44m\033[97m\033[1m  🎵 LOTE DE SINGLES  \033[0m"
+                        await safe_print_async(f"\n{BADGE_B}")
 
                     t_no = str(self.single_batch_index).zfill(2)
                     t_tot = str(self.single_batch_total).zfill(2)
                     await safe_print_async(f"\n{Tema.TAG}▶ [{t_no}/{t_tot}]{Tema.OFF} 🎵 {Tema.TITULO}{artist} - {track_title}{Tema.OFF}")
-                    await safe_print_async(f"   {Tema.DETALHES}└──{Tema.OFF} Qualidade Máx: {file_format} ({bit_depth}b/{sampling_rate}kHz)\n")
+                    await safe_print_async(f"   {Tema.CYAN}└──{Tema.OFF} Qualidade Max: {file_format} ({bit_depth}b/{sampling_rate}kHz)\n")
                 else:
-                    await safe_print_async(f"========================= SINGLE =========================")
-                    await safe_print_async(f"\n{Tema.TAG}▶{Tema.OFF} 🎵 {Tema.TITULO}{artist} - {track_title}{Tema.OFF}")
-                    await safe_print_async(f"   {Tema.DETALHES}└──{Tema.OFF} Qualidade Máx: {file_format} ({bit_depth}b/{sampling_rate}kHz)\n")
-                
+                     BADGE_S = f"\033[46m\033[30m\033[1m  🎵 SINGLE  \033[0m"
+                     await safe_print_async(f"\n{BADGE_S} {Tema.TITULO}{artist} - {track_title}{Tema.OFF}")
+                     await safe_print_async(f"   {Tema.CYAN}└──{Tema.OFF} Qualidade Max: {file_format} ({bit_depth}b/{sampling_rate}kHz)\n")
+
             track_attr = self._build_metadata_dict(track_meta, track_title, bit_depth, sampling_rate, file_format, False)
             await self._determine_formats(track_meta.get("album", {}), None, [track_meta], track_attr, True, file_format, self.settings)
             
@@ -766,26 +780,26 @@ class Download:
             if cover_path_to_check.exists() and os.path.getsize(cover_path_to_check) >= 16500000:
 
                 def _process_heavy_image():
+                    import math
                     from PIL import Image
+
                     # Captura o tamanho original em MB
                     orig_size_bytes = os.path.getsize(cover_path_to_check)
                     orig_mb = orig_size_bytes / (1024 * 1024)
+                    target_bytes = 16000000
+                    
+                    ratio = math.sqrt(target_bytes / orig_size_bytes)
                     resample_filter = getattr(Image, "Resampling", Image).LANCZOS
                 
                     with Image.open(cover_path_to_check) as img:
                         orig_format = img.format or "JPEG"
                         orig_w, orig_h = img.width, img.height # Captura as dimensões originais
-                        img_copy = img.copy()
+                        new_w, new_h = int(orig_w * ratio), int(orig_h * ratio)
 
                     # Cria um buffer na memória
-                    buffer = io.BytesIO()
-                    img_copy.save(buffer, format=orig_format)
-
-                    # Loop de compressão/redimensionamento
-                    while buffer.tell() >= 16500000:
-                        img_copy.thumbnail((int(img_copy.width * 0.9), int(img_copy.height * 0.9)), resample_filter)
-                        buffer = io.BytesIO() # Reseta o buffer
-                        img_copy.save(buffer, format=orig_format)
+                        img_resized = img.resize((new_w, new_h), resample_filter)
+                        buffer = io.BytesIO()
+                        img_resized.save(buffer, format=orig_format, quality=90)
 
                     # Captura o novo tamanho em MB e as novas dimensões
                     new_mb = buffer.tell() / (1024 * 1024)
@@ -793,7 +807,7 @@ class Download:
                     with open(cover_path_to_check, "wb") as f:
                         f.write(buffer.getvalue())
 
-                    return orig_mb, img_copy.width, img_copy.height, new_mb, img_copy.width, img_copy.height
+                    return orig_mb, orig_w, orig_h, new_mb, new_w, new_h
                     
                 try:
                     o_mb, o_w, o_h, n_mb, n_w, n_h = await asyncio.to_thread(_process_heavy_image)
@@ -853,19 +867,21 @@ class Download:
         try:
             from qobuz_dl.db import upsert_library_file
             f_stat = final_file.stat()
-            upsert_library_file(
-                self.download_db,
-                path=final_file,
-                artist=filename_attr.get("track_artist", ""),
-                album_artist=filename_attr.get("albumartist", ""),
-                album=filename_attr.get("album_title", ""),
-                title=filename_attr.get("track_title", ""),
-                file_format=("MP3" if final_fmt == 5 else "FLAC"),
-                bit_depth=actual_bd,
-                sampling_rate=actual_sr,
-                file_size=f_stat.st_size,
-                mtime=f_stat.st_mtime,
-            )
+            async with db_write_lock:
+                await asyncio.to_thread(
+                    upsert_library_file,
+                    self.download_db,
+                    path=final_file,
+                    artist=filename_attr.get("track_artist", ""),
+                    album_artist=filename_attr.get("albumartist", ""),
+                    album=filename_attr.get("album_title", ""),
+                    title=filename_attr.get("track_title", ""),
+                    file_format=("MP3" if final_fmt == 5 else "FLAC"),
+                    bit_depth=actual_bd,
+                    sampling_rate=actual_sr,
+                    file_size=f_stat.st_size,
+                    mtime=f_stat.st_mtime,
+                )
         except Exception:
             pass
 
