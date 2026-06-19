@@ -495,6 +495,19 @@ class Download:
             except Exception as e:
                 await safe_print_async(f"{Tema.TAG}▶{Tema.OFF} 🎵 {Tema.ERRO}Erro ao obter metadados: {e}{Tema.OFF}\n")
                 return
+                
+            if track_meta.get("album", {}).get("media_count", 1) > 1 and not getattr(self, 'is_playlist', False):
+                try:
+                    # Busca a tracklist do albúm mestre para contar as faixas dos CD's anteriores
+                    master_album = await self.client.get_album_meta(track_meta["album"]["id"])
+                    c_idx = 1
+                    for t_item in master_album.get("tracks", {}).get("items", []):
+                        if str(t_item.get("id")) == str(self.item_id):
+                            track_meta["track_number"] = c_idx
+                            break
+                        c_idx += 1
+                except Exception:
+                    pass
 
             if getattr(self, 'is_playlist', False) and self.playlist_track_number:
                 track_meta["track_number"] = self.playlist_track_number

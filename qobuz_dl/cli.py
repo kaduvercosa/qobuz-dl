@@ -659,11 +659,17 @@ async def amain():
 
     print("\n\r\033[K[*] A verificar chaves de seguranca da API em segundo plano...", end="", flush=True)
     try:
-        fresh_app_id, fresh_secrets = await asyncio.to_thread(fetch_fresh_keys)
+        fresh_app_id, fresh_secrets = await asyncio.wait_for(
+            asyncio.to_thread(fetch_fresh_keys), 
+            timeout=10.0
+        )
         if fresh_app_id:
             app_id = fresh_app_id
             secrets = fresh_secrets
             print("\r\033[K[+] Chaves atualizadas com sucesso!", end="", flush=True)
+
+    except asyncio.TimeoutError:
+        print("\r\033[K[*] Aviso: Tempo esgotado na API (Usando chaves offline..)\n", end="", flush=True)
     except Exception as e:
         print(f"\r\033[K[*] Aviso: Erro ao buscar chaves novas ({e})", end="", flush=True)
 
