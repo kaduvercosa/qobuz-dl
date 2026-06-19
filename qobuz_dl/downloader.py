@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import Tuple, Dict, Any, Optional, Union
 import textwrap
 import unicodedata
+import urllib.parse
+import difflib
 
 import yarl
 import aiohttp
@@ -31,7 +33,6 @@ from qobuz_dl.utils import get_album_artist, clean_filename, get_apple_hq_cover
 from qobuz_dl.db import handle_download_id
 from qobuz_dl.constants import DEFAULT_FOLDER, DEFAULT_TRACK, DEFAULT_MULTIPLE_DISC_TRACK
 from qobuz_dl.lyrics_engine import LyricsEngine
-
 
 class Tema:
     """
@@ -224,6 +225,8 @@ class Download:
             return
 
         album_title = _get_title(album_meta)
+        if album_meta.get("version"):
+            album_title = f"{album_title} ({album_meta['version']})"
         url = album_meta.get("url", "")
         release_date = album_meta.get("release_date_original", "")
         file_format, quality_met, bit_depth, sampling_rate = await self._get_format(album_meta)
@@ -323,7 +326,7 @@ class Download:
                         await _download_goodies(album_meta, str(working_dirn))
                 finally:
                     # Garantido mesmo se algo acima falhar/lançar exceção -- senão uma faixa esperando esse evento em _download_and_tag() poderia travar pra sempre.
-                    artwork_ready.set()
+                        artwork_ready.set()
 
             if getattr(self, 'booklet_only', False):
                 # Sem faixas de áudio pra baixar mesmo nesse modo, então não há nada pra rodar em paralelo -- segue sequencial como antes.
@@ -511,7 +514,7 @@ class Download:
                 
                 if self.playlist_track_number == 1:
                     # Badge para Playlist: Fundo Roxo, Texto Branco
-                    BADGE_PL = f"\033[45m\033[97m\033[1m  📋 PLAYLIST: {pl_name.upper()}  \033[0m\n"
+                    BADGE_PL = f"{BLUE}\033[97m{BOLD}  📋 PLAYLIST: {pl_name.upper()}  \033[0m\n"
                     await safe_print_async(f"\n{BADGE_PL}")
                 
                 await safe_print_async(f"{Tema.TAG}▶ {counter_tag}{Tema.OFF} 🎵 {Tema.TITULO}{artist} - {track_title}{Tema.OFF}")
@@ -543,6 +546,8 @@ class Download:
             track_upc = track_meta.get("album", {}).get("upc", "")
             track_isrc = track_meta.get("isrc", "")
             track_album_title = track_meta.get("album", {}).get("title", "")
+            if track_meta.get("album", {}).get("version"):
+                track_meta_title = f"{track_album_title} ({track_meta['album']['version']})"
             
             apple_cover = await get_apple_hq_cover(track_upc, track_isrc, artist, track_album_title)
             final_cover = apple_cover if apple_cover else track_meta["album"]["image"]["large"]

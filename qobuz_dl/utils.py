@@ -358,6 +358,12 @@ def invalid_chars_to_fullwidth(filename: str) -> str:
         filename = filename.replace(invalid_char, fullwidth_char)
     return filename
 
+def normalizar_titulo(text0: str) -> str:
+    if not texto: return ""
+    # Remove acentos para uma comparação perfeita
+    texto = unicodedata.normalize('NFKD', texto).encode('ASCII', 'ignore').decode('utf-8')
+    t = re.sub(r'[^\w\s]', ' ', texto)
+    return " ".join(t.split()).lower()
 
 async def get_apple_hq_cover(upc: Optional[str] = None, isrc: Optional[str] = None, artist: Optional[str] = None, album: Optional[str] = None) -> Optional[str]:
     import urllib.parse
@@ -366,65 +372,63 @@ async def get_apple_hq_cover(upc: Optional[str] = None, isrc: Optional[str] = No
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36"
     }
 
-    async def fetch_url(url: str) -> Optional[str]:
-        try:
-            async with aiohttp.ClientSession(headers=headers) as session:
-                async with session.get(url, timeout=5) as resp:
-                    if resp.status == 200:
-                        data = await resp.json(content_type=None)
+    async with aiohttp.ClientSession(headers=headers) as session:
+
+        # 1. tentativa Exata: UPC (Código de Barras)
+        if upc and upc.lower() != "n/a":
+            try:
+                async with session.get(f"https://itunes.apple.com/lookup?upc={upc}&entity=album", timeout=5) as r:
+                    if r.status == 200:
+                        data = await r.json(content_type=None)
                         if data.get("resultCount", 0) > 0:
-                            result = data["results"][0]
-                            
-                            apple_title = result.get("collectionName", "")
-                            apple_artist = result.get("artistName", "")
-                            
-                            if artist and album and not validar_capa_apple(album, apple_title, artist, apple_artist):
-                                logger.debug(f"Descartando capa Apple: esperava '{album}', recebeu '{apple_title}'")
-                                return None
+                            return data["results"][0]["artworkUrl100"].replace("100x100bb", "10000x10000bb")
+            except Exception: pass
 
-                            art_url = result.get("artworkUrl100", "")
-                            if art_url:
-                                return re.sub(r'\d+x\d+[a-zA-Z-]*\.jpg', '10000x10000-999.jpg', art_url)
-        except Exception:
-            pass
+        # 2. Tentativa Exata: ISRC (Impressão Digital da Faixa)
+        if isrc and isrc.lower() != "n/a":
+            try:
+                async with session.get(f"https://itunes.apple.com/lookup?isrc={isrc}", timeout=5) as r:
+                    if r.status == 200:
+                        data = await r.json(content_type=None)
+                        if data.get("resultCount", 0) > 0:
+                            return data["results"][0]["artworkUrl100"].replace("100x100bb", "10000x10000bb")
+            except Exception: pass
+
+        # 3. Sistema de Pontuação de Texto (O Cerebro da Comparação)
+        if artist and album:
+            clean_artist = urllib.parse.quote(artist)
+            clean_title = urllib.parse.quote(album)
+            query = f"{clean_artist}+{clean_title}"
+            
+            try:
+                # Pedimos 10 resultados para a Apple para termos opções para avaliar
+                async with session.get(f"https://itunes.apple.com/search?term={query}&entity=album&limit=10", timeout=5) as r:
+                    if r.status == 200:
+                        data = await r.json(content_type=None)
+                        if data.get("resultCount", 0) > 0:
+                            qobuz_norm = normalizar_titulo(album)
+                            
+                            melhor_capa = None
+                            maior_score = 0.0
+                            
+                            for result in data["results"]:
+                                apple_title = result.get("collectionName", "")
+                                apple_norm = normalizar_titulo(apple_title)
+                                
+                                # Dá uma nota de compatibilidade entre o que pedimos e o que a Apple ofereceu
+                                score = difflib.SequenceMatcher(None, qobuz_norm, apple_norm).ratio()
+                                
+                                if score > maior_score:
+                                    maior_score = score
+                                    url_arte = result.get("artworkUrl100", "")
+                                    if url_arte:
+                                        melhor_capa = url_arte.replace("100x100bb", "10000x10000bb")
+
+                            if maior_score >= 0.80 and melhor_capa:
+                                logger.debug(f"Capa aprovada com nota de {(maior_score * 100):.1f}%")
+                                return melhor_capa
+                            else:
+                                logger.debug(f"Capa rejeitada. Maior nota foi de {(maior_score * 100):.1f}%")
+            except Exception: pass
+
         return None
-
-    # 1. Tentar por UPC (A forma mais precisa)
-    if upc and upc.lower() != "n/a":
-        res = await fetch_url(f"https://itunes.apple.com/lookup?upc={upc}")
-        if res: return res
-        
-    # 2. Tentar por ISRC
-    if isrc and isrc.lower() != "n/a":
-        res = await fetch_url(f"https://itunes.apple.com/lookup?isrc={isrc}")
-        if res: return res
-        
-    # 3. Fallback de Texto com Validação Rigorosa (Resolve o problema dos Singles)
-    if artist and album:
-        clean_album = re.sub(r'\(.*?\)|\[.*?\]', '', album).strip().lower()
-        clean_artist = artist.split(" feat")[0].split(" &")[0].strip().lower()
-        term = urllib.parse.quote(f"{clean_artist} {clean_album}")
-        url = f"https://itunes.apple.com/search?term={term}&entity=album&limit=10"
-        
-        try:
-            async with aiohttp.ClientSession(headers=headers) as session:
-                async with session.get(url, timeout=5) as resp:
-                    if resp.status == 200:
-                        data = await resp.json(content_type=None)
-                        
-                        for item in data.get("results", []):
-                            apple_title = item.get("collectionName", "")
-                            apple_artist = item.get("artistName", "")
-                            apple_album_clean = apple_title.lower().replace(" - single", "").replace(" - ep", "").strip()
-                            
-                            if clean_album == apple_album_clean or clean_album in apple_album_clean:
-                                if validar_capa_apple(album, apple_title, artist, apple_artist):
-                                    art_url = item.get("artworkUrl100", "")
-                                    if art_url:
-                                        return re.sub(r'\d+x\d+[a-zA-Z-]*\.jpg', '10000x10000-999.jpg', art_url)
-                                else:
-                                    logger.debug(f"Descartando capa Apple (fallback texto): esperava '{album}', recebeu '{apple_title}'")
-        except Exception:
-            pass  # Engole o erro silenciosamente e deixa o Qobuz assumir
-    
-    return None

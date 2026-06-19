@@ -7,6 +7,7 @@ import shutil
 import re
 from pathlib import Path
 from typing import Optional, List, Tuple
+import unicodedata
 
 # ===========================================================================
 # 🚀 OTIMIZACAO GLOBAL DE REDE (INJECAO)
@@ -77,11 +78,31 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Helper de Alinhamento
 # ---------------------------------------------------------------------------
+def get_display_width(text: str) -> int:
+    # Calcula a largura real que o texto ocupa no terminal
+    return sum(2 if unicodedata.east_asian_width(c) in ('W', 'F') else 1 for c in str(text))
+
 def _align_text(text: str, width: int) -> str:
     text = str(text)
-    if len(text) > width:
-        return text[:width - 3] + "..."
-    return text.ljust(width)
+    current_w = get_display_width(text)
+    
+    # Se o texto couber perfeitamente, preenche com espaços
+    if current_w <= width:
+        return text + " " * (width - current_w)
+
+    # Se o texto for maior, corta de forma inteligente (respeitando a largura asiàtica)
+    truncated = ""
+    current_w = 0
+    target_w = width - 3 # Espaço reservado para os "..."
+    
+    for char in text:
+        char_w = 2 if unicodedata.east_asian_width(char) in ('W', 'F') else 1
+        if current_w + char_w > target_w:
+            break
+        truncated += char
+        current_w += char_w
+
+    return truncated + "..." + " " * (width - current_w - 3)
 
 # ---------------------------------------------------------------------------
 # Logica de tipo de lancamento
@@ -496,7 +517,6 @@ class QobuzDL:
                         )
                         # Aplica o filtro severo APENAS se for busca de albuns
                         if r_type_str not in ("album", "ep"): continue
-                        
                         rel_type = "EP" if r_type_str == "ep" else r_type_str.title()
                         col3_val = i.get("label", {}).get("name", "Independente")
                     
@@ -508,9 +528,9 @@ class QobuzDL:
                     
                     quality = f"[HI-RES] {i.get('maximum_bit_depth', 24)}b/{i.get('maximum_sampling_rate', 96.0)}kHz" if i.get("hires_streamable") else "[ CD ] 16b/44.1kHz"
                     
-                    max_art = min(self.max_w_art, max(max_art, len(artist)))
-                    max_tit = min(self.max_w_tit, max(max_tit, len(title)))
-                    max_alb = min(self.max_w_alb, max(max_alb, len(col3_val)))
+                    max_art = min(self.max_w_art, max(max_art, get_display_width(artist)))
+                    max_tit = min(self.max_w_tit, max(max_tit, get_display_width(title)))
+                    max_alb = min(self.max_w_alb, max(max_alb, get_display_width(col3_val)))
                     
                     raw_data.append((artist, title, col3_val, rel_type, year, quality, i))
                     
@@ -531,7 +551,8 @@ class QobuzDL:
                 for i in iterable:
                     name = i.get('name', 'Unknown')
                     count_str = f"{i.get('albums_count', i.get('tracks_count', 0))} itens"
-                    max_name = min(50, max(max_name, len(name)))
+
+                    max_name = min(50, max(max_name, get_display_width(name)))
                     raw_data.append((name, count_str, i))
 
                 self.w_name = max_name
