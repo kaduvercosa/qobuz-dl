@@ -578,9 +578,15 @@ class Download:
                 t_tag = f"{Tema.TAG}{t_tag_text}{Tema.OFF}"
             else:
                 t_tag = f"{Tema.TAG}[-INFO-]{Tema.OFF}"
+
+            is_multiple_disc = track_meta.get("album", {}).get("media_count", 1) > 1
+            media_num = track_meta.get("media_number") if is_multiple_disc else None
             
             # Passamos o nosso quartinho individual (cover_dir) para a tagger usar!
-            download_success = await self._download_and_tag(str(dirn), 1, parse, track_meta, track_meta, True, int(self.quality) == 5, False, False, t_tag, cover_dir=cover_dir_to_pass)
+            download_success = await self._download_and_tag(
+                str(dirn), 1, parse, track_meta, track_meta, True, int(self.quality) == 5, media_num, False, t_tag, cover_dir=cover_dir_to_pass
+            )
+
             await _clean_embed_art(dirn)
             
             # Depois que o arquivo foi taggeado com sucesso, implodimos o quartinho da capa
@@ -628,7 +634,8 @@ class Download:
             formatted_path = sanitize_filename(clean_filename(self.settings.multiple_disc_track_format.format(**filename_attr), legacy_charmap=legacy_flag), replacement_text="_")
         else:
             base_formatted = sanitize_filename(clean_filename(self.track_format.format(**filename_attr), legacy_charmap=legacy_flag), replacement_text="_")
-            if multiple and album_meta.get('media_count', 1) > 1:
+
+            if multiple and a_meta_for_type.get('media_count', 1) > 1:
                 try: d_num = int(multiple) if not isinstance(multiple, bool) else 1
                 except: d_num = 1
                 formatted_path = os.path.join(f"{self.settings.multiple_disc_prefix} {d_num:02}", base_formatted)
@@ -668,7 +675,7 @@ class Download:
         except KeyError:
             return False
 
-        if multiple and album_meta.get('media_count', 1) > 1 and not self.settings.multiple_disc_one_dir:
+        if multiple and a_meta_for_type.get('media_count', 1) > 1 and not self.settings.multiple_disc_one_dir:
             try: d_num = int(multiple) if not isinstance(multiple, bool) else 1
             except: d_num = 1
             root_dir = str(Path(root_dir) / f"{self.settings.multiple_disc_prefix} {d_num:02}")
