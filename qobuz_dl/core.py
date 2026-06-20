@@ -163,7 +163,7 @@ _PICK_HEADER_OFFSET = "       "
 # Dataclass de configuracao
 # ---------------------------------------------------------------------------
 class QobuzDLConfig:
-    def __init__(self, directory: str = "QobuzDownloads", quality: int = 6, embed_art: bool = True, lucky_limit: int = 1, lucky_type: str = "album", interactive_limit: int = 20, ignore_singles_eps: bool = False, no_m3u_for_playlists: bool = False, quality_fallback: bool = True, cover_og_quality: bool = True, no_cover: bool = False, downloads_db: Optional[str] = None, folder_format: str = "{release_type}/{artist} - {album} ({year}) [{bit_depth}B-{sampling_rate}kHz]", track_format: str = "{track_number} - {track_title}", smart_discography: bool = False, fetch_lyrics: bool = False, no_lrc_files: bool = False, genius_token: Optional[str] = None, deepl_api_key: Optional[str] = None, force_english: bool = True, no_credits: bool = False, booklet_only: bool = False, blacklist: Optional[str] = None, target_lang: str = "PT-BR", delay: Optional[int] = None, settings: Optional[QobuzDLSettings] = None):
+    def __init__(self, directory: str = "QobuzDownloads", quality: int = 6, embed_art: bool = True, lucky_limit: int = 1, lucky_type: str = "album", interactive_limit: int = 20, ignore_singles_eps: bool = False, no_m3u_for_playlists: bool = False, quality_fallback: bool = True, cover_og_quality: bool = True, no_cover: bool = False, downloads_db: Optional[str] = None, folder_format: str = "{release_type}/{artist} - {album} ({year}) [{bit_depth}B-{sampling_rate}kHz]", track_format: str = "{track_number} - {track_title}", smart_discography: bool = False, fetch_lyrics: bool = False, no_lrc_files: bool = False, genius_token: Optional[str] = None, deepl_api_key: Optional[str] = None, translate_lyrics: bool = True, force_english: bool = True, no_credits: bool = False, booklet_only: bool = False, blacklist: Optional[str] = None, target_lang: str = "PT-BR", delay: Optional[int] = None, settings: Optional[QobuzDLSettings] = None):
         self.directory            = directory
         self.quality              = quality
         self.embed_art            = embed_art
@@ -183,6 +183,7 @@ class QobuzDLConfig:
         self.no_lrc_files         = no_lrc_files
         self.genius_token         = genius_token
         self.deepl_api_key        = deepl_api_key
+        self.translate_lyrics     = translate_lyrics
         self.force_english        = force_english
         self.no_credits           = no_credits
         self.booklet_only         = booklet_only
@@ -196,8 +197,9 @@ class QobuzDLConfig:
 # Classe principal
 # ---------------------------------------------------------------------------
 class QobuzDL:
-    def __init__(self, directory: str = "QobuzDownloads", quality: int = 7, embed_art: bool = True, lucky_limit: int = 1, lucky_type: str = "album", interactive_limit: int = 20, ignore_singles_eps: bool = False, no_m3u_for_playlists: bool = False, quality_fallback: bool = True, cover_og_quality: bool = True, no_cover: bool = False, downloads_db: Optional[str] = None, folder_format: str = "{artist} - {album} ({year}) [{bit_depth}B-{sampling_rate}kHz]", track_format: str = "{track_number} - {track_title}", smart_discography: bool = False, fetch_lyrics: bool = False, no_lrc_files: bool = False, genius_token: Optional[str] = None, deepl_api_key: Optional[str] = None, force_english: bool = True, no_credits: bool = False, settings: Optional[QobuzDLSettings] = None, booklet_only: bool = False, blacklist: Optional[str] = None, target_lang: str = "PT-BR", delay: Optional[int] = None):
+    def __init__(self, directory: str = "QobuzDownloads", quality: int = 7, embed_art: bool = True, lucky_limit: int = 1, lucky_type: str = "album", interactive_limit: int = 20, ignore_singles_eps: bool = False, no_m3u_for_playlists: bool = False, quality_fallback: bool = True, cover_og_quality: bool = True, no_cover: bool = False, downloads_db: Optional[str] = None, folder_format: str = "{artist} - {album} ({year}) [{bit_depth}B-{sampling_rate}kHz]", track_format: str = "{track_number} - {track_title}", smart_discography: bool = False, fetch_lyrics: bool = False, no_lrc_files: bool = False, genius_token: Optional[str] = None, deepl_api_key: Optional[str] = None, translate_lyrics: bool = True, force_english: bool = True, no_credits: bool = False, settings: Optional[QobuzDLSettings] = None, booklet_only: bool = False, blacklist: Optional[str] = None, target_lang: str = "PT-BR", delay: Optional[int] = None):
         self.deepl_api_key        = deepl_api_key
+        self.translate_lyrics     = translate_lyrics
         self.delay                = delay
         self.directory            = create_and_return_dir(directory)
         self.quality              = quality
@@ -260,7 +262,7 @@ class QobuzDL:
                 embed_art=self.embed_art, albums_only=self.ignore_singles_eps, downgrade_quality=self.quality_fallback,
                 cover_og_quality=self.cover_og_quality, no_cover=self.no_cover, folder_format=self.folder_format,
                 track_format=self.track_format, fetch_lyrics=self.fetch_lyrics, no_lrc_files=self.no_lrc_files,
-                genius_token=self.genius_token, deepl_api_key=self.deepl_api_key, target_lang=self.target_lang,
+                genius_token=self.genius_token, deepl_api_key=self.deepl_api_key, translate_lyrics=self.translate_lyrics, target_lang=self.target_lang,
                 no_credits=self.no_credits, settings=self.settings, download_db=self.downloads_db,
                 is_playlist=is_playlist, playlist_track_number=playlist_index, booklet_only=self.booklet_only,
                 is_single_batch=is_single_batch, single_batch_index=single_batch_index, single_batch_total=single_batch_total

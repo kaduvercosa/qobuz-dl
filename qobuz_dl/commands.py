@@ -104,6 +104,11 @@ def lyrics_args(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPars
         action="store_true",
         help="overwrite existing lyrics and translations in the files",
     )
+    grp.add_argument(
+        "--no-translate",
+        action="store_true",
+        help="fetch lyrics but skip automatic translation (Google Translate)",
+    )
     return lyrics
 
 
@@ -126,6 +131,11 @@ def fix_lyrics_args(subparsers: argparse._SubParsersAction) -> argparse.Argument
         nargs="?",
         default=".",
         help="The local directory containing the music files (default: current directory)",
+    )
+    grp.add_argument(
+        "--no-translate",
+        action="store_true",
+        help="skip automatic translation (Google Translate) while fixing lyrics",
     )
     return fix_lyrics
 
@@ -249,6 +259,11 @@ def add_common_arg(custom_parser: argparse.ArgumentParser, default_folder: str, 
         "--no-lyrics",
         action="store_true",
         help="disable automatic lyrics fetching and injection for this session",
+    )
+    custom_parser.add_argument(
+        "--no-translate",
+        action="store_true",
+        help="fetch lyrics but skip automatic translation (Google Translate) for this session",
     )
     custom_parser.add_argument(
         "--booklet-only",

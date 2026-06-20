@@ -220,6 +220,7 @@ class Download:
         no_lrc_files: bool = False,
         genius_token: str = None,
         deepl_api_key: str = None,
+        translate_lyrics: bool = True,
         target_lang: str = "PT-BR",
         no_credits: bool = False,
         settings: QobuzDLSettings = None,
@@ -247,6 +248,7 @@ class Download:
         self.fetch_lyrics = fetch_lyrics
         self.no_lrc_files = no_lrc_files
         self.target_lang = target_lang
+        self.translate_lyrics = translate_lyrics
         self.is_single_batch = is_single_batch
         self.single_batch_index = single_batch_index
         self.single_batch_total = single_batch_total
@@ -255,7 +257,7 @@ class Download:
             self.lyrics_engine = LyricsEngine(
                 genius_token=genius_token, 
                 deepl_api_key=deepl_api_key, 
-                translate=True, 
+                translate=self.translate_lyrics, 
                 target_lang=self.target_lang,
                 session=self.client.session
             )

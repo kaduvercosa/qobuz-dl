@@ -195,7 +195,7 @@ async def _process_single_file(semaphore: asyncio.Semaphore, file_path: Path, en
 
 async def inject_lyrics_retroactively(directory_path: str, genius_token: str = None, 
                                       deepl_api_key: str = None, overwrite: bool = False, 
-                                      target_lang: str = "PT-BR", max_workers: int = 3) -> None:
+                                      target_lang: str = "PT-BR", translate_lyrics: bool = True, max_workers: int = 3) -> None:
     safe_print(f"\n{CYAN}[*] Starting retroactive lyrics scan in: {directory_path}{OFF}\n")
 
     if overwrite:
@@ -206,7 +206,7 @@ async def inject_lyrics_retroactively(directory_path: str, genius_token: str = N
         safe_print(f"{RED}[!] Erro: O diretorio '{directory_path}' nao existe.{OFF}\n")
         return
 
-    engine = LyricsEngine(genius_token=genius_token, translate=True, target_lang=target_lang)
+    engine = LyricsEngine(genius_token=genius_token, translate=translate_lyrics, target_lang=target_lang)
 
     all_files = [p for p in target_dir.rglob('*') if p.is_file() and p.suffix.lower() in {'.flac', '.mp3'}]
 
@@ -244,7 +244,7 @@ async def inject_lyrics_retroactively(directory_path: str, genius_token: str = N
 # =========================
 
 async def interactive_fix_lyrics(directory_path: str, genius_token: str = None, 
-                                 deepl_api_key: str = None, target_lang: str = "PT-BR") -> None:
+                                 deepl_api_key: str = None, target_lang: str = "PT-BR", translate_lyrics: bool = True) -> None:
     from pick import pick
 
     target_dir = Path(directory_path)
@@ -252,7 +252,7 @@ async def interactive_fix_lyrics(directory_path: str, genius_token: str = None,
         print(f"{RED}[!] Erro: O diretorio '{directory_path}' nao existe.{OFF}")
         return
 
-    engine = LyricsEngine(genius_token=genius_token, translate=True, target_lang=target_lang)
+    engine = LyricsEngine(genius_token=genius_token, translate=translate_lyrics, target_lang=target_lang)
 
     all_files = sorted([p for p in target_dir.rglob('*') if p.is_file() and p.suffix.lower() in {'.flac', '.mp3'}])
 

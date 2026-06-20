@@ -138,16 +138,24 @@ def _reset_config(config_file: Path) -> int:
         target_lang = "PT-BR"
         genius_token = ""
         deepl_api_key = ""
+        translate_lyrics = True
 
         if config["qobuz"]["fetch_lyrics"] == "true":
-            target_lang_input = input("\n  ❯ Idioma alvo para tradução (ex: 'PT-BR', 'EN-US') [padrão: PT-BR]: ")
-            if target_lang_input.strip(): target_lang = target_lang_input.strip().upper()
+            print("\n  Deseja traduzir as letras automaticamente (via Google Translate)?")
+            print("    1) Sim, traduzir as letras")
+            print("    2) Não, manter apenas no idioma original")
+            translate_opt = input("  ❯ Escolha (1 ou 2) [padrão: 1]: ").strip()
+            translate_lyrics = translate_opt != "2"
 
-            print(f"\n  {CYAN}[Dica] Deixe as chaves em branco se quiser usar apenas os servidores gratuitos (LRCLIB, etc).{OFF}")
-            deepl_api_key = input("  ❯ Chave API do DeepL (para tradução premium): ").strip()
+            if translate_lyrics:
+                target_lang_input = input("\n  ❯ Idioma alvo para tradução (ex: 'PT-BR', 'EN-US') [padrão: PT-BR]: ")
+                if target_lang_input.strip(): target_lang = target_lang_input.strip().upper()
+
+            print(f"\n  {CYAN}[Dica] Deixe o token em branco se não quiser usar o Genius para busca estendida.{OFF}")
             genius_token = input("  ❯ Token API do Genius (para busca estendida): ").strip()
 
         config["qobuz"]["target_lang"] = target_lang
+        config["qobuz"]["translate_lyrics"] = "true" if translate_lyrics else "false"
         config["qobuz"]["deepl_api_key"] = deepl_api_key
         config["qobuz"]["genius_token"] = genius_token
 
@@ -523,6 +531,7 @@ async def amain():
         enhanced_lrc = config.getboolean(section, "enhanced_lrc", fallback=False)
         genius_token = config.get(section, "genius_token", fallback=None)
         deepl_api_key = config.get(section, "deepl_api_key", fallback=None)
+        translate_lyrics = config.getboolean(section, "translate_lyrics", fallback=True)
         target_lang = config.get(section, "target_lang", fallback="PT-BR")
         
         directory_val = config.get(section, "directory", fallback=None)
@@ -546,6 +555,7 @@ async def amain():
         
         arguments = qobuz_dl_args(default_quality, default_limit, default_folder).parse_args()
         if getattr(arguments, 'no_lyrics', False): fetch_lyrics = False
+        if getattr(arguments, 'no_translate', False): translate_lyrics = False
             
         force_english = not getattr(arguments, 'native_lang', False)
         no_credits_flag = getattr(arguments, 'no_credits', False) or no_credits_config 
@@ -588,7 +598,7 @@ async def amain():
     if arguments.command == "lyrics":
         from qobuz_dl.retro_tagger import inject_lyrics_retroactively
         try:
-            await inject_lyrics_retroactively(ensure_long_path(arguments.DIR), genius_token=genius_token, deepl_api_key=deepl_api_key, overwrite=getattr(arguments, 'overwrite', False), target_lang=target_lang, max_workers=int(config.get(section, "max_workers", fallback=3)),
+            await inject_lyrics_retroactively(ensure_long_path(arguments.DIR), genius_token=genius_token, deepl_api_key=deepl_api_key, overwrite=getattr(arguments, 'overwrite', False), target_lang=target_lang, translate_lyrics=translate_lyrics, max_workers=int(config.get(section, "max_workers", fallback=3)),
             )
         except KeyboardInterrupt:
             print(f"\n\n{RED}[!] Operation manually interrupted by the user (CTRL+C).{OFF}\n{YELLOW}Already processed files are safe. Exiting...{OFF}")
@@ -597,7 +607,7 @@ async def amain():
     elif arguments.command in ("fix-lyrics", "fl"):
         from qobuz_dl.retro_tagger import interactive_fix_lyrics
         try:
-            await interactive_fix_lyrics(ensure_long_path(arguments.DIR), genius_token=genius_token, deepl_api_key=deepl_api_key, target_lang=target_lang)
+            await interactive_fix_lyrics(ensure_long_path(arguments.DIR), genius_token=genius_token, deepl_api_key=deepl_api_key, target_lang=target_lang, translate_lyrics=translate_lyrics)
         except KeyboardInterrupt:
             print(f"\n\n{RED}[!] Operation manually interrupted by the user (CTRL+C).{OFF}")
         sys.exit(0)
@@ -631,6 +641,7 @@ async def amain():
         no_lrc_files=("--no-lrc-files" in sys.argv) or no_lrc_files_config,
         genius_token=genius_token,
         deepl_api_key=deepl_api_key,
+        translate_lyrics=translate_lyrics,
         target_lang=target_lang,
         force_english=force_english,
         no_credits=no_credits_flag,
