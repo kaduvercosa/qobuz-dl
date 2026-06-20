@@ -874,11 +874,6 @@ class Download:
                         actual_bd = fresh_track.get("bit_depth")
                         actual_sr = fresh_track.get("sampling_rate")
                         final_fmt = fresh_track.get("format_id", attempt_fmt)
-                        
-                        q_str = f"[{actual_bd}b/{actual_sr}kHz]" if actual_bd and actual_sr else ""
-                        if int(final_fmt) == 5: q_str = "[MP3 320kbps]"
-                        
-                        await safe_print_async(f"{t_tag_arq} 🎧 {Tema.BOLD}{desc_name}{Tema.OFF} {Tema.GREEN}{q_str}{Tema.OFF}")
 
                         await tqdm_download(self.client.session, fresh_track["url"], filename, log_prefix=t_tag_bar, is_parallel=is_parallel, track_name=desc_name)
                         success = True
@@ -891,11 +886,6 @@ class Download:
                     actual_bd = fresh_track.get("bit_depth")
                     actual_sr = fresh_track.get("sampling_rate")
                     final_fmt = fresh_track.get("format_id", attempt_fmt)
-                    
-                    q_str = f"[{actual_bd}b/{actual_sr}kHz]" if actual_bd and actual_sr else ""
-                    if int(final_fmt) == 5: q_str = "[MP3 320kbps]"
-                    
-                    await safe_print_async(f"{t_tag_arq} 🎧 {Tema.BOLD}{desc_name}{Tema.OFF} {Tema.GREEN}{q_str}{Tema.OFF}")
 
                     await tqdm_download_segments(self.client.session, fresh_track, filename, log_prefix=t_tag_bar, is_parallel=is_parallel, track_name=desc_name)
                     success = True
@@ -909,6 +899,11 @@ class Download:
             await safe_print_async(f"{t_tag_status} ❌ {Tema.ERRO}Descartada (Sem formato){Tema.OFF}")
             return False
 
+        # Imprime a linha [ÁUDIO] UMA ÚNICA VEZ, já com a qualidade final que realmente foi baixada com sucesso (evita linhas duplicadas quando o downgrade automático precisa tentar mais de uma vez).
+        q_str = f"[{actual_bd}b/{actual_sr}kHz]" if actual_bd and actual_sr else ""
+        if int(final_fmt) == 5: q_str = "[MP3 320kbps]"
+        await safe_print_async(f"{t_tag_arq} 🎧 {Tema.BOLD}{desc_name}{Tema.OFF} {Tema.GREEN}{q_str}{Tema.OFF}")
+
         track_meta["actual_bit_depth"] = actual_bd
         track_meta["actual_sampling_rate"] = actual_sr
         track_meta["actual_format_id"] = final_fmt
@@ -921,7 +916,7 @@ class Download:
         
         lck_cov = LoopGlobals.get('cover_resize_lock')
         async with lck_cov:
-            if cover_path_to_check.exists() and os.path.getsize(cover_path_to_check) >= 16500000:
+            if cover_path_to_check.exists() and os.path.getsize(cover_path_to_check) >= 16000000:
 
                 def _process_heavy_image():
                     import math
