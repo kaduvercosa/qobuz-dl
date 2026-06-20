@@ -357,78 +357,152 @@ def invalid_chars_to_fullwidth(filename: str) -> str:
     for invalid_char, fullwidth_char in invalid_to_fullwidth.items():
         filename = filename.replace(invalid_char, fullwidth_char)
     return filename
-
-def normalizar_titulo(text0: str) -> str:
-    if not texto: return ""
-    # Remove acentos para uma comparação perfeita
-    texto = unicodedata.normalize('NFKD', texto).encode('ASCII', 'ignore').decode('utf-8')
-    t = re.sub(r'[^\w\s]', ' ', texto)
-    return " ".join(t.split()).lower()
-
-async def get_apple_hq_cover(upc: Optional[str] = None, isrc: Optional[str] = None, artist: Optional[str] = None, album: Optional[str] = None) -> Optional[str]:
-    import urllib.parse
     
+def extrair_essencia(texto: str) -> str:
+    """Limpa o texto removendo acentos, pontuações e termos entre parênteses
+    para uma comparação 'larga' (acha candidatos: mesmo artista/álbum base,
+    ignorando qual edição é)."""
+    if not texto: return ""
+    import re, unicodedata
+    texto = unicodedata.normalize('NFKD', texto).encode('ASCII', 'ignore').decode('utf-8').lower()
+    texto = re.sub(r'[\(\[].*?[\)\]]', '', texto)
+    texto = re.sub(r'[^\w\s]', ' ', texto)
+    return " ".join(texto.split())
+
+
+def extrair_titulo_completo(texto: str) -> str:
+    """
+    Normaliza o texto SEM remover o conteúdo de parênteses/colchetes --
+    preserva a info de versão (Deluxe, Live, Remaster, Tour Edition, etc).
+
+    Isso substitui qualquer lista fixa de palavras-chave: comparando o
+    título COMPLETO por similaridade, qualquer edição diferente (conhecida
+    ou não) já derruba o score sozinha, sem precisar listar nada na mão.
+    """
+    if not texto: return ""
+    import re, unicodedata
+    texto = unicodedata.normalize('NFKD', texto).encode('ASCII', 'ignore').decode('utf-8').lower()
+    texto = texto.replace('[', '(').replace(']', ')')
+    texto = re.sub(r'[^\w\s\(\)]', ' ', texto)
+    return re.sub(r'\s+', ' ', texto).strip()
+
+
+# REMOVA a função `identificar_versoes` inteira -- não é mais usada.
+
+
+async def get_apple_hq_cover(upc: Optional[str] = None, isrc: Optional[str] = None, artist: Optional[str] = None, album: Optional[str] = None, track_title: Optional[str] = None) -> Optional[str]:
+    import urllib.parse
+    import difflib
+    import aiohttp
+
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36"
     }
 
+    q_artist_puro = extrair_essencia(artist)
+    q_album_puro = extrair_essencia(album)
+    q_track_puro = extrair_essencia(track_title) if track_title else ""
+
+    # Título completo (com a edição/versão preservada) -- usado como trava final
+    q_album_completo = extrair_titulo_completo(album)
+    q_track_completo = extrair_titulo_completo(track_title) if track_title else ""
+
+    # Limiares de similaridade para o título COMPLETO (com versão).
+    # Quanto mais alto, mais rígido contra misturar edições diferentes.
+    LIMIAR_VERSAO_ALBUM = 0.87
+    LIMIAR_VERSAO_TRACK = 0.85
+
+    def avaliar_resultados(data):
+        melhor_capa = None
+        maior_media = 0.0
+
+        for result in data.get("results", []):
+            a_artist = result.get("artistName", "")
+            a_album = result.get("collectionName", "")
+            a_track = result.get("trackName", "")
+
+            if not a_album: continue
+
+            # Filtro 1: Corta Lixo
+            palavras_lixo = ["karaoke", "tribute", "cover", "instrumental", "mixed", "remix"]
+            is_lixo = False
+            if album:
+                is_lixo = any(lixo in a_album.lower() and lixo not in album.lower() for lixo in palavras_lixo)
+            if track_title and not is_lixo:
+                is_lixo = any(lixo in a_track.lower() and lixo not in track_title.lower() for lixo in palavras_lixo)
+            if is_lixo: continue
+
+            # Filtro 1.5: TRAVA DE VERSÃO COMPLETA (genérica, sem whitelist)
+            # Compara o título inteiro (com parênteses) -- qualquer edição
+            # diferente da Qobuz (Deluxe, Live, Tour Edition, seja o que for)
+            # derruba o score automaticamente, mesmo sem estar numa lista.
+            a_album_completo = extrair_titulo_completo(a_album)
+            score_versao_album = difflib.SequenceMatcher(None, q_album_completo, a_album_completo).ratio()
+            if score_versao_album < LIMIAR_VERSAO_ALBUM:
+                continue
+
+            if track_title and a_track:
+                a_track_completo = extrair_titulo_completo(a_track)
+                score_versao_track = difflib.SequenceMatcher(None, q_track_completo, a_track_completo).ratio()
+                if score_versao_track < LIMIAR_VERSAO_TRACK:
+                    continue
+
+            # Filtro 2: Avalia Artista e Álbum na essência pura (achar candidato certo)
+            a_artist_puro = extrair_essencia(a_artist)
+            a_album_puro = extrair_essencia(a_album)
+
+            score_artista = difflib.SequenceMatcher(None, q_artist_puro, a_artist_puro).ratio() if q_artist_puro else 1.0
+            score_album = difflib.SequenceMatcher(None, q_album_puro, a_album_puro).ratio() if q_album_puro else 1.0
+
+            if score_artista < 0.85 or score_album < 0.80: continue
+
+            # Filtro 3: Avalia o Nome da Música (essência)
+            score_track = 1.0
+            se_tem_faixa = 1 if track_title else 0
+
+            if track_title and a_track:
+                a_track_puro = extrair_essencia(a_track)
+                score_track = difflib.SequenceMatcher(None, q_track_puro, a_track_puro).ratio()
+                if score_track < 0.80: continue
+
+            divisor = 2.0 + se_tem_faixa
+            media = (score_artista + score_album + (score_track * se_tem_faixa)) / divisor
+
+            if media > maior_media:
+                maior_media = media
+                url_arte = result.get("artworkUrl100", "")
+                if url_arte:
+                    melhor_capa = url_arte.replace("100x100bb", "10000x10000bb")
+
+        if maior_media >= 0.80 and melhor_capa:
+            return melhor_capa
+        return None
+
     async with aiohttp.ClientSession(headers=headers) as session:
+        for codigo, tipo in [(upc, "upc"), (isrc, "isrc")]:
+            if codigo and codigo.lower() != "n/a":
+                try:
+                    async with session.get(f"https://itunes.apple.com/lookup?{tipo}={codigo}", timeout=5) as r:
+                        if r.status == 200:
+                            data = await r.json(content_type=None)
+                            if data.get("resultCount", 0) > 0:
+                                capa = avaliar_resultados(data)
+                                if capa: return capa
+                except Exception: pass
 
-        # 1. tentativa Exata: UPC (Código de Barras)
-        if upc and upc.lower() != "n/a":
-            try:
-                async with session.get(f"https://itunes.apple.com/lookup?upc={upc}&entity=album", timeout=5) as r:
-                    if r.status == 200:
-                        data = await r.json(content_type=None)
-                        if data.get("resultCount", 0) > 0:
-                            return data["results"][0]["artworkUrl100"].replace("100x100bb", "10000x10000bb")
-            except Exception: pass
-
-        # 2. Tentativa Exata: ISRC (Impressão Digital da Faixa)
-        if isrc and isrc.lower() != "n/a":
-            try:
-                async with session.get(f"https://itunes.apple.com/lookup?isrc={isrc}", timeout=5) as r:
-                    if r.status == 200:
-                        data = await r.json(content_type=None)
-                        if data.get("resultCount", 0) > 0:
-                            return data["results"][0]["artworkUrl100"].replace("100x100bb", "10000x10000bb")
-            except Exception: pass
-
-        # 3. Sistema de Pontuação de Texto (O Cerebro da Comparação)
         if artist and album:
-            clean_artist = urllib.parse.quote(artist)
-            clean_title = urllib.parse.quote(album)
-            query = f"{clean_artist}+{clean_title}"
-            
+            search_entity = "song" if track_title else "album"
+            query_str = f"{artist} {track_title}" if track_title else f"{artist} {album}"
+            clean_query = urllib.parse.quote(query_str)
+            url = f"https://itunes.apple.com/search?term={clean_query}&entity={search_entity}&limit=10"
+
             try:
-                # Pedimos 10 resultados para a Apple para termos opções para avaliar
-                async with session.get(f"https://itunes.apple.com/search?term={query}&entity=album&limit=10", timeout=5) as r:
+                async with session.get(url, timeout=5) as r:
                     if r.status == 200:
                         data = await r.json(content_type=None)
                         if data.get("resultCount", 0) > 0:
-                            qobuz_norm = normalizar_titulo(album)
-                            
-                            melhor_capa = None
-                            maior_score = 0.0
-                            
-                            for result in data["results"]:
-                                apple_title = result.get("collectionName", "")
-                                apple_norm = normalizar_titulo(apple_title)
-                                
-                                # Dá uma nota de compatibilidade entre o que pedimos e o que a Apple ofereceu
-                                score = difflib.SequenceMatcher(None, qobuz_norm, apple_norm).ratio()
-                                
-                                if score > maior_score:
-                                    maior_score = score
-                                    url_arte = result.get("artworkUrl100", "")
-                                    if url_arte:
-                                        melhor_capa = url_arte.replace("100x100bb", "10000x10000bb")
-
-                            if maior_score >= 0.80 and melhor_capa:
-                                logger.debug(f"Capa aprovada com nota de {(maior_score * 100):.1f}%")
-                                return melhor_capa
-                            else:
-                                logger.debug(f"Capa rejeitada. Maior nota foi de {(maior_score * 100):.1f}%")
+                            capa = avaliar_resultados(data)
+                            if capa: return capa
             except Exception: pass
 
         return None

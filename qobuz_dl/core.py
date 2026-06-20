@@ -250,9 +250,9 @@ class QobuzDL:
         self.secrets = [s for s in bundle.get_secrets().values() if s]
 
     async def download_from_id(self, item_id: str, album: bool = True, alt_path: Optional[str] = None, is_playlist: bool = False, playlist_index: Optional[int] = None, is_single_batch: bool = False, single_batch_index: int = 1, single_batch_total: int = 1):
-        if handle_download_id(self.downloads_db, item_id, add_id=False, quality=self.quality):
-            print(f"{Tema.ALERTA}{Tema.AVISO}ID ({item_id}) ignorado (ja existe no banco local).{Tema.OFF}\n")
-            return
+        #if handle_download_id(self.downloads_db, item_id, add_id=False, quality=self.quality):
+            #print(f"{Tema.ALERTA}{Tema.AVISO}ID ({item_id}) ignorado (ja existe no banco local).{Tema.OFF}\n")
+            #return
 
         try:
             dloader = downloader.Download(
