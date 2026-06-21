@@ -201,6 +201,16 @@ EMB_COVER_NAME = "embed_cover.jpg"
 
 POST_DOWNLOAD_SETTLE_DELAY = 0.4
 
+# Rótulos legíveis por format_id, usados só para o aviso de downgrade.
+# Definido localmente (em vez de importar de core.py) para evitar import circular,
+# já que core.py importa este módulo.
+QUALITY_LABELS = {
+    5:  "MP3 320kbps",
+    6:  "16bit/44.1kHz (CD)",
+    7:  "24bit/<96kHz (Hi-Res)",
+    27: "24bit/>96kHz (Hi-Res+)",
+}
+
 
 class Download:
     def __init__(
@@ -333,9 +343,10 @@ class Download:
 
         t_album = f"  {icon} {display_type} | {album_title}"
         if len(t_album) > Tema.PAD: t_album = t_album[:Tema.PAD-3] + "..."
-        HEADER_ALBUM = f"{Tema.BG_ALBUM}{Tema.TXT_WHITE}{Tema.BOLD}{t_album}{Tema.OFF}"
+        HEADER_ALBUM = f"\n{Tema.BG_ALBUM}{Tema.TXT_WHITE}{Tema.BOLD}{t_album} {Tema.OFF}"
 
-        await safe_print_async(f"\n{HEADER_ALBUM}")
+        await safe_print_async(" ")
+        await safe_print_async(f"{HEADER_ALBUM}")
         await safe_print_async(f"{Tema.TXT_ALBUM}{Tema.BOLD}[INFO ]{Tema.OFF} {Tema.TXT_ALBUM}├──{Tema.OFF} Artista: {album_attr.get('album_artist', 'Unknown')}")
         await safe_print_async(f"{Tema.TXT_ALBUM}{Tema.BOLD}[INFO ]{Tema.OFF} {Tema.TXT_ALBUM}├──{Tema.OFF} Qualidade Max: {file_format} ({bit_depth}b/{sampling_rate}kHz)")
         await safe_print_async(f"{Tema.TXT_ALBUM}{Tema.BOLD}[INFO ]{Tema.OFF} {Tema.TXT_ALBUM}└──{Tema.OFF} Faixas na Fila: {_track_count}")
@@ -440,7 +451,7 @@ class Download:
                         
                     root_text = f" ▶ {prefix_str} 🎵 {t_artist} - {desc_name}"
                     if len(root_text) > Tema.PAD: root_text = root_text[:Tema.PAD-3] + "..."
-                    root_line = f"\n{c_bg_sec}{Tema.TXT_WHITE}{Tema.BOLD}{root_text}{Tema.OFF}"
+                    root_line = f"{c_bg_sec}{Tema.TXT_WHITE}{Tema.BOLD}{root_text} {Tema.OFF}"
 
                     try:
                         full_track_meta, parse = await asyncio.gather(
@@ -451,11 +462,13 @@ class Download:
                         if is_para and continuous_track_index <= active_workers:
                             setattr(self, '_startup_counter', getattr(self, '_startup_counter', 1) + 1)
                             
+                        await safe_print_async(" ")
                         await safe_print_async(root_line)
+                        err_prefix = f"{c_txt}{Tema.BOLD}{prefix_str}{Tema.OFF} " if is_para else ""
                         if "400" in str(e) or "Invalid Request Signature" in str(e):
-                            await safe_print_async(f"{c_txt}{Tema.BOLD}[INFO ]{Tema.OFF} {c_txt}├──{Tema.OFF} ⏭️ Pulando (Música Indisponível / Restrição Regional)")
+                            await safe_print_async(f"{err_prefix}{c_txt}{Tema.BOLD}[INFO ]{Tema.OFF} {c_txt}├──{Tema.OFF} ⏭️ Pulando (Música Indisponível / Restrição Regional)")
                         else:
-                            await safe_print_async(f"{c_txt}{Tema.BOLD}[INFO ]{Tema.OFF} {c_txt}├──{Tema.OFF} ❌ {Tema.ERRO}Erro na API: {e}{Tema.OFF}")
+                            await safe_print_async(f"{err_prefix}{c_txt}{Tema.BOLD}[INFO ]{Tema.OFF} {c_txt}├──{Tema.OFF} ❌ {Tema.ERRO}Erro na API: {e}{Tema.OFF}")
                         return False
 
                     if is_para and continuous_track_index <= active_workers:
@@ -464,7 +477,8 @@ class Download:
                             if LoopGlobals.get('abort_event').is_set() or (time.time() - wait_start > 15):
                                 break 
                             await asyncio.sleep(0.1)
-                            
+                    
+                    await safe_print_async("")
                     await safe_print_async(root_line)
                     
                     if is_para and continuous_track_index <= active_workers:
@@ -473,8 +487,11 @@ class Download:
                     if "sample" not in parse and parse.get("sampling_rate"):
                         media_num = track_item.get("media_number") if is_multi else None
                         
+                        # Em download paralelo, várias faixas imprimem ao mesmo tempo e as linhas [ÁUDIO]/[LETRA]/[FINAL] se intercalam no terminal sem dizer a qual faixa pertencem. Prefixamos com o índice (ex: "[08/18] ") só nesse caso, pra cada linha continuar identificável mesmo fora de ordem. Em modo sequencial isso não é necessário (uma faixa por vez), então mantemos o estilo limpo atual.
+                        t_tag_prefix = f"{c_txt}{Tema.BOLD}{prefix_str}{Tema.OFF} " if is_para else ""
+
                         return await self._download_and_tag(
-                            dirn, t_count, parse, full_track_meta, a_meta, False, int(self.quality) == 5, media_num, is_para, t_tag="", use_siglas=True, c_txt=c_txt
+                            dirn, t_count, parse, full_track_meta, a_meta, False, int(self.quality) == 5, media_num, is_para, t_tag=t_tag_prefix, use_siglas=True, c_txt=c_txt
                         )
                     return False
 
@@ -496,7 +513,7 @@ class Download:
             except (KeyboardInterrupt, SystemExit, asyncio.CancelledError):
                 LoopGlobals.get('abort_event').set()
                 aborted_by_user = True
-                await safe_print_async(f"\n{Tema.ERRO}[!] CTRL+C Interceptado: Fechando arquivos em segurança...{Tema.OFF}\n")
+                await safe_print_async(f"\n{Tema.ERRO}[!] CTRL+C Interceptado: Fechando arquivos em segurança...{Tema.OFF}")
                     
             if not aborted_by_user:
                 await _clean_embed_art(working_dirn)
@@ -506,7 +523,7 @@ class Download:
         except (KeyboardInterrupt, SystemExit):
             LoopGlobals.get('abort_event').set()
             aborted_by_user = True
-            await safe_print_async(f"\n{Tema.ERRO}[!] Operação Abortada...{Tema.OFF}\n")
+            await safe_print_async(f"\n{Tema.ERRO}[!] Operação Abortada...{Tema.OFF}")
                 
         if aborted_by_user:
             await asyncio.sleep(1.5)
@@ -520,8 +537,8 @@ class Download:
             except OSError: 
                 final_dirn = working_dirn
             
-            if aborted_by_user: await safe_print_async(f"\n{Tema.AVISO}[!] Download abortado. Marcado como [INCOMPLETE].{Tema.OFF}\n")
-            elif failed_tracks > 0: await safe_print_async(f"\n{Tema.AVISO}[!] Download parcial. Marcado como [INCOMPLETE].{Tema.OFF}\n")
+            if aborted_by_user: await safe_print_async(f"\n{Tema.AVISO}[!] Download abortado. Marcado como [INCOMPLETE].{Tema.OFF}")
+            elif failed_tracks > 0: await safe_print_async(f"\n{Tema.AVISO}[!] Download parcial. Marcado como [INCOMPLETE].{Tema.OFF}")
         else:
             final_dirn = working_dirn
         
@@ -574,7 +591,7 @@ class Download:
                 except:
                     pass
 
-        await safe_print_async(f"\n{Tema.SUCESSO}[✔] Lançamento Concluído: {Tema.TITULO}{album_title}{Tema.OFF}\n")
+        await safe_print_async(f"\n{Tema.SUCESSO}[✔] Lançamento Concluído: {Tema.TITULO}{album_title}{Tema.OFF}")
         
         if getattr(self, 'fetch_lyrics', False) and hasattr(self, 'lyrics_engine'):
             await self.lyrics_engine.close()
@@ -636,13 +653,14 @@ class Download:
                     l_icon = "🎵 LOTE DE SINGLES"
 
                 prefix_str = ""
+
                 if getattr(self, 'is_playlist', False):
                     pl_name = getattr(self.settings, 'playlist_name', 'PLAYLIST')
                     pl_badge_key = f"_badge_pl_printed_{pl_name}"
                     if not getattr(self.settings, pl_badge_key, False):
                         t_pl = f"  {l_icon} | {pl_name.upper()}"
                         if len(t_pl) > Tema.PAD: t_pl = t_pl[:Tema.PAD-3] + "..."
-                        BADGE_PL = f"\n{c_bg}{Tema.TXT_WHITE}{Tema.BOLD}{t_pl}{Tema.OFF}"
+                        BADGE_PL = f"{c_bg}{Tema.TXT_WHITE}{Tema.BOLD}{t_pl} {Tema.OFF}"
                         await safe_print_async(BADGE_PL)
                         setattr(self.settings, pl_badge_key, True)
                     
@@ -653,7 +671,8 @@ class Download:
                 elif self.is_single_batch:
                     if not getattr(self.settings, '_badge_batch_printed', False):
                         t_lote = f"  {l_icon}"
-                        BADGE_B = f"\n{c_bg}{Tema.TXT_WHITE}{Tema.BOLD}{t_lote}{Tema.OFF}"
+                        BADGE_B = f"{c_bg}{Tema.TXT_WHITE}{Tema.BOLD}{t_lote} {Tema.OFF}"
+                        await safe_print_async(" ")
                         await safe_print_async(BADGE_B)
                         setattr(self.settings, '_badge_batch_printed', True)
 
@@ -664,14 +683,16 @@ class Download:
                 else:
                     t_single = f"  {l_icon}"
                     if len(t_single) > Tema.PAD: t_single = t_single[:Tema.PAD-3] + "..."
-                    BADGE_S = f"\n{c_bg}{Tema.TXT_WHITE}{Tema.BOLD}{t_single}{Tema.OFF}"
+                    BADGE_S = f"\n{c_bg}{Tema.TXT_WHITE}{Tema.BOLD}{t_single} {Tema.OFF}"
                     await safe_print_async(BADGE_S)
                     prefix_str = "[01/01]"
 
                 root_text = f" ▶ {prefix_str} 🎵 {artist} - {track_title}"
                 if len(root_text) > Tema.PAD: root_text = root_text[:Tema.PAD-3] + "..."
-                root_line = f"\n{c_bg_sec}{Tema.TXT_WHITE}{Tema.BOLD}{root_text}{Tema.OFF}"
                 
+                root_line = f"{c_bg_sec}{Tema.TXT_WHITE}{Tema.BOLD}{root_text} {Tema.OFF}"
+                
+                await safe_print_async(" ")
                 await safe_print_async(root_line)
             
                 sigla_info  = f"{c_txt}{Tema.BOLD}[INFO ]{Tema.OFF}"
@@ -756,7 +777,25 @@ class Download:
                     shutil.rmtree(cover_dir_to_pass, ignore_errors=True)
             
                 if download_success and not LoopGlobals.get('abort_event').is_set():
-                    handle_download_id(self.download_db, self.item_id, True, "track", self.quality, file_format, quality_met, bit_depth, sampling_rate, str(dirn), track_meta.get("album", {}).get("url", ""), track_meta.get("release_date_original", ""), track_attr.get("artist", "Unknown"), track_attr.get("album", "Unknown"))
+                    lck_db = LoopGlobals.get('db_write_lock')
+                    async with lck_db:
+                        await asyncio.to_thread(
+                            handle_download_id,
+                            self.download_db,
+                            self.item_id,
+                            True,
+                            "track",
+                            self.quality,
+                            file_format,
+                            quality_met,
+                            bit_depth,
+                            sampling_rate,
+                            str(dirn),
+                            track_meta.get("album", {}).get("url", ""),
+                            track_meta.get("release_date_original", ""),
+                            track_attr.get("artist", "Unknown"),
+                            track_attr.get("album", "Unknown")
+                        )
                 
                     if not getattr(self, 'is_playlist', False):
                         try:
@@ -772,7 +811,7 @@ class Download:
                             pass
                         
                 if not getattr(self, 'is_playlist', False):
-                    await safe_print_async(f"\n{Tema.SUCESSO}[✔] Faixa Concluída: {Tema.TITULO}{track_title}{Tema.OFF}\n")
+                    await safe_print_async(f"\n{Tema.SUCESSO}[✔] Faixa Concluída: {Tema.TITULO}{track_title}{Tema.OFF}")
 
             if getattr(self, 'fetch_lyrics', False) and hasattr(self, 'lyrics_engine'):
                 await self.lyrics_engine.close()
@@ -817,11 +856,13 @@ class Download:
 
         if use_siglas:
             t_tag_arq    = f"{t_tag}{c_txt}{Tema.BOLD}[ÁUDIO]{Tema.OFF} {c_txt}├──{Tema.OFF}"
+            t_tag_aviso  = f"{t_tag}{c_txt}{Tema.BOLD}[AVISO]{Tema.OFF} {c_txt}├──{Tema.OFF}"
             t_tag_letra  = f"{t_tag}{c_txt}{Tema.BOLD}[LETRA]{Tema.OFF} {c_txt}├──{Tema.OFF}"
             t_tag_status = f"{t_tag}{c_txt}{Tema.BOLD}[FINAL]{Tema.OFF} {c_txt}└──{Tema.OFF}"
             t_tag_bar    = f"{t_tag}{c_txt}{Tema.BOLD}       {Tema.OFF} {c_txt}│  {Tema.OFF}"
         else:
             t_tag_arq    = f"{t_tag}{c_txt}├──{Tema.OFF}"
+            t_tag_aviso  = f"{t_tag}{c_txt}├──{Tema.OFF}"
             t_tag_letra  = f"{t_tag}{c_txt}├──{Tema.OFF}"
             t_tag_status = f"{t_tag}{c_txt}└──{Tema.OFF}"
             t_tag_bar    = f"{t_tag}{c_txt}│  {Tema.OFF}"
@@ -850,10 +891,11 @@ class Download:
         filename = str(Path(root_dir) / f".{tmp_count:02}.tmp")
 
         FALLBACK_TIERS = [27, 7, 6, 5]
-        try: start_idx = FALLBACK_TIERS.index(int(self.quality))
+        requested_fmt = int(self.quality)
+        try: start_idx = FALLBACK_TIERS.index(requested_fmt)
         except ValueError: start_idx = 0
             
-        success, final_fmt = False, int(self.quality)
+        success, final_fmt = False, requested_fmt
         actual_bd, actual_sr = None, None
 
         can_reuse_first_fetch = self.delay == 0
@@ -899,10 +941,42 @@ class Download:
             await safe_print_async(f"{t_tag_status} ❌ {Tema.ERRO}Descartada (Sem formato){Tema.OFF}")
             return False
 
-        # Imprime a linha [ÁUDIO] UMA ÚNICA VEZ, já com a qualidade final que realmente foi baixada com sucesso (evita linhas duplicadas quando o downgrade automático precisa tentar mais de uma vez).
+        # Imprime a linha [ÁUDIO] UMA ÚNICA VEZ, já com a qualidade final que
+        # realmente foi baixada com sucesso (evita linhas duplicadas quando
+        # o downgrade automático precisa tentar mais de uma vez).
         q_str = f"[{actual_bd}b/{actual_sr}kHz]" if actual_bd and actual_sr else ""
         if int(final_fmt) == 5: q_str = "[MP3 320kbps]"
         await safe_print_async(f"{t_tag_arq} 🎧 {Tema.BOLD}{desc_name}{Tema.OFF} {Tema.GREEN}{q_str}{Tema.OFF}")
+        
+        # 1. Estima o teto nativo da música a partir dos metadados
+        try:
+            t_depth_int = int(track_meta.get("maximum_bit_depth") or 16)
+            t_rate_float = float(track_meta.get("maximum_sampling_rate") or 44.1)
+        except ValueError:
+            t_depth_int, t_rate_float = 16, 44.1
+
+        if t_depth_int >= 24:
+            t_max_fmt = 27 if t_rate_float > 96.0 else 7
+        elif t_depth_int == 16:
+            t_max_fmt = 6
+        else:
+            t_max_fmt = 5
+
+        # 2. Só é downgrade SE a qualidade obtida for menor que a pedida E menor que a máxima possivel da faixa
+        is_downgrade = False
+        if int(final_fmt) < requested_fmt and int(final_fmt) < t_max_fmt:
+            is_downgrade = True
+        elif tier_idx > 0 and int(final_fmt) < requested_fmt:
+            is_downgrade = True
+
+        # Se a qualidade final ficou abaixo da pedida, explica o motivo na árvore em vez de só mostrar o número menor sem contexto.
+        if is_downgrade:
+            pedido_label = QUALITY_LABELS.get(requested_fmt, str(requested_fmt))
+            obtido_label = QUALITY_LABELS.get(int(final_fmt), str(final_fmt))
+            await safe_print_async(
+                f"{t_tag_aviso} ⚠️ {Tema.AVISO}Downgrade automático: {pedido_label} indisponível para esta faixa "
+                f"→ baixado em {obtido_label}{Tema.OFF}"
+            )
 
         track_meta["actual_bit_depth"] = actual_bd
         track_meta["actual_sampling_rate"] = actual_sr
@@ -916,7 +990,7 @@ class Download:
         
         lck_cov = LoopGlobals.get('cover_resize_lock')
         async with lck_cov:
-            if cover_path_to_check.exists() and os.path.getsize(cover_path_to_check) >= 16000000:
+            if cover_path_to_check.exists() and os.path.getsize(cover_path_to_check) >= 16500000:
 
                 def _process_heavy_image():
                     import math
@@ -1523,11 +1597,15 @@ async def tqdm_download_segments(session, track_url: dict, fname: str, log_prefi
                     sem = asyncio.Semaphore(8)
                     async def bounded_fetch(i):
                         async with sem: return await fetch_seg(session, i, bar)
-
-                    for data in await asyncio.gather(*(bounded_fetch(i) for i in range(2, n_seg + 1))):
-                        if not LoopGlobals.get('abort_event').is_set():
+                    tasks = [asyncio.create_task(bounded_fetch(i)) for i in range(2, n_seg + 1)]
+                    
+                    for task in tasks:
+                        data = await task
+                        if not LoopGlobals.get('abort_event').is_set() and data:
                             decrypted_data = await asyncio.to_thread(_decrypt_qobuz_segment,data, key, seg_uuid)
                             await f.write(decrypted_data)
+                            del data # limpa o pedaço baixado
+                            del decrypted_data # Limpa o pedaço desencriptado
 
     finally:
         if LoopGlobals.get('abort_event').is_set() and Path(tmp_fname).exists():
