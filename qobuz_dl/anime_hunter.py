@@ -7,16 +7,7 @@ import configparser
 from pathlib import Path
 
 from qobuz_dl.core import QobuzDL
-
-class Tema:
-    CYAN    = "\033[36m"
-    GREEN   = "\033[32m"
-    YELLOW  = "\033[33m"
-    RED     = "\033[31m"
-    PURPLE  = "\033[35m"
-    BOLD    = "\033[1m"
-    OFF     = "\033[0m"
-    SYS     = f"{CYAN}[ANIME HUNTER]{OFF} ❯ "
+from qobuz_dl.color import Tema
 
 async def fetch_anime_data(query: str):
     print(f"\n{Tema.SYS}Buscando dados no MyAnimeList para: {Tema.YELLOW}{query}{Tema.OFF}...")

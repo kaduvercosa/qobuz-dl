@@ -13,13 +13,12 @@ from mutagen.flac import FLAC
 from mutagen.id3 import ID3
 from mutagen import File
 
-from qobuz_dl.color import GREEN, RED, YELLOW, CYAN, OFF
+from qobuz_dl.color import Tema
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 EXTENSIONS = {".mp3", ".flac"}
-
 
 # ─── FUNÇÕES DE VALIDAÇÃO DE CAPA (FILTRO DE SANIDADE) ──────────────────────────
 
@@ -141,10 +140,10 @@ def make_m3u(pl_directory: Union[str, Path], remote_items: Optional[List[Dict[st
         
         missing_count = 0
         table_header = (
-            f"\n{RED}{'━'*80}\n"
-            f"{YELLOW}{'MISSING LOCAL TRACKS':^80}\n"
-            f"{RED}{'━'*80}{OFF}\n"
-            f"{CYAN}{'TITLE':<35} │ {'ARTIST':<25} │ {'ID':<12}{OFF}\n"
+            f"\n{Tema.RED}{'━'*80}\n"
+            f"{Tema.YELLOW}{'MISSING LOCAL TRACKS':^80}\n"
+            f"{Tema.RED}{'━'*80}{Tema.OFF}\n"
+            f"{Tema.CYAN}{'TITLE':<35} │ {'ARTIST':<25} │ {'ID':<12}{Tema.OFF}\n"
             f"{'─'*80}"
         )
         
@@ -170,11 +169,11 @@ def make_m3u(pl_directory: Union[str, Path], remote_items: Optional[List[Dict[st
                 if missing_count == 0:
                     logger.warning(table_header)
                 row = f"{track_title[:35]:<35} │ {final_artist[:25]:<25} │ {tid:<12}"
-                logger.warning(f"{YELLOW}{row}{OFF}")
+                logger.warning(f"{Tema.YELLOW}{row}{Tema.OFF}")
                 missing_count += 1
                 
         if missing_count > 0:
-            logger.warning(f"{RED}{'━'*80}{OFF}\n")
+            logger.warning(f"{Tema.RED}{'━'*80}{Tema.OFF}\n")
 
     # 3. Fallback: Ordenação Natural
     if not remote_items or len(ordered_files) == 0:
@@ -204,7 +203,7 @@ def smart_discography_filter(contents: List[Dict[str, Any]], save_space: bool = 
     """
     TYPE_REGEXES = {
         "remaster": r"(?i)(re)?master(ed)?",
-        "extra": r"(?i)(anniversary|deluxe|live|collector|demo|expanded)",
+        "extra": r"(?i)(anniversary|deluxe|live|collector|demo|expanded|extended)",
     }
 
     def is_type(album_t: str, album: Dict[str, Any]) -> bool:
@@ -387,9 +386,6 @@ def extrair_titulo_completo(texto: str) -> str:
     return re.sub(r'\s+', ' ', texto).strip()
 
 
-# REMOVA a função `identificar_versoes` inteira -- não é mais usada.
-
-
 async def get_apple_hq_cover(upc: Optional[str] = None, isrc: Optional[str] = None, artist: Optional[str] = None, album: Optional[str] = None, track_title: Optional[str] = None) -> Optional[str]:
     import urllib.parse
     import difflib
@@ -432,10 +428,7 @@ async def get_apple_hq_cover(upc: Optional[str] = None, isrc: Optional[str] = No
                 is_lixo = any(lixo in a_track.lower() and lixo not in track_title.lower() for lixo in palavras_lixo)
             if is_lixo: continue
 
-            # Filtro 1.5: TRAVA DE VERSÃO COMPLETA (genérica, sem whitelist)
-            # Compara o título inteiro (com parênteses) -- qualquer edição
-            # diferente da Qobuz (Deluxe, Live, Tour Edition, seja o que for)
-            # derruba o score automaticamente, mesmo sem estar numa lista.
+            # Filtro 1.5: TRAVA DE VERSÃO COMPLETA (genérica, sem whitelist) , Compara o título inteiro (com parênteses) -- qualquer edição diferente da Qobuz (Deluxe, Live, Tour Edition, seja o que for) derruba o score automaticamente, mesmo sem estar numa lista.
             a_album_completo = extrair_titulo_completo(a_album)
             score_versao_album = difflib.SequenceMatcher(None, q_album_completo, a_album_completo).ratio()
             if score_versao_album < LIMIAR_VERSAO_ALBUM:

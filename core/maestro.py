@@ -3,17 +3,7 @@ from typing import Dict, List
 from colorama import init
 
 from .provider_base import MusicProvider
-
-# Trazendo o Tema de volta para garantir alertas padronizados
-class Tema:
-    CYAN    = "\033[36m"
-    GREEN   = "\033[32m"
-    YELLOW  = "\033[33m"
-    RED     = "\033[31m"
-    BLUE    = "\033[34m"   
-    BOLD    = "\033[1m"
-    OFF     = "\033[0m"
-    SYS     = f"{BLUE}[MAESTRO]{OFF} ❯ "
+from qobuz_dl.color import Tema
 
 class MaestroEngine:
     def __init__(self):

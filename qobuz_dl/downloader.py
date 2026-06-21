@@ -33,56 +33,7 @@ from qobuz_dl.utils import get_album_artist, clean_filename, get_apple_hq_cover
 from qobuz_dl.db import handle_download_id
 from qobuz_dl.constants import DEFAULT_FOLDER, DEFAULT_TRACK, DEFAULT_MULTIPLE_DISC_TRACK
 from qobuz_dl.lyrics_engine import LyricsEngine
-
-class Tema:
-    """
-    =========================================
-    🎨 PAINEL DE CONTROLE DE CORES E BADGES
-    =========================================
-    """
-    OFF       = "\033[0m"   # Reseta cor/negrito - usado depois de quase tudo
-    BOLD      = "\033[1m"   # Negrito - siglas [ÁUDIO]/[LETRA]/etc, nomes de faixa/álbum, badges
-    TXT_WHITE = "\033[97m"  # Texto branco dentro dos badges coloridos e nas linhas "▶ [01/12] ..."
-    
-    # LARGURA PADRÃO PARA FORMAR RETÂNGULOS RETOS 
-    PAD = 70
-
-    # --- ÁLBUM ---
-    BG_ALBUM      = "\033[48;2;13;30;57m"      # Fundo do badge "💿 ALBUM" / "💽 EP" (cabeçalho do álbum)
-    BG_ALBUM_SEC  = "\033[48;2;20;42;105m"      # Fundo da linha "▶ [01/12] 🎵 Artista - Faixa" de cada faixa do álbum
-    TXT_ALBUM     = "\033[38;2;121;150;179m"   # Cor de [INFO]/[CAPA]/[ÁUDIO]/[AVISO]/[LETRA]/[FINAL] e da árvore (├──/└──/│) em modo álbum
-
-    # --- PLAYLIST ---
-    BG_PLAYLIST   = "\033[48;2;70;100;130m"    # Fundo do badge "📋 PLAYLIST"
-    BG_PLAYLIST_SEC = "\033[48;2;79;109;160m"  # Fundo da linha de cada faixa dentro de uma playlist
-    TXT_PLAYLIST  = "\033[38;2;153;183;213m"   # Cor das siglas/árvore em modo playlist
-
-    # --- LOTE DE SINGLES ---
-    BG_LOTE       = "\033[48;2;10;45;143m"    # Fundo do badge "🎵 LOTE DE SINGLES"
-    BG_LOTE_SEC   = "\033[48;2;22;64;205m"    # Fundo da linha de cada faixa dentro de um lote de singles
-    TXT_LOTE      = "\033[38;2;60;120;255m"   # Cor das siglas/árvore em modo lote de singles
-
-    # --- SINGLE ---
-    BG_SINGLE     = "\033[48;2;10;50;60m"     # Fundo do badge "🎵 SINGLE" (download de uma faixa avulsa)
-    BG_SINGLE_SEC = "\033[48;2;21;65;120m"     # Fundo da linha "▶ [01/01] 🎵 ..." de um single
-    TXT_SINGLE    = "\033[38;2;101;174;210m"  # Cor das siglas/árvore em modo single
-
-    # --- CORES GENÉRICAS ---
-    CYAN      = "\033[36m"  # Usado em prints pontuais (ex: redimensionamento de capa grande)
-    GREEN     = "\033[38;5;150m"  # Cor da string de qualidade na linha [ÁUDIO], ex: "[24b/96kHz]"
-    LIGHTGREEN = "\033[38;5;150m" 
-    YELLOW    = "\033[33m"  # Base de AVISO (downgrade, "Pulando", delay, etc)
-    RED       = "\033[31m"  # Base de ERRO (descartada, erro de API, CTRL+C)
-    BLUE      = "\033[34m"  # Pontual (algumas mensagens informativas)
-    PURPLE    = "\033[35m"  # Tag "[Apple]" ao lado de cover.jpg, quando a capa veio da Apple Music
-    TXT_BLACK = "\033[30m"  # Reservado (não usado atualmente nas mensagens correntes)
-
-    TAG       = BLUE                  # Alias genérico de tag azul (compatibilidade)
-    TITULO    = BOLD                  # Nome do álbum/faixa em destaque nas mensagens de "Concluído"
-    SUCESSO   = LIGHTGREEN            # "[✔] Finalizado" / "[✔] Faixa Concluída" / "[✔] Lançamento Concluído"
-    AVISO     = YELLOW                # "[AVISO]" de downgrade, "⏳ Aguardando delay", "Pulando (Já existe)"
-    ERRO      = RED                   # "❌ Descartada", "Erro na API", "CTRL+C Interceptado"
-    DETALHES  = ""                    # Reservado (sem cor própria atualmente)
+from qobuz_dl.color import Tema
 
 class LoopGlobals:
     """Isola estados assíncronos por loop para evitar o erro 'got Future attached to a different loop' em downloads contínuos."""
@@ -685,7 +636,8 @@ class Download:
                 else:
                     t_single = f"  {l_icon}"
                     if len(t_single) > Tema.PAD: t_single = t_single[:Tema.PAD-3] + "..."
-                    BADGE_S = f"\n{c_bg}{Tema.TXT_WHITE}{Tema.BOLD}{t_single} {Tema.OFF}"
+                    BADGE_S = f"{c_bg}{Tema.TXT_WHITE}{Tema.BOLD}{t_single} {Tema.OFF}"
+                    await safe_print_async(" ")
                     await safe_print_async(BADGE_S)
                     prefix_str = "[01/01]"
 
@@ -697,10 +649,11 @@ class Download:
                 await safe_print_async(" ")
                 await safe_print_async(root_line)
             
-                sigla_info  = f"{c_txt}{Tema.BOLD}[INFO ]{Tema.OFF}"
-                sigla_capa  = f"{c_txt}{Tema.BOLD}[CAPA ]{Tema.OFF}" 
-            
-                await safe_print_async(f"{sigla_info} {c_txt}├──{Tema.OFF} Qualidade Max: {file_format} ({bit_depth}b/{sampling_rate}kHz)")
+                sigla_info       = f"{c_txt}{Tema.BOLD}[INFO ]{Tema.OFF}"
+                sigla_capa       = f"{c_txt}{Tema.BOLD}[CAPA ]{Tema.OFF}"
+                sigla_qualidade  = f"{c_txt}{Tema.BOLD}[QUAL ]{Tema.OFF}"
+
+                await safe_print_async(f"{sigla_qualidade} {c_txt}├──{Tema.OFF} Qualidade Max: {file_format} ({bit_depth}b/{sampling_rate}kHz)")
 
                 track_attr = self._build_metadata_dict(track_meta, track_title, bit_depth, sampling_rate, file_format, False)
 

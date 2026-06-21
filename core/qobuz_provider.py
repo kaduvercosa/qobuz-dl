@@ -2,7 +2,7 @@ import asyncio
 from typing import Dict, List
 from .provider_base import MusicProvider
 from qobuz_dl.utils import get_url_info
-
+from qobuz_dl.color import Tema
 
 class QobuzProvider(MusicProvider):
     def __init__(self, qobuz_instance):

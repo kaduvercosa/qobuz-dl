@@ -156,7 +156,7 @@ class QobuzDLSettings:
             'multi_value_tags': getattr(arguments, 'multi_value_tags', False) or config.getboolean(section, "multi_value_tags", fallback=False),
             
             # Concorrência e APIs Extras
-            'max_workers': getattr(arguments, 'max_workers', None) or config.get(section, "max_workers", fallback="3"),
+            'max_workers': getattr(arguments, 'max_workers', None) or config.get(section, "max_workers", fallback="1"),
             'delay': getattr(arguments, 'delay', 0) or config.getint(section, "delay", fallback=0),
             'user_auth_token': config.get(section, "user_auth_token", fallback=""),
             'ai_provider': getattr(arguments, 'ai_provider', config.get(section, "ai_provider", fallback="openai")),

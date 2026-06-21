@@ -82,14 +82,7 @@ ID3_LEGEND = {
     "conductor": id3.TPE3,
     "ensemble": id3.TXXX,
     "work": id3.TIT1,
-    # [FIX] bitdepth/samplerate eram gravados no dict de tags
-    # (tags["BITDEPTH"]/tags["SAMPLERATE"] em _get_tags_to_add) mas não
-    # existiam aqui. Resultado: no FLAC funcionava normal (lá não passa por
-    # esse dict de legendas, qualquer chave vira Vorbis Comment direto), mas
-    # em todo arquivo MP3 essas duas tags eram descartadas em silêncio no
-    # loop de tag_mp3() -- nenhum erro, nenhum aviso, só desapareciam.
-    # Mapeadas pra TXXX (campo customizado), igual outras infos técnicas
-    # já existentes aqui (QOBUZTRACKID, barcode, etc).
+    # [FIX] bitdepth/samplerate eram gravados no dict de tags (tags["BITDEPTH"]/tags["SAMPLERATE"] em _get_tags_to_add) mas não existiam aqui. Resultado: no FLAC funcionava normal (lá não passa por esse dict de legendas, qualquer chave vira Vorbis Comment direto), mas em todo arquivo MP3 essas duas tags eram descartadas em silêncio no loop de tag_mp3() -- nenhum erro, nenhum aviso, só desapareciam. Mapeadas pra TXXX (campo customizado), igual outras infos técnicas já existentes aqui (QOBUZTRACKID, barcode, etc).
     "bitdepth": id3.TXXX,
     "samplerate": id3.TXXX,
 }
@@ -116,19 +109,32 @@ def _find_cover_image(root_dir: Union[str, Path]) -> Optional[Path]:
 # O PULO DO GATO: Memoriza a resolução da capa para não ler o disco a cada faixa
 @lru_cache(maxsize=10)
 def _get_cover_info(cover_path: Path) -> str:
+    provider_tag = ""
+    quality_file = cover_path.parent / ".cover_quality"
+    if quality_file.is_file():
+        try:
+            saved_q = quality_file.read_text(encoding="utf-8").strip()
+            if saved_q == "Apple":
+                provider_tag = " [Apple Music]"
+            elif saved_q == "org":
+                provider_tag = " [Qobuz]"
+            elif saved_q:
+                provider_tag = f" [Qobuz_{saved_q}]"
+        except Exception:
+            pass
     try:
         size_mb = cover_path.stat().st_size / (1024 * 1024)
         try:
             from PIL import Image
             with Image.open(cover_path) as img:
                 width, height = img.size
-                return f"Cover: {width}x{height}px ({size_mb:.2f} MB)"
+                return f"Cover: {width}x{height}px ({size_mb:.2f} MB){provider_tag}"
         except ImportError:
-            return f"Cover: Original ({size_mb:.2f} MB)"
+            return f"Cover: Original ({size_mb:.2f} MB){provider_tag}"
         except Exception:
-            return f"Cover: Original ({size_mb:.2f} MB)"
+            return f"Cover: Original ({size_mb:.2f} MB){provider_tag}"
     except Exception:
-        return "Cover: Original"
+        return f"Cover: Original{provider_tag}"
 
 def _get_title_with_version(title: str = "", version: Optional[str] = "") -> str:
     item_title = title
@@ -195,6 +201,11 @@ def tag_flac(filename: str, root_dir: Union[str, Path], final_name: str, d: Qobu
             cover_info = _get_cover_info(cover_path)
             tags["COMMENT"] = f"{tech_comment}\n{cover_info}" if tech_comment else cover_info
 
+    copy_text = _format_copyright(qobuz_album.get("copyright", ""))
+    if copy_text and copy_text.lower() != "n/a":
+        curr_comment = tags.get("COMMENT", "")
+        tags["COMMENT"] = f"{curr_comment}\nCopyright: {copy_text}" if curr_comment else f"Copyright: {copy_text}"
+
     for k, v in tags.items():
         if v:
             if isinstance(v, list):
@@ -215,12 +226,7 @@ def tag_flac(filename: str, root_dir: Union[str, Path], final_name: str, d: Qobu
     try:
         os.rename(filename, final_name)
     except OSError as e:
-        # [FIX] Antes essa falha desaparecia 100% em silêncio (except OSError:
-        # pass): o download "parecia" concluído com sucesso, mas o arquivo
-        # final podia nem existir no destino (disco cheio, permissão, path
-        # longo demais, etc). Mantemos o comportamento de não derrubar o
-        # loop do downloader, mas agora pelo menos fica registrado no log
-        # pra dar pra investigar depois.
+        # [FIX] Antes essa falha desaparecia 100% em silêncio (except OSError: pass): o download "parecia" concluído com sucesso, mas o arquivo final podia nem existir no destino (disco cheio, permissão, path longo demais, etc). Mantemos o comportamento de não derrubar o loop do downloader, mas agora pelo menos fica registrado no log pra dar pra investigar depois.
         logger.error(f"Falha ao mover/renomear arquivo final '{filename}' -> '{final_name}': {e}")
 
 def tag_mp3(filename: str, root_dir: Union[str, Path], final_name: str, d: QobuzItem, album: QobuzAlbum, istrack: bool = True, em_image: bool = False, settings: Optional[QobuzDLSettings] = None) -> None:
@@ -244,6 +250,11 @@ def tag_mp3(filename: str, root_dir: Union[str, Path], final_name: str, d: Qobuz
             _embed_id3_img(cover_path, audio)
             cover_info = _get_cover_info(cover_path)
             tags["COMMENT"] = f"{tech_comment}\n{cover_info}" if tech_comment else cover_info
+
+    copy_text = _format_copyright(qobuz_album.get("copyright", ""))
+    if copy_text and copy_text.lower() != "n/a":
+        curr_comment = tags.get("COMMENT", "")
+        tags["COMMENT"] = f"{curr_comment}\nCopyright: {copy_text}" if curr_comment else f"Copyright: {copy_text}"
 
     for k, v in tags.items():
         if v:

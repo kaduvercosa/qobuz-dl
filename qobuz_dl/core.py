@@ -8,6 +8,7 @@ import re
 from pathlib import Path
 from typing import Optional, List, Tuple
 import unicodedata
+from qobuz_dl.color import Tema, GREEN, YELLOW, RED, OFF, CYAN, RESET
 
 # ===========================================================================
 # 🚀 OTIMIZACAO GLOBAL DE REDE (INJECAO)
@@ -46,32 +47,6 @@ from qobuz_dl.utils import (
     create_and_return_dir,
 )
 from qobuz_dl.settings import QobuzDLSettings
-
-# ---------------------------------------------------------------------------
-# 🎨 SISTEMA DE CORES E DESIGN LIMPO (SEM SETAS)
-# ---------------------------------------------------------------------------
-class Tema:
-    CYAN    = "\033[36m"
-    GREEN   = "\033[32m"
-    YELLOW  = "\033[33m"
-    RED     = "\033[31m"
-    BLUE    = "\033[34m"   
-    PURPLE  = "\033[35m"   
-    BOLD    = "\033[1m"
-    OFF     = "\033[0m"
-
-    TITULO    = BOLD           
-    SUCESSO   = GREEN          
-    AVISO     = YELLOW         
-    ERRO      = RED            
-
-    SYS    = f"{BLUE}[SISTEMA]{OFF}  ❯ "
-    URL    = f"{BLUE}[URL]{OFF}      ❯ "
-    BUSCA  = f"{BLUE}[BUSCA]{OFF}    ❯ "
-    TERMO  = f"{BLUE}[TERMO]{OFF}    ❯ "
-    TEXTO  = f"{BLUE}[TEXTO]{OFF}    ❯ "
-    FILA   = f"{BLUE}[FILA]{OFF}     ❯ "
-    ALERTA = f"{BLUE}[AVISO]{OFF}    ❯ "
 
 logger = logging.getLogger(__name__)
 
