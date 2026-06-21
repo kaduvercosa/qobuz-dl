@@ -40,48 +40,49 @@ class Tema:
     🎨 PAINEL DE CONTROLE DE CORES E BADGES
     =========================================
     """
-    OFF     = "\033[0m"
-    BOLD    = "\033[1m"
-    TXT_WHITE = "\033[97m"
-
-    # LARGURA PADRÃO PARA FORMAR RETÂNGULOS RETOS
+    OFF       = "\033[0m"   # Reseta cor/negrito - usado depois de quase tudo
+    BOLD      = "\033[1m"   # Negrito - siglas [ÁUDIO]/[LETRA]/etc, nomes de faixa/álbum, badges
+    TXT_WHITE = "\033[97m"  # Texto branco dentro dos badges coloridos e nas linhas "▶ [01/12] ..."
+    
+    # LARGURA PADRÃO PARA FORMAR RETÂNGULOS RETOS 
     PAD = 70
 
-    # --- ÁLBUM (Verde) ---
-    BG_ALBUM      = "\033[48;5;22m"
-    BG_ALBUM_SEC  = "\033[48;5;71m"
-    TXT_ALBUM     = "\033[38;5;71m"
+    # --- ÁLBUM ---
+    BG_ALBUM      = "\033[48;2;13;30;57m"      # Fundo do badge "💿 ALBUM" / "💽 EP" (cabeçalho do álbum)
+    BG_ALBUM_SEC  = "\033[48;2;20;42;105m"      # Fundo da linha "▶ [01/12] 🎵 Artista - Faixa" de cada faixa do álbum
+    TXT_ALBUM     = "\033[38;2;121;150;179m"   # Cor de [INFO]/[CAPA]/[ÁUDIO]/[AVISO]/[LETRA]/[FINAL] e da árvore (├──/└──/│) em modo álbum
 
-    # --- PLAYLIST (Roxo) ---
-    BG_PLAYLIST   = "\033[48;5;54m"
-    BG_PLAYLIST_SEC = "\033[48;5;97m"
-    TXT_PLAYLIST  = "\033[38;5;97m"
+    # --- PLAYLIST ---
+    BG_PLAYLIST   = "\033[48;2;70;100;130m"    # Fundo do badge "📋 PLAYLIST"
+    BG_PLAYLIST_SEC = "\033[48;2;79;109;160m"  # Fundo da linha de cada faixa dentro de uma playlist
+    TXT_PLAYLIST  = "\033[38;2;153;183;213m"   # Cor das siglas/árvore em modo playlist
 
-    # --- LOTE (Azul) ---
-    BG_LOTE       = "\033[48;5;24m"
-    BG_LOTE_SEC   = "\033[48;5;68m"
-    TXT_LOTE      = "\033[38;5;68m"
+    # --- LOTE DE SINGLES ---
+    BG_LOTE       = "\033[48;2;10;45;143m"    # Fundo do badge "🎵 LOTE DE SINGLES"
+    BG_LOTE_SEC   = "\033[48;2;22;64;205m"    # Fundo da linha de cada faixa dentro de um lote de singles
+    TXT_LOTE      = "\033[38;2;60;120;255m"   # Cor das siglas/árvore em modo lote de singles
 
-    # --- SINGLE (Teal/Ciano) ---
-    BG_SINGLE     = "\033[48;5;23m"
-    BG_SINGLE_SEC = "\033[48;5;73m"
-    TXT_SINGLE    = "\033[38;5;73m"
+    # --- SINGLE ---
+    BG_SINGLE     = "\033[48;2;10;50;60m"     # Fundo do badge "🎵 SINGLE" (download de uma faixa avulsa)
+    BG_SINGLE_SEC = "\033[48;2;21;65;120m"     # Fundo da linha "▶ [01/01] 🎵 ..." de um single
+    TXT_SINGLE    = "\033[38;2;101;174;210m"  # Cor das siglas/árvore em modo single
 
     # --- CORES GENÉRICAS ---
-    CYAN    = "\033[36m"
-    GREEN   = "\033[32m"
-    YELLOW  = "\033[33m"
-    RED     = "\033[31m"
-    BLUE    = "\033[34m"
-    PURPLE  = "\033[35m"
-    TXT_BLACK = "\033[30m"
+    CYAN      = "\033[36m"  # Usado em prints pontuais (ex: redimensionamento de capa grande)
+    GREEN     = "\033[38;5;150m"  # Cor da string de qualidade na linha [ÁUDIO], ex: "[24b/96kHz]"
+    LIGHTGREEN = "\033[38;5;150m" 
+    YELLOW    = "\033[33m"  # Base de AVISO (downgrade, "Pulando", delay, etc)
+    RED       = "\033[31m"  # Base de ERRO (descartada, erro de API, CTRL+C)
+    BLUE      = "\033[34m"  # Pontual (algumas mensagens informativas)
+    PURPLE    = "\033[35m"  # Tag "[Apple]" ao lado de cover.jpg, quando a capa veio da Apple Music
+    TXT_BLACK = "\033[30m"  # Reservado (não usado atualmente nas mensagens correntes)
 
-    TAG       = BLUE           
-    TITULO    = BOLD           
-    SUCESSO   = "\033[38;5;150m"
-    AVISO     = YELLOW         
-    ERRO      = RED            
-    DETALHES  = ""             
+    TAG       = BLUE                  # Alias genérico de tag azul (compatibilidade)
+    TITULO    = BOLD                  # Nome do álbum/faixa em destaque nas mensagens de "Concluído"
+    SUCESSO   = LIGHTGREEN            # "[✔] Finalizado" / "[✔] Faixa Concluída" / "[✔] Lançamento Concluído"
+    AVISO     = YELLOW                # "[AVISO]" de downgrade, "⏳ Aguardando delay", "Pulando (Já existe)"
+    ERRO      = RED                   # "❌ Descartada", "Erro na API", "CTRL+C Interceptado"
+    DETALHES  = ""                    # Reservado (sem cor própria atualmente)
 
 class LoopGlobals:
     """Isola estados assíncronos por loop para evitar o erro 'got Future attached to a different loop' em downloads contínuos."""
@@ -343,7 +344,7 @@ class Download:
 
         t_album = f"  {icon} {display_type} | {album_title}"
         if len(t_album) > Tema.PAD: t_album = t_album[:Tema.PAD-3] + "..."
-        HEADER_ALBUM = f"\n{Tema.BG_ALBUM}{Tema.TXT_WHITE}{Tema.BOLD}{t_album} {Tema.OFF}"
+        HEADER_ALBUM = f"{Tema.BG_ALBUM}{Tema.TXT_WHITE}{Tema.BOLD}{t_album} {Tema.OFF}"
 
         await safe_print_async(" ")
         await safe_print_async(f"{HEADER_ALBUM}")
@@ -380,7 +381,7 @@ class Download:
             try: delay_time = int(sys.argv[sys.argv.index('--delay') + 1])
             except: pass
             
-        active_workers = int(getattr(self.settings, 'max_workers', 3))
+        active_workers = int(getattr(self.settings, 'max_workers', 1))
         is_parallel = active_workers > 1 and delay_time == 0
         
         if delay_time > 0:
@@ -661,6 +662,7 @@ class Download:
                         t_pl = f"  {l_icon} | {pl_name.upper()}"
                         if len(t_pl) > Tema.PAD: t_pl = t_pl[:Tema.PAD-3] + "..."
                         BADGE_PL = f"{c_bg}{Tema.TXT_WHITE}{Tema.BOLD}{t_pl} {Tema.OFF}"
+                        await safe_print_async(" ")
                         await safe_print_async(BADGE_PL)
                         setattr(self.settings, pl_badge_key, True)
                     
@@ -1520,7 +1522,7 @@ async def tqdm_download(session, url: str, fname: str, log_prefix: str = "", is_
 
                 async with aiofiles.open(fname, 'ab' if d_size > 0 else 'wb') as file:
                     bar_desc = f"{log_prefix}⬇️ {track_name}" if track_name else f"{log_prefix}⬇️ "
-                    with tqdm(total=t_size, unit="iB", unit_scale=True, desc=bar_desc, initial=d_size, disable=is_parallel, leave=False, bar_format="{desc}: {percentage:3.0f}% |{bar:20}| {n_fmt}/{total_fmt}") as bar:
+                    with tqdm(total=t_size, unit="B", unit_scale=True, desc=bar_desc, initial=d_size, disable=is_parallel, leave=False, bar_format="{desc}: {percentage:3.0f}% |{bar:20}| {n_fmt}/{total_fmt} [{rate_fmt}]") as bar:
                         async for data in r.content.iter_chunked(262144):
                             if LoopGlobals.get('abort_event').is_set(): break
                             if data:
@@ -1582,7 +1584,7 @@ async def tqdm_download_segments(session, track_url: dict, fname: str, log_prefi
     try:
         async with aiofiles.open(tmp_fname, "wb") as f:
             bar_desc = f"{log_prefix}✂️ {track_name}" if track_name else f"{log_prefix}✂️ "
-            with tqdm(total=n_seg, unit="seg", desc=bar_desc, disable=is_parallel, leave=False, bar_format="{desc}: {percentage:3.0f}% |{bar:20}| {n_fmt}/{total_fmt}") as bar:
+            with tqdm(total=n_seg, unit="seg", desc=bar_desc, disable=is_parallel, leave=False, bar_format="{desc}: {percentage:3.0f}% |{bar:20}| {n_fmt}/{total_fmt} [{rate_fmt}]") as bar:
                 seg_uuid = None
                 for i in range(2):
                     data = await fetch_seg(session, i, bar)

@@ -96,7 +96,7 @@ def _extract_metadata(file_path: Path) -> Dict[str, Any]:
 
 async def _process_single_file(semaphore: asyncio.Semaphore, file_path: Path, engine: Any, 
                                state: ScanState, overwrite: bool = False, current_idx: int = 0, 
-                               total_files: int = 0, max_workers: int = 3) -> None:
+                               total_files: int = 0, max_workers: int = 1) -> None:
     async with semaphore:
         status_result = "skipped"
         msg = ""
@@ -195,7 +195,7 @@ async def _process_single_file(semaphore: asyncio.Semaphore, file_path: Path, en
 
 async def inject_lyrics_retroactively(directory_path: str, genius_token: str = None, 
                                       deepl_api_key: str = None, overwrite: bool = False, 
-                                      target_lang: str = "PT-BR", translate_lyrics: bool = True, max_workers: int = 3) -> None:
+                                      target_lang: str = "PT-BR", translate_lyrics: bool = True, max_workers: int = 1) -> None:
     safe_print(f"\n{CYAN}[*] Starting retroactive lyrics scan in: {directory_path}{OFF}\n")
 
     if overwrite:
@@ -213,7 +213,7 @@ async def inject_lyrics_retroactively(directory_path: str, genius_token: str = N
     state = ScanState(len(all_files))
     safe_print(f"{CYAN}[*] Found {state.processed} compatible audio files. Processing...{OFF}\n")
 
-    max_workers = 3
+    max_workers = 1
     semaphore = asyncio.Semaphore(max_workers)
 
     tasks = [

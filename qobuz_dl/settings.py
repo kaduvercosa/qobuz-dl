@@ -63,7 +63,7 @@ class QobuzDLSettings:
     multiple_disc_track_format: str = DEFAULT_MULTIPLE_DISC_TRACK
 
     # Concorrência e API
-    max_workers: str = "3"
+    max_workers: str = "1"
     delay: int = 0
     user_auth_token: str = ""
 

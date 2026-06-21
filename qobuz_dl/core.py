@@ -244,7 +244,7 @@ class QobuzDL:
     async def initialize_client(self, email: str, pwd: str, app_id: str, secrets: list):
         self.client = qopy.Client(email, pwd, app_id, secrets, self.settings.user_auth_token, force_english=self.force_english)
         await self.client.start()
-        print(f"{Tema.SYS}{Tema.AVISO}Sessao Ativa | Qualidade: {QUALITIES[int(self.quality)]}{Tema.OFF}\n")
+        print(f"{Tema.SYS}{Tema.AVISO}Sessao Ativa | Qualidade: {QUALITIES[int(self.quality)]}{Tema.OFF}")
 
     def get_tokens(self):
         bundle = Bundle()
@@ -399,8 +399,8 @@ class QobuzDL:
     async def download_list_of_urls(self, urls: List[str], txt_file: Optional[str] = None):
         if not urls or not isinstance(urls, list): return
         
-        try: max_batch_workers = int(getattr(self.settings, "max_workers", 3))
-        except (ValueError, TypeError): max_batch_workers = 3
+        try: max_batch_workers = int(getattr(self.settings, "max_workers", 1))
+        except (ValueError, TypeError): max_batch_workers = 1
         
         is_batch = len(urls) > 1
         total_urls = len(urls)
@@ -736,7 +736,7 @@ class QobuzDL:
                 return final_url_list
 
         except KeyboardInterrupt:
-            print(f"{Tema.SYS}{Tema.ERRO}Operacao abortada pelo utilizador.{Tema.OFF}")
+            print(f"\n{Tema.SYS}{Tema.ERRO}Operacao abortada pelo utilizador.{Tema.OFF}")
             return
 
     async def download_lastfm_pl(self, playlist_url: str):
