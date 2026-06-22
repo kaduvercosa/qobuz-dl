@@ -25,6 +25,10 @@ class Tema:
     RED       = "\033[38;2;192;0;33m"
     BLUE      = "\033[38;2;100;181;246m"
     PURPLE    = "\033[35m"
+    
+    # Novos códigos de fundo
+    BG_BLUE   = "\033[48;2;104;202;249m\033[1m"
+    BG_WHITE  = "\033[47m"
 
     # --- 2. PALETAS TRUE COLOR (CRACHÁS E DEGRADÊS) --- 
     PAD = 70
@@ -70,7 +74,6 @@ class Tema:
     MAESTRO   = f"{TXT_LOTE}{BOLD}[MAESTRO]{OFF} ❯ "
     ANIME     = f"{TXT_SINGLE}{BOLD}[ANIME]{OFF}   ❯ "
     OST       = f"{TXT_PLAYLIST}{BOLD}[OST]{OFF}     ❯ "
-
 
 # -------------------------------------------------------------------
 # COMPATIBILIDADE LEGADA (Para cli.py, account_transfer.py, etc.)

@@ -21,18 +21,12 @@ logging.getLogger("aiohttp.client").setLevel(logging.CRITICAL)
 from qobuz_dl.qopy import Client
 from qobuz_dl.core import QobuzDL
 from qobuz_dl.color import GREEN, YELLOW, CYAN, OFF, RED, BLUE
+from qobuz_dl.core import classificar_tipo_lancamento
+from qobuz_dl.downloader import _safe_get
 
 # ==============================================================================
 # 🧩 HELPERS GERAIS E FORMATAÇÃO
 # ==============================================================================
-def _safe_get(d: dict, *keys, default=None):
-    res = default
-    for key in keys:
-        if not isinstance(d, dict): return default
-        res = d.get(key, default)
-        if res is None: return default
-        d = res
-    return res
 
 def normalizar_texto(texto: str) -> str:
     if not texto: return ""
@@ -61,16 +55,6 @@ def obter_titulo_localizado(anime_data: dict) -> str:
     eng = anime_data.get("title_english")
     if eng: return eng
     return anime_data.get("title", "Unknown")
-
-def classificar_tipo_lancamento(raw_type: str, title: str, t_count: int, duration: int) -> str:
-    r_type = normalizar_texto(raw_type)
-    title_l = normalizar_texto(title)
-    if any(kw in title_l for kw in ("ep", "single", "album")):
-        if "ep" in title_l: return "ep"
-        if "single" in title_l: return "single"
-    if t_count <= 1: return "single"
-    if t_count <= 4 or duration < 1200: return "ep"
-    return "album"
 
 async def setup_client(config: configparser.ConfigParser, section: str) -> Client:
     api = Client(config.get(section, "email"), config.get(section, "password", fallback=""), 

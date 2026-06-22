@@ -31,7 +31,7 @@ from qobuz_dl.exceptions import NonStreamable
 from qobuz_dl.settings import QobuzDLSettings
 from qobuz_dl.utils import get_album_artist, clean_filename, get_apple_hq_cover
 from qobuz_dl.db import handle_download_id
-from qobuz_dl.constants import DEFAULT_FOLDER, DEFAULT_TRACK, DEFAULT_MULTIPLE_DISC_TRACK
+from qobuz_dl.constants import DEFAULT_FOLDER, DEFAULT_TRACK, DEFAULT_MULTIPLE_DISC_TRACK, CONFIG_PATH
 from qobuz_dl.lyrics_engine import LyricsEngine
 from qobuz_dl.color import Tema
 
@@ -538,7 +538,7 @@ class Download:
                 await upload_album_completo(str(final_dirn), t_album, t_faixa, t_album_artist, t_year, tipo=t_tipo)
             except Exception:
                 try:
-                    with open("telegram_queue.txt", "a", encoding="utf-8") as fq:
+                    with open(CONFIG_PATH / "telegram_queue.txt", "a", encoding="utf-8") as fq:
                         fq.write(f"{final_dirn}|{t_album}|{t_faixa}|{t_album_artist}|{t_year}|{t_tipo}\n")
                 except:
                     pass

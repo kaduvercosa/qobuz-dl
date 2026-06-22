@@ -3,7 +3,7 @@ import re  # [!] Necessário para injetar as cores
 from typing import Any, Union
 
 from qobuz_dl import __version__
-from qobuz_dl.color import GREEN, RESET, CYAN, YELLOW, BLUE
+from qobuz_dl.color import Tema, GREEN, RESET, CYAN, YELLOW, BLUE
 
 def fun_args(subparsers: argparse._SubParsersAction, default_limit: Union[int, str]) -> argparse.ArgumentParser:
     interactive = subparsers.add_parser(
@@ -402,16 +402,31 @@ def qobuz_dl_args(default_quality: Union[int, str] = 6, default_limit: Union[int
         prog="qobuz-dl",
         usage=custom_usage,
         description=(
-            f"{GREEN}  \t\t\t\t[VERSÃO {__version__}] \n\n{RESET}"
-            f'''{BLUE}\t       /$$$$$$   /$$$$$$  /$$$$$$$  /$$   /$$ /$$$$$$$$       /$$$$$$$  /$$      
-              / $$__ $$ /$$__  $$| $$__  $$| $$  | $$|_____/$$/      | $$__  $$| $$      
-              | $$  \ $| $$  \ $$| $$  \ $$| $$  | $$   /  $$/       | $$  \ $$| $$      
-              | $$  | $| $$  | $$| $$$$$$$ | $$  | $$  /  $$/        | $$  | $$| $$      
-              | $$  | $| $$  | $$| $$__  $$| $$  | $$ /  $$/    ===  | $$  | $$| $$      
-              | $$/$$ $| $$  | $$| $$  \ $$| $$  | $$|  $$/          | $$  | $$| $$      
-              |  $$$$$$|  $$$$$$/| $$$$$$$/|  $$$$$$/|_$$$$$$$$      | $$$$$$$/| $$$$$$$$
-               \____ $$$ \______/ |_______/  \______/|________/      |_______/ |________/
-                    \_$$                             {RESET}'''),
+            f'\n{Tema.BG_BLUE}{Tema.TXT_WHITE}\t\t\t VERSÃO {__version__} {Tema.OFF}\n' +
+            rf'''{Tema.BOLD}
+        /$$$$$$   /$$$$$$  /$$$$$$$  /$$   /$$ /$$$$$$$$       /$$$$$$$  /$$       
+       | $$__ $$ /$$__  $$| $$__  $$| $$  | $$|_____/$$/      | $$__  $$| $$       
+       | $$  \ $| $$  \ $$| $$  \ $$| $$  | $$   /  $$/       | $$  \ $$| $$       
+       | $$  | $| $$  | $$| $$$$$$$ | $$  | $$  /  $$/        | $$  | $$| $$       
+       | $$  | $| $$  | $$| $$__  $$| $$  | $$ /  $$/    ===  | $$  | $$| $$       
+       | $$/$$ $| $$  | $$| $$  \ $$| $$  | $$|  $$/          | $$  | $$| $$       
+       |  $$$$$$|  $$$$$$/| $$$$$$$/|  $$$$$$/|_$$$$$$$$      | $$$$$$$/| $$$$$$$$ 
+        \_____$$$ \______/|_______/  \_______/|________/      |_______/ |________/ 
+              \_$$                                                                 {Tema.OFF}'''
+        ),
+
+        
+        #description=(
+            #f'{GREEN}\t\t\t\t\t[VERSÃO {__version__}]\n{RESET}' + rf'''
+         #{BLUE}      /$$$$$$   /$$$$$$  /$$$$$$$  /$$   /$$ /$$$$$$$$       /$$$$$$$  /$$      
+              #/ $$__ $$ /$$__  $$| $$__  $$| $$  | $$|_____/$$/      | $$__  $$| $$      
+              #| $$  \ $| $$  \ $$| $$  \ $$| $$  | $$   /  $$/       | $$  \ $$| $$      
+              #| $$  | $| $$  | $$| $$$$$$$ | $$  | $$  /  $$/        | $$  | $$| $$      
+              #| $$  | $| $$  | $$| $$__  $$| $$  | $$ /  $$/    ===  | $$  | $$| $$      
+              #| $$/$$ $| $$  | $$| $$  \ $$| $$  | $$|  $$/          | $$  | $$| $$      
+              #|  $$$$$$|  $$$$$$/| $$$$$$$/|  $$$$$$/|_$$$$$$$$      | $$$$$$$/| $$$$$$$$
+               #\____ $$$ \______/ |_______/  \______/|________/      |_______/ |________/
+                    #\_$$                             ''' + f'{RESET}'),
         formatter_class=QobuzHelpFormatter, # [!] Chamando nosso formatter colorido!
         add_help=False
     )
