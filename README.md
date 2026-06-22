@@ -4,7 +4,7 @@
 > Fork aprimorado com letras automáticas, tradução via DeepL, Radar de novidades, sincronização bidirecional de playlists, ReplayGain nativo, suporte a Roon/DAP e muito mais.
 
 [![Version](https://img.shields.io/pypi/v/qobuz-dl-master?style=plastic&color=fedcba)](https://pypi.org/project/qobuz-dl-master/)
-[![PyPI Downloads](https://static.pepy.tech/personalized-badge/qobuz-dl-master?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=GREEN&left_text=downloads)]
+[![PyPI Downloads](https://static.pepy.tech/personalized-badge/qobuz-dl-master?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=GREEN&left_text=downloads)
 [![Python](https://img.shields.io/badge/python-%3E%3D3.6-green)](https://www.python.org/)
 [![License: GPL](https://img.shields.io/badge/license-GPL-orange)](LICENSE)
 
