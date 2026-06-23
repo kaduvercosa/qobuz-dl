@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Union
 
 from qobuz_dl.bundle import Bundle
-from qobuz_dl.color import GREEN, RED, YELLOW, OFF, CYAN, BLUE
+from qobuz_dl.color import Tema, GREEN, RED, YELLOW, OFF, CYAN, BLUE
 from qobuz_dl.commands import qobuz_dl_args
 from qobuz_dl.core import QobuzDL
 from qobuz_dl.downloader import DEFAULT_FOLDER, DEFAULT_TRACK, abort_event, close_shared_cover_session
@@ -663,7 +663,7 @@ async def amain():
         b = Bundle()
         return str(b.get_app_id()), list(b.get_secrets().values())
 
-    print("\n\r\033[K[*] A verificar chaves de seguranca da API em segundo plano...", end="", flush=True)
+    print(f"\n\r\033[K{Tema.SYS}{GREEN}Verificando Chaves de Segurança...{OFF}", end="", flush=True)
     try:
         fresh_app_id, fresh_secrets = await asyncio.wait_for(
             asyncio.to_thread(fetch_fresh_keys), 
@@ -672,12 +672,12 @@ async def amain():
         if fresh_app_id:
             app_id = fresh_app_id
             secrets = fresh_secrets
-            print("\r\033[K[+] Chaves atualizadas com sucesso!", end="", flush=True)
+            print(f"\r\033[K{Tema.SYS}{GREEN}Chaves atualizadas com sucesso!{OFF}", end="", flush=True)
 
     except asyncio.TimeoutError:
-        print("\r\033[K[*] Aviso: Tempo esgotado na API (Usando chaves offline..)\n", end="", flush=True)
+        print(f"\r\033[K{Tema.SYS}{YELLOW}Aviso: Tempo esgotado na API (Usando chaves offline..){OFF}", end="", flush=True)
     except Exception as e:
-        print(f"\r\033[K[*] Aviso: Erro ao buscar chaves novas ({e})", end="", flush=True)
+        print(f"\r\033[K{Tema.SYS}{RED}Aviso: Erro ao buscar chaves novas ({e}){OFF}", end="", flush=True)
 
     # Passa as chaves validadas para o Maestro
     credentials = {
