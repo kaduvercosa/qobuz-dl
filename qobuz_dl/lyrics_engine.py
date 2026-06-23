@@ -4,6 +4,7 @@ import asyncio
 import aiohttp
 import logging
 import urllib.parse
+import json
 from mutagen.flac import FLAC
 from mutagen.id3 import ID3, USLT, ID3NoHeaderError
 from qobuz_dl.color import Tema
@@ -28,11 +29,10 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 class LyricsEngine:
-    # Mantive o parametro deepl_api_key apenas para nao quebrar o cli.py, mas ele e ignorado.
     def __init__(self, genius_token=None, deepl_api_key=None, translate=True, target_lang='PT-BR', translation_symbol="  ~ ", synced_only=True, session=None):
         self.genius_token = genius_token
         self.genius = None
-        self.translate = translate
+        self.translate = translate 
         self.target_lang = target_lang
         self.translation_symbol = translation_symbol
         self.synced_only = synced_only 
@@ -129,6 +129,81 @@ class LyricsEngine:
             
         return text
 
+    # =========================================================================
+    # 🔴 PROCESSAMENTO SEQUENCIAL: IMUNE À DESSINCRONIA DO MUSIXMATCH
+    # =========================================================================
+    async def process_qobuz_native_json(self, q_data: dict, use_enhanced_lrc: bool = False):
+        original_lines = q_data.get("original", {}).get("lines", [])
+        if not original_lines:
+            return None, 0, 0, "Falha"
+
+        fonte_traducao = "Local"
+        translation_sequence = []
+        
+        # Puxa as traduções do nosso Double-Fetch
+        translations_data = q_data.get("translation", {}).get("lines", [])
+        if not translations_data:
+            translations_data = q_data.get("translated", {}).get("lines", [])
+            if not translations_data and "translations" in q_data:
+                for t_item in q_data["translations"]:
+                    if t_item.get("language", "").startswith(self.target_lang[:2].lower()):
+                        translations_data = t_item.get("lines", [])
+                        break
+        
+        # Extrai apenas os textos em ordem cronológica (Ignorando os timestamps errados deles)
+        if translations_data:
+            fonte_traducao = "Nativa (Qobuz)"
+            for t_line in translations_data:
+                t_text = t_line.get("line", "").strip()
+                t_text = t_text.replace("~", "").replace("˜", "").strip()
+                if t_text:
+                    translation_sequence.append(t_text)
+                    
+        def format_ts(ms):
+            minutos = ms // 60000
+            segundos = (ms % 60000) / 1000
+            return f"{minutos:02d}:{segundos:05.2f}"
+
+        lrc_lines = []
+        trans_count = 0
+        total_valid_lines = 0
+        trad_index = 0
+        
+        for linha_data in original_lines:
+            texto = linha_data.get("line", "").strip()
+            texto = texto.replace("~", "").replace("˜", "").strip()
+            if not texto: continue
+            
+            total_valid_lines += 1
+            start_ms = linha_data.get("start", 0)
+            words = linha_data.get("words", [])
+            
+            if use_enhanced_lrc and words:
+                line_str = f"[{format_ts(start_ms)}]"
+                for w in words:
+                    line_str += f"<{format_ts(w.get('start', 0))}>{w.get('word', '')} "
+                lrc_lines.append(line_str.strip())
+            else:
+                lrc_lines.append(f"[{format_ts(start_ms)}]{texto}")
+                
+            # Intercala puxando a tradução na sequência exata da frase original
+            if self.translate and trad_index < len(translation_sequence):
+                trad = translation_sequence[trad_index]
+                if texto.lower() != trad.lower():
+                    lrc_lines.append(f"[{format_ts(start_ms)}]{self.translation_symbol}{trad}")
+                    trans_count += 1
+                trad_index += 1
+                    
+        final_lrc = "\n".join(lrc_lines)
+        
+        if trans_count == 0 and self.translate:
+            # Fallback invisível para o Google Translate se a Qobuz não tiver PT
+            final_lrc, t_count, _ = await self._process_translation(final_lrc, is_synced=True)
+            fonte = "Google Translate" if t_count > 0 else "Original"
+            return final_lrc, t_count, total_valid_lines, fonte
+            
+        return final_lrc, trans_count, total_valid_lines, fonte_traducao
+
     async def _process_translation(self, lyrics, is_synced=True):
         lines = lyrics.split('\n')
         mapping = []
@@ -177,12 +252,10 @@ class LyricsEngine:
                 translated_block = await self._fetch_free_translation(raw_texts)
                 translated_lines = translated_block.split('\n')
                 
-                # Prevenir desalinhamento caso o Google engula alguma quebra de linha
                 if len(translated_lines) == len(texts_to_translate):
                     for idx_array, (original_idx, txt) in enumerate(texts_to_translate):
                         translation_map[original_idx] = translated_lines[idx_array].strip()
                 else:
-                    # Fallback de seguranca linha por linha
                     sem = asyncio.Semaphore(5)
                     async def translate_single(idx, text_to_trans):
                         async with sem:
@@ -360,7 +433,10 @@ class LyricsEngine:
                         self._inject_metadata(file_path, final_lyrics)
                         if save_lrc: self._save_lrc_file(file_path, final_lyrics)
                         
-                        return (True, trans_count, total_lines, f"200 [{provider_name}]")
+                        if trans_count > 0:
+                            return (True, trans_count, total_lines, f"200 [{provider_name}]")
+                        else:
+                            return (True, 0, total_lines, f"200 [{provider_name}]")
                     else:
                         if not best_plain_text:
                             best_plain_text = text

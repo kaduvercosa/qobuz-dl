@@ -1046,94 +1046,62 @@ class Download:
         msg_tree = []
         
         # =========================================================================
-        # SISTEMA DE LETRAS HÍBRIDO: 1º QOBUZ NATIVO -> 2º LRCLIB (FALLBACK)
+        # SISTEMA DE LETRAS HÍBRIDO: ORIGINAL + TRADUÇÃO OFICIAL QOBUZ
         # =========================================================================
-        if self.fetch_lyrics and not LoopGlobals.get('abort_event').is_set():
+        if getattr(self, 'fetch_lyrics', False) and not LoopGlobals.get('abort_event').is_set():
             letra_nativa_ok = False
+            track_id_str = str(track_meta["id"])
             
             try:
-                track_id_str = str(track_meta["id"])
                 req_ts = int(time.time())
-                
                 base_str = f"tracklyricsUrltrack_id{track_id_str}{req_ts}{self.client.sec}"
                 req_sig = hashlib.md5(base_str.encode("utf-8")).hexdigest()
+                endpoint_orig = f"{self.client.base}track/lyricsUrl?track_id={track_id_str}&request_ts={req_ts}&request_sig={req_sig}"
                 
-                lyrics_endpoint = f"{self.client.base}track/lyricsUrl?track_id={track_id_str}&request_ts={req_ts}&request_sig={req_sig}"
-                
-                async with self.client.session.get(lyrics_endpoint, headers=self.client.headers) as api_resp:
-                    if api_resp.status == 200:
-                        lyrics_resp = await api_resp.json()
+                async with self.client.session.get(endpoint_orig, headers=self.client.headers) as resp_orig:
+                    if resp_orig.status == 200:
+                        json_orig = await resp_orig.json()
                         
-                        if lyrics_resp and "lyrics_url" in lyrics_resp:
-                            lyrics_url = lyrics_resp["lyrics_url"]
-                            safe_url = yarl.URL(lyrics_url, encoded=True)
-                            
-                            async with self.client.session.get(safe_url) as l_resp:
+                        if json_orig and "lyrics_url" in json_orig:
+                            async with self.client.session.get(yarl.URL(json_orig["lyrics_url"], encoded=True)) as l_resp:
                                 if l_resp.status == 200:
-                                    l_content = await l_resp.text()
+                                    q_data = json.loads(await l_resp.text())
                                     
-                                    try:
-                                        q_data = json.loads(l_content)
+                                    lang_code = getattr(self, 'target_lang', 'PT-BR')[:2].lower()
+                                    if lang_code in q_data.get("translation_langs", []):
+                                        req_ts2 = int(time.time())
+                                        base_str2 = f"tracklyricsUrllanguage{lang_code}track_id{track_id_str}{req_ts2}{self.client.sec}"
+                                        req_sig2 = hashlib.md5(base_str2.encode("utf-8")).hexdigest()
+                                        endpoint_trad = f"{self.client.base}track/lyricsUrl?track_id={track_id_str}&language={lang_code}&request_ts={req_ts2}&request_sig={req_sig2}"
                                         
-                                        lrc_lines = []
+                                        async with self.client.session.get(endpoint_trad, headers=self.client.headers) as resp_trad:
+                                            if resp_trad.status == 200:
+                                                json_trad = await resp_trad.json()
+                                                if json_trad and "lyrics_url" in json_trad:
+                                                    async with self.client.session.get(yarl.URL(json_trad["lyrics_url"], encoded=True)) as t_resp:
+                                                        if t_resp.status == 200:
+                                                            pt_data = json.loads(await t_resp.text())
+                                                            if "translation" in pt_data:
+                                                                q_data["translation"] = pt_data["translation"]
+                                    
+                                    use_enhanced = getattr(self.settings, 'enhanced_lrc', False)
+                                    if hasattr(self, 'lyrics_engine'):
+                                        lck_lyr = LoopGlobals.get('lyrics_translation_lock')
+                                        async with lck_lyr:
+                                            final_lrc, trans_count, total_lines, fonte = await self.lyrics_engine.process_qobuz_native_json(q_data, use_enhanced)
                                         
-                                        def format_ts(ms):
-                                            minutos = ms // 60000
-                                            segundos = (ms % 60000) / 1000
-                                            return f"{minutos:02d}:{segundos:05.2f}"
+                                        if final_lrc:
+                                            self.lyrics_engine._inject_metadata(str(final_file), final_lrc)
+                                            if not getattr(self, 'no_lrc_files', False):
+                                                lrc_path = final_file.with_suffix(".lrc")
+                                                lrc_path.write_text(final_lrc, encoding="utf-8")
                                             
-                                        linhas_letra = q_data.get("original", {}).get("lines", [])
-                                        use_enhanced_lrc = getattr(self.settings, 'enhanced_lrc', False)
-                                        
-                                        for linha_data in linhas_letra:
-                                            texto = linha_data.get("line", "").strip()
-
-                                            if not texto:
-                                                continue
-                                                
-                                            start_line_ms = linha_data.get("start", 0)
-                                            words = linha_data.get("words", [])
-                                            
-                                            if use_enhanced_lrc and words:
-                                                line_str = f"[{format_ts(start_line_ms)}]"
-                                                for word_data in words:
-                                                    w_start = word_data.get("start", 0)
-                                                    w_text = word_data.get("word", "")
-                                                    line_str += f"<{format_ts(w_start)}>{w_text} "
-                                                
-                                                lrc_lines.append(line_str.strip())
+                                            if trans_count > 0:
+                                                fonte_nome = "Oficial Qobuz" if "Nativa" in fonte else "Google Translate"
+                                                msg_tree.append(f"{t_tag_letra} 📝 Letra: Qobuz (Sync) | Trad: {fonte_nome} ({trans_count}/{total_lines})")
                                             else:
-                                                lrc_lines.append(f"[{format_ts(start_line_ms)}]{texto}")
-                                        
-                                        raw_lrc_content = "\n".join(lrc_lines)
-                                        
-                                        trans_count = 0
-                                        total_lines = 0
-                                        final_lrc_content = raw_lrc_content
-                                        
-                                        if hasattr(self, 'lyrics_engine'):
-                                            lck_lyr = LoopGlobals.get('lyrics_translation_lock')
-                                            async with lck_lyr:
-                                                translated_text, t_count, t_lines = await self.lyrics_engine._process_translation(
-                                                    raw_lrc_content, is_synced=True
-                                                )
-                                            if translated_text:
-                                                final_lrc_content = translated_text
-                                                trans_count = t_count
-                                                total_lines = t_lines
-                                                
-                                            self.lyrics_engine._inject_metadata(str(final_file), final_lrc_content)
-                                        
-                                        if not self.no_lrc_files:
-                                            lrc_path = final_file.with_suffix(".lrc")
-                                            lrc_path.write_text(final_lrc_content, encoding="utf-8")
-                                        
-                                        trad_str = f"{trans_count}/{total_lines}" if trans_count > 0 else "Não"
-                                        msg_tree.append(f"{t_tag_letra} 📝 Letra: NATIVA Qobuz (Sync) (Trad: {trad_str})")
-                                        letra_nativa_ok = True
-                                        
-                                    except Exception:
-                                        pass
+                                                msg_tree.append(f"{t_tag_letra} 📝 Letra: Qobuz (Sync) | Trad: Nenhuma")
+                                            letra_nativa_ok = True
             except Exception:
                 pass
 
@@ -1153,11 +1121,13 @@ class Download:
                         save_lrc=not self.no_lrc_files
                     )
                 if letra_ok:
-                    trad_str = f"{trans_count}/{total_lines}" if trans_count else "Não"
-                    msg_tree.append(f"{t_tag_letra} 📝 Letra: {resp_code} (Trad: {trad_str})")
+                    if trans_count > 0:
+                        msg_tree.append(f"{t_tag_letra} 📝 Letra: {resp_code} | Trad: Google Translate ({trans_count}/{total_lines})")
+                    else:
+                        msg_tree.append(f"{t_tag_letra} 📝 Letra: {resp_code} | Trad: Nenhuma")
                 else:
                     msg_tree.append(f"{t_tag_letra} 📝 Letra: Não encontrada")
-                
+
         msg_tree.append(f"{t_tag_status} ✔️ {Tema.GREEN}Finalizado{Tema.OFF}")
 
         await safe_print_async("\n".join(msg_tree))
