@@ -279,7 +279,8 @@ class LyricsEngine:
                     resultados = await asyncio.gather(*tasks)
                     for idx, trad, f_usada in resultados:
                         translation_map[idx] = trad.strip()
-                        fonte_usada = f_usada
+                        if f_usada == "DeepL API":
+                            fonte_usada = f_usada
             except Exception as e:
                 logger.error(f"Erro traducao: {e}")
 

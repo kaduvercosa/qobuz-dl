@@ -569,20 +569,11 @@ async def amain():
             print(f.read())
         sys.exit()
 
-    if arguments.purge:
-        try:
-            QOBUZ_DB.unlink()
-        except FileNotFoundError:
-            pass
-        sys.exit(f"{GREEN}Database has been purged.{OFF}")
-
     if getattr(arguments, 'sync_db', None):
         from qobuz_dl.sync import sync_database
         from qobuz_dl.qopy import Client
         sync_client = Client(email, password, app_id, secrets, user_auth_token=token, force_english=force_english)
         sync_dir = ensure_long_path(default_folder if arguments.sync_db == "DEFAULT" else arguments.sync_db)
-        
-
 
         # [!] Correção Crítica: O sync_database é agora uma função assíncrona!
 
@@ -707,6 +698,17 @@ async def amain():
 
 def main():
     import asyncio
+    
+    if len(sys.argv) > 1 and sys.argv[1].lower() in ("-p", "--purge"):
+        try:
+            QOBUZ_DB.unlink()
+            print(f"{Tema.SUCESSO}[✅] Banco de Dados de Histórico apagado com  sucesso!{Tema.OFF}\n")
+        except FileNotFoundError:
+            print(f"{Tema.AVISO}[⚠️] O banco de dados já estava vazio ou não existia.{Tema.OFF}\n")
+        except Exception as e:
+            print(f"{Tema.ERRO}[❌] Erro ao apagar banco de dados: {e}{Tema.OFF}\n")
+        sys.exit(0)
+
     if len(sys.argv) > 1 and sys.argv[1].lower() == "-r":
         sys.exit(_reset_config(CONFIG_FILE))
 
