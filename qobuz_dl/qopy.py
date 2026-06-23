@@ -26,7 +26,7 @@ from qobuz_dl.exceptions import (
     InvalidAppSecretError,
     InvalidQuality,
 )
-from qobuz_dl.color import GREEN, YELLOW, RED, OFF, CYAN, RESET
+from qobuz_dl.color import Tema, GREEN, YELLOW, RED, OFF, CYAN, RESET
 
 try:
     from qobuz_dl.bundle import Bundle
@@ -42,7 +42,7 @@ class Client:
     Lida com autenticação, pesquisa, metadados e obtenção de URLs de streaming/download.
     """
     def __init__(self, email: str, pwd: str, app_id: str, secrets: list, user_auth_token: str = None, force_english: bool = True):
-        print(f"\r\033[K{YELLOW}Estabelecendo conexão com os servidores...{OFF}", end="", flush=True)
+        print(f"\r\033[K{Tema.SYS}{YELLOW}Estabelecendo conexão com os servidores...{OFF}", end="", flush=True)
         self.secrets = secrets
         self.id = str(app_id)
         self.force_english = force_english
@@ -54,7 +54,7 @@ class Client:
                 if fresh_id:
                     self.id = fresh_id
                     self.secrets = list(b.get_secrets().values())
-                    print(f"\r\033[K{GREEN}[+] Chave da API sincronizada: APP_ID: ({self.id}). Autenticando..{OFF}", end="", flush=True)
+                    print(f"\r\033[K{Tema.SYS}{GREEN}Chave da API sincronizada: APP_ID: ({self.id}). Autenticando..{OFF}", end="", flush=True)
             except Exception as e:
                 logger.warning(f"Não foi possível atualizar app_id/secrets dinamicamente: {e}")
 
@@ -138,11 +138,11 @@ class Client:
             cred = user_info.get("credential") or user_info.get("user", {}).get("credential", {})
             self.label = cred.get("parameters", {}).get("short_label", "Studio")
             self.user_id = user_info.get("id") or user_info.get("user", {}).get("id")
-            print(f"\r\033[K{GREEN}[*] Status do Login: LOGADO (Plano: {self.label}){OFF}")
+            print(f"\r\033[K{Tema.SYS}{GREEN}Status do Login: LOGADO (Plano: {self.label}){OFF}")
         except Exception:
             self.label = "Studio"
             self.user_id = None
-            print(f"\r\033[K{YELLOW}[!] Assinatura Não Encontrada! (Plano FREE){OFF}")
+            print(f"\r\033[K{Tema.SYS}{YELLOW}[!] Assinatura Não Encontrada! (Plano FREE){OFF}")
 
     def _modern_sig(self, epoint: str, params: dict, sec: str) -> str:
         object_, method = epoint.split("/")

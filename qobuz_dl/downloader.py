@@ -687,7 +687,7 @@ class Download:
 
                 if final_file_check.exists():
                     q_str = f"[{bit_depth}b/{sampling_rate}kHz]" if int(self.quality) != 5 else "[MP3 320kbps]"
-                    await safe_print_async(f"{sigla_capa} ├── 🖼️ {EMB_COVER_NAME} ⏭️  {Tema.AVISO}Pulando (Já existe){Tema.OFF}")
+                    await safe_print_async(f"{sigla_capa} {c_txt}├──{Tema.OFF} 🖼️ {EMB_COVER_NAME} {Tema.AVISO}[⏭️ Pulando (Já existe)]{Tema.OFF}")
                     await safe_print_async(f"{c_txt}{Tema.BOLD}[ÁUDIO]{Tema.OFF} {c_txt}├──{Tema.OFF} 🎧 {Tema.BOLD}{track_title}{Tema.OFF} {Tema.GREEN}{q_str}{Tema.OFF}")
                     await safe_print_async(f"{c_txt}{Tema.BOLD}[FINAL]{Tema.OFF} {c_txt}└──{Tema.OFF} ⏭️ {Tema.AVISO}Pulando (Já existe){Tema.OFF}")
                     return
@@ -1097,7 +1097,7 @@ class Download:
                                                 lrc_path.write_text(final_lrc, encoding="utf-8")
                                             
                                             if trans_count > 0:
-                                                fonte_nome = "Oficial Qobuz" if "Nativa" in fonte else "Google Translate"
+                                                fonte_nome = "Oficial Qobuz" if "Nativa" in fonte else fonte
                                                 msg_tree.append(f"{t_tag_letra} 📝 Letra: Qobuz (Sync) | Trad: {fonte_nome} ({trans_count}/{total_lines})")
                                             else:
                                                 msg_tree.append(f"{t_tag_letra} 📝 Letra: Qobuz (Sync) | Trad: Nenhuma")
@@ -1112,7 +1112,7 @@ class Download:
                     
                 lck_lyr = LoopGlobals.get('lyrics_translation_lock')
                 async with lck_lyr:
-                    letra_ok, trans_count, total_lines, resp_code = await self.lyrics_engine.fetch_and_inject(
+                    letra_ok, trans_count, total_lines, provider, fonte = await self.lyrics_engine.fetch_and_inject(
                         file_path=str(final_file),
                         album_artist=s_artist,
                         track=track_meta.get("title"),
@@ -1122,9 +1122,9 @@ class Download:
                     )
                 if letra_ok:
                     if trans_count > 0:
-                        msg_tree.append(f"{t_tag_letra} 📝 Letra: {resp_code} | Trad: Google Translate ({trans_count}/{total_lines})")
+                        msg_tree.append(f"{t_tag_letra} 📝 Letra: 200 [{provider}] | Trad: {fonte} ({trans_count}/{total_lines})")
                     else:
-                        msg_tree.append(f"{t_tag_letra} 📝 Letra: {resp_code} | Trad: Nenhuma")
+                        msg_tree.append(f"{t_tag_letra} 📝 Letra: 200 [{provider}] | Trad: Nenhuma")
                 else:
                     msg_tree.append(f"{t_tag_letra} 📝 Letra: Não encontrada")
 

@@ -49,9 +49,9 @@ class Tema:
     TXT_LOTE      = "\033[38;2;104;216;214m" # Cor das siglas/árvore em modo lote de singles
 
     # SINGLE (azul) (OK)
-    BG_SINGLE     = "\033[48;2;0;150;199m"    # Fundo do badge "🎵 SINGLE" (download de uma faixa avulsa)
-    BG_SINGLE_SEC = "\033[48;2;104;202;249m"  # Fundo da linha "▶ [01/01] 🎵 ..." de um single
-    TXT_SINGLE    = "\033[38;2;104;202;249m"  # Cor das siglas/árvore em modo single
+    BG_SINGLE     = "\033[48;2;0;119;182m"    # Fundo do badge "🎵 SINGLE" (download de uma faixa avulsa)
+    BG_SINGLE_SEC = "\033[48;2;0;180;216m"  # Fundo da linha "▶ [01/01] 🎵 ..." de um single
+    TXT_SINGLE    = "\033[38;2;0;180;216m"  # Cor das siglas/árvore em modo single
 
     # --- 3. ALIASES SEMÂNTICOS (Mensagens) ---
     TITULO    = BOLD       # Nome do álbum/faixa em destaque nas mensagens de "Concluído"

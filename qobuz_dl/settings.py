@@ -69,6 +69,7 @@ class QobuzDLSettings:
 
     # Opções de IA e Webhooks
     ai_provider: str = "openai"
+    deepl_api_key: str = ""
     openai_api_key: str = ""
     gemini_api_key: str = ""
     webhook_url: str = ""
@@ -76,9 +77,7 @@ class QobuzDLSettings:
     telegram_chat_id: str = ""
 
     # ── Espelho Telegram (Pyrogram) ──────────────────────────────────────────
-    # Lidos da seção [telegram] e [channels] do config.ini.
-    # O telegram_uploader.py usa os.environ["QOBUZ_DL_CONFIG"] para encontrar
-    # o config.ini correto; estes campos são apenas para inspeção/debug.
+    # Lidos da seção [telegram] e [channels] do config.ini. O telegram_uploader.py usa os.environ["QOBUZ_DL_CONFIG"] para encontrar o config.ini correto; estes campos são apenas para inspeção/debug.
     telegram_mirror_enabled: bool  = False
     telegram_api_id:         str   = ""
     telegram_api_hash:       str   = ""
@@ -159,6 +158,7 @@ class QobuzDLSettings:
             'max_workers': getattr(arguments, 'max_workers', None) or config.get(section, "max_workers", fallback="1"),
             'delay': getattr(arguments, 'delay', 0) or config.getint(section, "delay", fallback=0),
             'user_auth_token': config.get(section, "user_auth_token", fallback=""),
+            'deepl_api_key':  getattr(arguments, 'deepl_api_key', config.get(section, "deepl_api_key", fallback="")),
             'ai_provider': getattr(arguments, 'ai_provider', config.get(section, "ai_provider", fallback="openai")),
             'openai_api_key': getattr(arguments, 'openai_api_key', config.get(section, "openai_api_key", fallback="")),
             'gemini_api_key': getattr(arguments, 'gemini_api_key', config.get(section, "gemini_api_key", fallback="")),

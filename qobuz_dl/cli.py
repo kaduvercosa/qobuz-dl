@@ -114,77 +114,72 @@ def _reset_config(config_file: Path) -> int:
     config["qobuz"] = {}
     
     try:
-        print(f"\n{YELLOW}--- 1. Credenciais da Conta ---{OFF}")
+        print(f"\n{YELLOW}--- 1. CREDENCIAIS DA CONTA QOBUZ ---{OFF}")
         email = input("  ❯ Email do Qobuz: ")
         if not email: sys.exit(1)
         config["qobuz"]["email"] = email.strip()
 
-        print(f"\n  {RED}[!] ATENÇÃO: A Qobuz bloqueou o login direto por senha para apps de terceiros.{OFF}")
-        print(f"  {RED}[!] Tem de usar o Token do Navegador (F12 > Storage > Local Storage > localuser > token).{OFF}\n")
-        
+        print(f"\n  {CYAN} A Qobuz exige o 'User Auth Token' (encontrado via F12 no navegador).{OFF}")
         auth_token = input("  ❯ Cole o Token (user_auth_token) aqui: ")
         if not auth_token: sys.exit(1)
 
         config["qobuz"]["password"] = ""
         config["qobuz"]["auth_token"] = auth_token.strip()
 
-        print(f"\n{YELLOW}--- 2. Letras & Tradução ---{OFF}")
-        print("  Deseja baixar e injetar letras automaticamente?")
-        print("    1) Sim, procurar e injetar letras")
-        print("    2) Não, saltar as letras")
-        fetch_lyrics_opt = input("  ❯ Escolha (1 ou 2): ")
-        config["qobuz"]["fetch_lyrics"] = "true" if fetch_lyrics_opt.strip() == "1" else "false"
+        print(f"\n{YELLOW}--- 2. LETRAS E TRADUÇÃO HÍBRIDA ---{OFF}")
+        fetch_lyrics_opt = input("  ❯ Deseja baixar e injetar letras sincronizadas automaticamente? (S/n): ").strip().lower()
+        fetch_lyrics = fetch_lyrics_opt != 'n'
+        config["qobuz"]["fetch_lyrics"] = "true" if fetch_lyrics else "false"
 
         target_lang = "PT-BR"
         genius_token = ""
         deepl_api_key = ""
-        translate_lyrics = True
-
-        if config["qobuz"]["fetch_lyrics"] == "true":
-            print("\n  Deseja traduzir as letras automaticamente (via Google Translate)?")
-            print("    1) Sim, traduzir as letras")
-            print("    2) Não, manter apenas no idioma original")
-            translate_opt = input("  ❯ Escolha (1 ou 2) [padrão: 1]: ").strip()
-            translate_lyrics = translate_opt != "2"
+        translate_lyrics = False
+        
+        if fetch_lyrics:
+            translate_opt = input("  ❯ Traduzir as letras estrangeiras para o seu idioma? (S/n): ").strip().lower()
+            translate_lyrics = translate_opt != 'n'
 
             if translate_lyrics:
-                target_lang_input = input("\n  ❯ Idioma alvo para tradução (ex: 'PT-BR', 'EN-US') [padrão: PT-BR]: ")
-                if target_lang_input.strip(): target_lang = target_lang_input.strip().upper()
+                target_lang_input = input("\n  ❯ Idioma alvo para tradução (ex: 'PT-BR', 'EN-US') [padrão: PT-BR]: ").strip()
+                if target_lang_input: target_lang = target_lang_input.upper()
 
-            print(f"\n  {CYAN}[Dica] Deixe o token em branco se não quiser usar o Genius para busca estendida.{OFF}")
-            genius_token = input("  ❯ Token API do Genius (para busca estendida): ").strip()
+                print(f"\n {CYAN}[HIERARQUIA] 1º Oficial Qobuz -> 2º DeepL API -> 3º Google Translate {OFF}")
+                deepl_input = input("  ❯ Token API do DeepL (Opcional - deixe em branco, para utilizar o Google): ").strip()
+                if deep_input: deepl_api_key = deepl_input
+
+            genius_input = input("\n  ❯ Token API do Genius {CYAN}[Opcional]{OFF}: ").strip() 
+            if genius_input: genius_token = genius_input
 
         config["qobuz"]["target_lang"] = target_lang
         config["qobuz"]["translate_lyrics"] = "true" if translate_lyrics else "false"
         config["qobuz"]["deepl_api_key"] = deepl_api_key
         config["qobuz"]["genius_token"] = genius_token
 
-        print(f"\n{YELLOW}--- 3. Playlists Inteligentes (IA) ---{OFF}")
-        print("  Deseja gerar playlists usando Inteligência Artificial?")
-        print("    1) OpenAI (ChatGPT)")
-        print("    2) Google Gemini")
-        print("    3) Saltar (Nenhuma IA)")
-        ai_choice = input("  ❯ Escolha (1, 2 ou 3) [padrão: 3]: ").strip()
+        print(f"\n{YELLOW}--- 3. PLAYLISTS INTELIGENTES (IA) ---{OFF}")
+        print("    1) Nenhuma (Saltar)")
+        print("    2) OpenAI (ChatGPT)")
+        print("    3) Google Gemini")
+        ai_choice = input("  ❯ Escolha o motor de IA [padrão: 1]: ").strip()
 
         config["qobuz"]["ai_provider"] = "openai"
         config["qobuz"]["openai_api_key"] = ""
         config["qobuz"]["gemini_api_key"] = ""
 
-        if ai_choice == "1": 
+        if ai_choice == "2": 
             config["qobuz"]["openai_api_key"] = input("  ❯ Chave API da OpenAI (sk-...): ").strip()
-        elif ai_choice == "2": 
+        elif ai_choice == "3": 
             config["qobuz"]["ai_provider"] = "gemini"
             config["qobuz"]["gemini_api_key"] = input("  ❯ Chave API do Gemini: ").strip()
 
-        print(f"\n{YELLOW}--- 4. Automação & Radares ---{OFF}")
-        config["qobuz"]["webhook_url"] = input("  ❯ URL do Webhook (n8n/Make.com) (em branco para saltar): ").strip()
+        print(f"\n{YELLOW}--- 4. AUTOMAÇÃO E RADAR ---{OFF}")
+        config["qobuz"]["webhook_url"] = input("  ❯ URL do Webhook (n8n/Make.com) {CYAN}[Opcional](em branco para saltar){OFF}: ").strip()
         
         dias_busca = input("  ❯ Radar: Dias a retroceder para procurar lançamentos [padrão: 7]: ").strip()
         config["qobuz"]["dias_de_busca"] = dias_busca if dias_busca else "7"
 
-        print(f"\n{YELLOW}--- 5. Espelho do Telegram ---{OFF}")
-        print("  Deseja enviar cópias dos downloads para canais do Telegram?")
-        tg_choice = input("  ❯ Ativar Telegram? (s/N): ").strip().lower()
+        print(f"\n{YELLOW}--- 5. INTEGRAÇÃO TELEGRAM (ESPELHO) ---{OFF}")
+        tg_choice = input("  ❯ Deseja enviar cópias dos downloads para canais do Telegram? (s/N): ").strip().lower()
 
         if tg_choice == "s":
             config["telegram"] = {}
@@ -205,20 +200,20 @@ def _reset_config(config_file: Path) -> int:
             config["telegram"] = {"enabled": "false", "api_id": "", "api_hash": "", "session": "qobuz_session"}
             config["channels"] = {"musicas": "", "albuns": "", "artistas": "", "geral": ""}
 
-        print(f"\n{YELLOW}--- 6. Preferências de Download ---{OFF}")
-        directory = input(f"  ❯ Pasta principal de downloads [padrão: Qobuz Downloads]: ").strip()
+        print(f"\n{YELLOW}--- 6. PREFERÊNCIAS DE DOWNLOAD ---{OFF}")
+        directory = input(f"  ❯ Pasta principal de downloads {CYAN}[padrão: Qobuz Downloads]{OFF}: ").strip()
         config["qobuz"]["directory"] = directory if directory else "Qobuz Downloads"
 
-        folder_format = input(f"  ❯ Formato das subpastas [padrão: {DEFAULT_FOLDER}]: ").strip()
+        folder_format = input(f"  ❯ Formato das subpastas {CYAN}[padrão: {DEFAULT_FOLDER}]{OFF}: ").strip()
         config["qobuz"]["folder_format"] = folder_format if folder_format else DEFAULT_FOLDER
 
-        print("\n  Qualidade Padrão de Download:")
+        print(f"\n  {YELLOW}Qualidade Padrão de Download:")
         print("    27) 24-Bit / >96 kHz (Hi-Res Máximo)")
         print("     7) 24-Bit / <96 kHz (Hi-Res Padrão)")
         print("     6) 16-Bit / 44.1 kHz (Qualidade CD / FLAC)")
         print("     5) 320 kbps (MP3 Econômico)")
-        quality = input("  ❯ Escolha (27, 7, 6 ou 5) [padrão: 7]: ").strip()
-        config["qobuz"]["default_quality"] = quality if quality else "7"
+        quality = input("  ❯ Escolha (27, 7, 6 ou 5) {CYAN}[padrão: 7]{OFF}: ").strip()
+        config["qobuz"]["default_quality"] = quality if quality in ["27", "7", "6", "5"] else "7"
 
     except KeyboardInterrupt:
         print(f"\n\n{RED}[!] Configuração cancelada pelo utilizador.{OFF}")

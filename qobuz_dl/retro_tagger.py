@@ -206,7 +206,7 @@ async def inject_lyrics_retroactively(directory_path: str, genius_token: str = N
         safe_print(f"{RED}[!] Erro: O diretorio '{directory_path}' nao existe.{OFF}\n")
         return
 
-    engine = LyricsEngine(genius_token=genius_token, translate=translate_lyrics, target_lang=target_lang)
+    engine = LyricsEngine(genius_token=genius_token, deepl_api_key=deepl_api_key, translate=translate_lyrics, target_lang=target_lang)
 
     all_files = [p for p in target_dir.rglob('*') if p.is_file() and p.suffix.lower() in {'.flac', '.mp3'}]
 
@@ -252,7 +252,7 @@ async def interactive_fix_lyrics(directory_path: str, genius_token: str = None,
         print(f"{RED}[!] Erro: O diretorio '{directory_path}' nao existe.{OFF}")
         return
 
-    engine = LyricsEngine(genius_token=genius_token, translate=translate_lyrics, target_lang=target_lang)
+    engine = LyricsEngine(deepl_api_key=deepl_api_key, translate=True, target_lang=target_lang)
 
     all_files = sorted([p for p in target_dir.rglob('*') if p.is_file() and p.suffix.lower() in {'.flac', '.mp3'}])
 
@@ -495,11 +495,26 @@ def _get_existing_lyrics_text(file_path: Path) -> str:
 
 def _test_deepl_api(api_key: str) -> bool:
     """
-    Mantido para nao quebrar o comando 'qobuz-dl set-deepl' no cli.py.
-    Apenas bloqueia a acao informando que o sistema agora e gratuito.
+    Testa se a chave fornecida do Deepl é válida via requests
     """
-    safe_print(f"\n{YELLOW}[!] AVISO: O sistema agora usa o Google Translate 100% gratuito.{OFF}")
-    safe_print(f"{YELLOW}[!] A configuracao de chaves do DeepL nao e mais necessaria.{OFF}\n")
+    import requests
+    url = "https://api-free.deepl.com/v2/translate" if api_key.endswith(":fx") else "https://api.deepl.com/v2/translate" 
+    try:
+        r = requests.post(url, data={"auth_key": api_key, "text": "Hello", "target_lang": "PT-BR"})
+        if r.status_code == 200:
+            safe_print(f"{GREEN}[*] Deepl API conectada com sucesso!{OFF}")
+            return True
+        elif r.status_code == 456:
+            safe_print(f"{RED}[!] A chave é válida, porém a cota gratuita de 500.000 caracteres já foi excedida.{OFF}")
+            return False
+        elif r.status_code == 403:
+            safe_print(f"{RED}[!] Chave da API do DeepL inválida ou incorreta.{OFF}")
+            return False
+        else:
+            safe_print(f"{RED}[!] Erro na chave do Deepl: {r.status_code} - {r.text}{OFF}")
+            return False
+    except Exception as e:
+    safe_print(f"\n{RED}[!] Falha ao contatar DeepL: {e}{OFF}")
     return False
 
 async def interactive_translate_lyrics(directory_path: str, deepl_api_key: str = None, target_lang: str = "PT-BR") -> None:
