@@ -128,7 +128,7 @@ class LyricsEngine:
                     return data["translations"][0]["text"]
                 elif response.status == 456:
                     self._deepl_quota_exceeded = True
-                    print(f"  ⚠️ {Tema.AVISO} Cota mensal do DeepL (500k) excedida! Transição invísivel para o Google Translate ativada.{Tema.OFF}")
+                    print(f" {Tema.AVISO}⚠️ Cota mensal do DeepL (500k) excedida! Transição invísivel para o Google Translate ativada.{Tema.OFF}")
                     return None
         except Exception as e:
             logger.error(f"Erro na API do DeepL: {e}")
@@ -438,7 +438,8 @@ class LyricsEngine:
         try:
             with open(f"{os.path.splitext(audio_file_path)[0]}.lrc", 'w', encoding='utf-8') as f:
                 f.write(synced_lyrics)
-        except: pass
+        except Exception as e: logger.warning(f"Não foi possível salvar .lrc: {e}")
+
             
     async def inject_manual_lyrics(self, file_path, raw_lyrics, is_synced=True, save_lrc=True, **kwargs):
         if not raw_lyrics: return (False, 0, 0, "Nenhuma")
