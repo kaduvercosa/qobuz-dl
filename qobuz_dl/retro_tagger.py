@@ -514,8 +514,8 @@ def _test_deepl_api(api_key: str) -> bool:
             safe_print(f"{RED}[!] Erro na chave do Deepl: {r.status_code} - {r.text}{OFF}")
             return False
     except Exception as e:
-    safe_print(f"\n{RED}[!] Falha ao contatar DeepL: {e}{OFF}")
-    return False
+        safe_print(f"\n{RED}[!] Falha ao contatar DeepL: {e}{OFF}")
+        return False
 
 async def interactive_translate_lyrics(directory_path: str, deepl_api_key: str = None, target_lang: str = "PT-BR") -> None:
 
@@ -523,10 +523,13 @@ async def interactive_translate_lyrics(directory_path: str, deepl_api_key: str =
     if not target_dir.is_dir():
         print(f"{RED}[!] Erro: O diretorio '{directory_path}' nao existe.{OFF}")
         return
+
+    if deepl_api_key:
+        print(f"{CYAN}[*] Inicializando Tradutor (DeepL → Google Translate como fallback)...{OFF}")
+    else:
+        print(f"{CYAN}[*] Inicializando Tradutor (Google Translate)...{OFF}")
         
-    print(f"{CYAN}[*] Inicializando Tradutor Gratuito (Google Translate)...{OFF}")
-        
-    engine = LyricsEngine(translate=True, target_lang=target_lang)
+    engine = LyricsEngine(deepl_api_key=deepl_api_key, translate=True, target_lang=target_lang)
     all_files = sorted([p for p in target_dir.rglob('*') if p.is_file() and p.suffix.lower() in {'.flac', '.mp3'}])
     
     if not all_files:
