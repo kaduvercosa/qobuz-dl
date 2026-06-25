@@ -11,6 +11,12 @@ import unicodedata
 from qobuz_dl.color import Tema, GREEN, YELLOW, RED, OFF, CYAN, RESET
 
 # ===========================================================================
+# 📱 CONFIGURAÇÃO DE RESPONSIVIDADE MOBILE (iPhone)
+# 1 = Modo "Card" (Múltiplas linhas bonitas, ideal para ecrãs pequenos)
+# 2 = Modo "Linha Fluida" (Tudo numa linha, separado por barras '|')
+# ===========================================================================
+ESTILO_MOBILE = 1
+# ===========================================================================
 # 🚀 OTIMIZAÇÃO GLOBAL DE REDE (INJEÇÃO)
 # ===========================================================================
 try:
@@ -49,7 +55,7 @@ from qobuz_dl.settings import QobuzDLSettings
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Helper de Alinhamento
+# Helper de Alinhamento e Detetores
 # ---------------------------------------------------------------------------
 def get_display_width(text: str) -> int:
     return sum(2 if unicodedata.east_asian_width(c) in ('W', 'F') else 1 for c in str(text))
@@ -73,6 +79,10 @@ def _align_text(text: str, width: int) -> str:
         current_w += char_w
 
     return truncated + "..." + " " * (width - current_w - 3)
+
+def is_mobile_screen() -> bool:
+    """Verifica se o terminal é estreito (ex: iPhone na vertical)"""
+    return shutil.get_terminal_size((120, 20)).columns < 95
 
 # ---------------------------------------------------------------------------
 # Lógica de tipo de lançamento
@@ -282,11 +292,11 @@ class QobuzDL:
 
             if self._is_interactive_session and url_type == "artist":
                 import pick
-                os.system('clear') # 🔴 TRANSIÇÃO DE TELA LIMPA
+                os.system('clear') 
                 options = ["Album", "EP", "Single", "Live", "Compilation"]
                 title_text = f"Encontrados {len(items)} lançamentos para {content_name}.\nFiltre por tipo de lançamento (Espaço para selecionar):"
-                selected_raw = pick.pick(options, title_text, multiselect=True, min_selection_count=1)
-                os.system('clear') # 🔴 TRANSIÇÃO DE TELA LIMPA
+                selected_raw = pick.pick(options, title_text, multiselect=True, min_selection_count=1, indicator="❯")
+                os.system('clear') 
                 
                 self.allowed_release_types = [opt[0].lower() for opt in selected_raw] if selected_raw else []
                 if not self.allowed_release_types: items = []
@@ -412,7 +422,7 @@ class QobuzDL:
         self.max_w_alb = int(available * 0.30)
 
     # ---------------------------------------------------------------------------
-    # Tabela Elástica Inteligente
+    # Tabela Inteligente & Responsiva (NOVO)
     # ---------------------------------------------------------------------------
     async def search_by_type(self, query: Optional[str], item_type: str, limit: int = 10, lucky: bool = False, fav_subtype: Optional[str] = None):
         limit = int(limit)
@@ -448,6 +458,8 @@ class QobuzDL:
                 iterable = results[mode_dict["key"]]["items"]
 
             item_list = []
+            is_mobile = is_mobile_screen()
+
             if mode_dict["requires_extra"]:
                 self._setup_terminal_widths()
                 raw_data = []
@@ -497,9 +509,20 @@ class QobuzDL:
                 self.w_typ, self.w_yea, self.w_qua = 11, 4, 20
 
                 for artist, title, col3_val, rel_type, year, quality, i in raw_data:
-                    text = f"│ {_align_text(artist, self.w_art)} │ {_align_text(title, self.w_tit)} │ {_align_text(col3_val, self.w_alb)} │ {_align_text(rel_type, self.w_typ)} │ {_align_text(year, self.w_yea)} │ {_align_text(quality, self.w_qua)} │"
                     url_category = actual_fav_subtype[:-1] if item_type == "favorites" and actual_fav_subtype else api_type
                     url = f"{WEB_URL}{url_category}/{i.get('id', '')}"
+                    
+                    if not is_mobile:
+                        # IPAD/PC: Tabela clássica
+                        text = f"│ {_align_text(artist, self.w_art)} │ {_align_text(title, self.w_tit)} │ {_align_text(col3_val, self.w_alb)} │ {_align_text(rel_type, self.w_typ)} │ {_align_text(year, self.w_yea)} │ {_align_text(quality, self.w_qua)} │"
+                    else:
+                        # IPHONE: Modo Responsivo
+                        prefixo = "Álbum" if is_track_search else "Gravadora"
+                        if ESTILO_MOBILE == 1:
+                            text = f"🎵 {title} - {artist} ({year})\n   ├─ 🏷️ {rel_type} | 🏢 {prefixo}: {col3_val}\n   └─ 🎧 {quality}"
+                        else:
+                            text = f"🎵 {title} - {artist} ({year}) | 🏷️ {rel_type} | 🏢 {prefixo}: {col3_val} | 🎧 {quality}"
+
                     item_list.append({"text": text, "url": url} if not lucky else url)
             else:
                 raw_data = []
@@ -513,37 +536,43 @@ class QobuzDL:
 
                 self.w_name = max_name
                 for name, count_str, i in raw_data:
-                    text = f"│ {_align_text(name, self.w_name)} │ {_align_text(count_str, 13)} │"
                     url_category = actual_fav_subtype[:-1] if item_type == "favorites" and actual_fav_subtype else api_type
                     url = f"{WEB_URL}{url_category}/{i.get('id', '')}"
+                    
+                    if not is_mobile:
+                        text = f"│ {_align_text(name, self.w_name)} │ {_align_text(count_str, 13)} │"
+                    else:
+                        text = f"📂 {name} ({count_str})"
+                        
                     item_list.append({"text": text, "url": url} if not lucky else url)
             return item_list
         except (KeyError, IndexError): return []
 
     # ---------------------------------------------------------------------------
-    # O LOOP INTERATIVO REFINADO (COM TRANSIÇÕES CINEMATOGRÁFICAS)
+    # O LOOP INTERATIVO REFINADO (COM RESPONSIVIDADE)
     # ---------------------------------------------------------------------------
     async def _interactive_search_loop(self, selected_type: str, fav_subtype: str) -> List[str]:
         import pick
         final_url_list = []
+        is_mobile = is_mobile_screen()
         
         while True:
-            os.system('clear') # 🔴 TRANSIÇÃO DE TELA LIMPA antes de pedir o termo
+            os.system('clear') 
             
             if selected_type == "favorites":
                 print(f"\n{Tema.BUSCA}A carregar {fav_subtype} dos favoritos...")
                 options = await self.search_by_type(None, selected_type, limit=self.interactive_limit, fav_subtype=fav_subtype)
                 query_title = f"Meus Favoritos: {fav_subtype.title()}"
-                os.system('clear') # 🔴 Limpa os logs de busca da Qobuz
+                os.system('clear') 
             else:
                 query = input(f"\n{Tema.TERMO}Termo de pesquisa (ou Ctrl+C para sair):\n{Tema.TEXTO}{Tema.TITULO} {Tema.OFF}").strip()
                 if not query: continue
                 
-                os.system('clear') # 🔴 TRANSIÇÃO: Oculta o input e mostra a tela de "Loading"
+                os.system('clear') 
                 print(f"\n{Tema.BUSCA}A procurar por '{query}' nos servidores da Qobuz...")
                 options = await self.search_by_type(query, selected_type, self.interactive_limit)
                 query_title = query.title()
-                os.system('clear') # 🔴 Limpa a tela de loading antes de chamar o pick
+                os.system('clear') 
 
             if not options:
                 print(f"{Tema.ALERTA}{Tema.AVISO}Nenhum resultado encontrado para '{query_title}'.{Tema.OFF}")
@@ -552,28 +581,32 @@ class QobuzDL:
                 continue
 
             O = _PICK_HEADER_OFFSET
+            t_head = ""
 
-            if selected_type in ("album_ep", "single") or (selected_type == "favorites" and fav_subtype in ("albums", "singles")):
-                is_track_search = (selected_type == "single" or fav_subtype == "singles")
-                col3_head = "ALBUM" if is_track_search else "GRAVADORA / ALBUM"
-                
-                b_top = f"{O}┌{'─' * (self.w_art+2)}┬{'─' * (self.w_tit+2)}┬{'─' * (self.w_alb+2)}┬{'─' * (self.w_typ+2)}┬{'─' * (self.w_yea+2)}┬{'─' * (self.w_qua+2)}┐"
-                h_row = f"{O}│ {'ARTISTA'.ljust(self.w_art)} │ {'TITULO'.ljust(self.w_tit)} │ {col3_head.ljust(self.w_alb)} │ {'TIPO'.ljust(self.w_typ)} │ {'ANO'.ljust(self.w_yea)} │ {'QUALIDADE'.ljust(self.w_qua)} │"
-                b_mid = f"{O}├{'─' * (self.w_art+2)}┼{'─' * (self.w_tit+2)}┼{'─' * (self.w_alb+2)}┼{'─' * (self.w_typ+2)}┼{'─' * (self.w_yea+2)}┼{'─' * (self.w_qua+2)}┤"
-                t_head = f"{b_top}\n{h_row}\n{b_mid}"
-            else:
-                w_name = getattr(self, "w_name", 50)
-                b_top = f"{O}┌{'─' * (w_name+2)}┬{'─' * 15}┐"
-                h_row = f"{O}│ {'NOME'.ljust(w_name)} │ {'LANCAMENTOS'.ljust(13)} │"
-                b_mid = f"{O}├{'─' * (w_name+2)}┼{'─' * 15}┤"
-                t_head = f"{b_top}\n{h_row}\n{b_mid}"
+            # Constrói o cabeçalho APENAS se for iPad/PC (is_mobile == False)
+            if not is_mobile:
+                if selected_type in ("album_ep", "single") or (selected_type == "favorites" and fav_subtype in ("albums", "singles")):
+                    is_track_search = (selected_type == "single" or fav_subtype == "singles")
+                    col3_head = "ALBUM" if is_track_search else "GRAVADORA / ALBUM"
+                    
+                    b_top = f"{O}┌{'─' * (self.w_art+2)}┬{'─' * (self.w_tit+2)}┬{'─' * (self.w_alb+2)}┬{'─' * (self.w_typ+2)}┬{'─' * (self.w_yea+2)}┬{'─' * (self.w_qua+2)}┐"
+                    h_row = f"{O}│ {'ARTISTA'.ljust(self.w_art)} │ {'TITULO'.ljust(self.w_tit)} │ {col3_head.ljust(self.w_alb)} │ {'TIPO'.ljust(self.w_typ)} │ {'ANO'.ljust(self.w_yea)} │ {'QUALIDADE'.ljust(self.w_qua)} │"
+                    b_mid = f"{O}├{'─' * (self.w_art+2)}┼{'─' * (self.w_tit+2)}┼{'─' * (self.w_alb+2)}┼{'─' * (self.w_typ+2)}┼{'─' * (self.w_yea+2)}┼{'─' * (self.w_qua+2)}┤"
+                    t_head = f"{b_top}\n{h_row}\n{b_mid}"
+                else:
+                    w_name = getattr(self, "w_name", 50)
+                    b_top = f"{O}┌{'─' * (w_name+2)}┬{'─' * 15}┐"
+                    h_row = f"{O}│ {'NOME'.ljust(w_name)} │ {'LANCAMENTOS'.ljust(13)} │"
+                    b_mid = f"{O}├{'─' * (w_name+2)}┼{'─' * 15}┤"
+                    t_head = f"{b_top}\n{h_row}\n{b_mid}"
 
-            title = f'*** RESULTADOS PARA "{query_title}" ***\n[Use setas para mover | Espaço para marcar/desmarcar | Enter para confirmar]\n\n{t_head}'
+            title = f'*** RESULTADOS PARA "{query_title}" ***\n[Use setas para mover | Espaço para selecionar | Enter para confirmar]\n'
+            if t_head: title += f"\n{t_head}"
+            
             options_texts = [opt.get("text") for opt in options]
             
-            # --- MENU INTERATIVO ---
-            selected_items = pick.pick(options_texts, title, multiselect=True, min_selection_count=0)
-            os.system('clear') # 🔴 TRANSIÇÃO CRUCIAL: Apaga os "fantasmas" do pick!
+            selected_items = pick.pick(options_texts, title, multiselect=True, min_selection_count=0, indicator="❯")
+            os.system('clear') 
 
             if selected_items:
                 print(f"\n{Tema.SYS}{Tema.SUCESSO}{len(selected_items)} item(ns) selecionado(s)!{Tema.OFF}")
@@ -589,15 +622,19 @@ class QobuzDL:
                         if selected_type == "artist" or (selected_type == "favorites" and fav_subtype == "artists"):
                             intercept_artist = True
                             artist_id = url.rstrip("/").split("/")[-1]
-                            text_parts = opt_data["text"].split("│")
-                            artist_name = text_parts[1].strip() if len(text_parts) > 1 else "Artista"
+                            
+                            if not is_mobile:
+                                text_parts = opt_data["text"].split("│")
+                                artist_name = text_parts[1].strip() if len(text_parts) > 1 else "Artista"
+                            else:
+                                artist_name = opt_data["text"].replace("📂 ", "").split(" (")[0]
                             
                             albums_urls = await self._fetch_and_pick_artist_albums(artist_id, artist_name)
                             final_url_list.extend(albums_urls)
                         else:
                             final_url_list.append(url)
 
-                os.system('clear') # 🔴 Limpa antes da decisão final
+                os.system('clear') 
                 
                 if intercept_artist and not final_url_list:
                     continue
@@ -614,7 +651,7 @@ class QobuzDL:
 
     async def _fetch_and_pick_artist_albums(self, artist_id: str, artist_name: str) -> List[str]:
         import pick
-        os.system('clear') # 🔴 TRANSIÇÃO DE TELA DE LOADING
+        os.system('clear') 
         print(f"\n{Tema.BUSCA}A analisar discografia completa de {Tema.TITULO}{artist_name}{Tema.OFF}...")
         
         all_albums = []
@@ -631,8 +668,10 @@ class QobuzDL:
             await asyncio.sleep(1.5)
             return []
             
+        is_mobile = is_mobile_screen()
         raw_data = []
         max_tit = len("TITULO")
+        
         for i in all_albums:
             title = i.get("title") or i.get("name") or "Unknown"
             if i.get("version"): title = f"{title} ({i['version']})"
@@ -648,25 +687,36 @@ class QobuzDL:
         type_order = {"album": 1, "ep": 2, "single": 3, "live": 4, "compilation": 5}
         raw_data.sort(key=lambda x: (type_order.get(x[5], 9), -int(x[2] if x[2].isdigit() else 0)))
         
-        O = _PICK_HEADER_OFFSET
-        b_top = f"{O}┌{'─' * (max_tit+2)}┬{'─' * 13}┬{'─' * 6}┬{'─' * 22}┐"
-        h_row = f"{O}│ {'TITULO'.ljust(max_tit)} │ {'TIPO'.ljust(11)} │ {'ANO'.ljust(4)} │ {'QUALIDADE'.ljust(20)} │"
-        b_mid = f"{O}├{'─' * (max_tit+2)}┼{'─' * 13}┼{'─' * 6}┼{'─' * 22}┤"
-        t_head = f"{b_top}\n{h_row}\n{b_mid}"
-        
+        t_head = ""
         options_texts = []
         options_urls = []
-        
-        for title, rel_type, year, quality, i, _ in raw_data:
-            text = f"│ {_align_text(title, max_tit)} │ {_align_text(rel_type, 11)} │ {_align_text(year, 4)} │ {_align_text(quality, 20)} │"
-            options_texts.append(text)
-            options_urls.append(f"{WEB_URL}album/{i.get('id', '')}")
+
+        if not is_mobile:
+            O = _PICK_HEADER_OFFSET
+            b_top = f"{O}┌{'─' * (max_tit+2)}┬{'─' * 13}┬{'─' * 6}┬{'─' * 22}┐"
+            h_row = f"{O}│ {'TITULO'.ljust(max_tit)} │ {'TIPO'.ljust(11)} │ {'ANO'.ljust(4)} │ {'QUALIDADE'.ljust(20)} │"
+            b_mid = f"{O}├{'─' * (max_tit+2)}┼{'─' * 13}┼{'─' * 6}┼{'─' * 22}┤"
+            t_head = f"{b_top}\n{h_row}\n{b_mid}"
             
-        title_text = f"*** DISCOGRAFIA DE {artist_name.upper()} ***\nSelecione os lançamentos que deseja baixar (Espaço para marcar):\n\n{t_head}"
+            for title, rel_type, year, quality, i, _ in raw_data:
+                text = f"│ {_align_text(title, max_tit)} │ {_align_text(rel_type, 11)} │ {_align_text(year, 4)} │ {_align_text(quality, 20)} │"
+                options_texts.append(text)
+                options_urls.append(f"{WEB_URL}album/{i.get('id', '')}")
+        else:
+            for title, rel_type, year, quality, i, _ in raw_data:
+                if ESTILO_MOBILE == 1:
+                    text = f"🎵 {title} ({year})\n   ├─ 🏷️ {rel_type}\n   └─ 🎧 {quality}"
+                else:
+                    text = f"🎵 {title} ({year}) | 🏷️ {rel_type} | 🎧 {quality}"
+                options_texts.append(text)
+                options_urls.append(f"{WEB_URL}album/{i.get('id', '')}")
+            
+        title_text = f"*** DISCOGRAFIA DE {artist_name.upper()} ***\nSelecione os lançamentos que deseja baixar (Espaço para marcar):\n"
+        if t_head: title_text += f"\n{t_head}"
         
-        os.system('clear') # 🔴 Limpa a tela de loading antes de renderizar a discografia
-        selected = pick.pick(options_texts, title_text, multiselect=True, min_selection_count=0)
-        os.system('clear') # 🔴 TRANSIÇÃO CRUCIAL: Apaga os "fantasmas"
+        os.system('clear') 
+        selected = pick.pick(options_texts, title_text, multiselect=True, min_selection_count=0, indicator="❯")
+        os.system('clear') 
         
         return [options_urls[idx] for _, idx in selected] if selected else []
 
@@ -675,22 +725,22 @@ class QobuzDL:
         
         try:
             import pick
-            if hasattr(pick, "SYMBOL_CIRCLE_EMPTY"): pick.SYMBOL_CIRCLE_EMPTY, pick.SYMBOL_CIRCLE_FILLED = "[ ]", "[X]"
+            if hasattr(pick, "SYMBOL_CIRCLE_EMPTY"): pick.SYMBOL_CIRCLE_EMPTY, pick.SYMBOL_CIRCLE_FILLED = "[ ]", "[x]"
         except ImportError:
             sys.exit("Please install pick library.")
 
         try:
-            os.system('clear') # 🔴 O Início de tudo limpo
+            os.system('clear') 
             item_types = ["Álbuns e EPs", "Singles", "Artistas", "Playlists", "Favoritos"]
             selected_type_raw = pick.pick(item_types, "O que deseja pesquisar?")[0]
-            os.system('clear') # 🔴 Limpa após a primeira escolha
+            os.system('clear') 
             
             fav_subtype = ""
             
             if selected_type_raw == "Favoritos":
                 selected_type = "favorites"
                 fav_subtype_raw = pick.pick(["Álbuns e EPs", "Singles", "Artistas", "Playlists"], "Navegar em qual categoria de favoritos?")[0]
-                os.system('clear') # 🔴 Limpa de novo
+                os.system('clear') 
                 
                 if fav_subtype_raw == "Álbuns e EPs": fav_subtype = "albums"
                 elif fav_subtype_raw == "Singles": fav_subtype = "singles"
@@ -705,11 +755,11 @@ class QobuzDL:
             final_url_list = await self._interactive_search_loop(selected_type, fav_subtype)
 
             if final_url_list:
-                os.system('clear') # 🔴 Garante a tela limpa antes da qualidade
+                os.system('clear') 
                 qualities = [{"q_string": "320kbps MP3", "q": 5}, {"q_string": "Lossless 16-bit", "q": 6}, {"q_string": "Hi-Res =< 96kHz", "q": 7}, {"q_string": "Hi-Res > 96kHz", "q": 27}]
                 self.quality = qualities[pick.pick([q.get("q_string") for q in qualities], "Defina a qualidade (downgrade automático se não existir):", default_index=1)[1]]["q"]
                 
-                os.system('clear') # 🔴 O Grande Final: Ecrã limpo para o motor de download começar a desenhar as barras de progresso!
+                os.system('clear') 
                 if download: await self.download_list_of_urls(final_url_list)
                 return final_url_list
 

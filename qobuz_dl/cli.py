@@ -585,7 +585,7 @@ async def amain():
             app_id, secrets = fresh_app_id, fresh_secrets
             print(f"\r\033[K{Tema.SYS}{GREEN}Chaves atualizadas com sucesso!{OFF}", end="", flush=True)
     except asyncio.TimeoutError:
-        print(f"\r\033[K{Tema.SYS}{YELLOW}Aviso: Tempo esgotado na API (Usando chaves offline..){OFF}", end="", flush=True)
+        print(f"\r\033[K{Tema.SYS}{YELLOW}Aviso: Tempo esgotado (Usando chaves offline..){OFF}", end="", flush=True)
     except Exception as e:
         print(f"\r\033[K{Tema.SYS}{RED}Aviso: Erro ao buscar chaves novas ({e}){OFF}", end="", flush=True)
 
