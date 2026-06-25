@@ -42,7 +42,7 @@ class Client:
     Lida com autenticação, pesquisa, metadados e obtenção de URLs de streaming/download.
     """
     def __init__(self, email: str, pwd: str, app_id: str, secrets: list, user_auth_token: str = None, force_english: bool = True):
-        print(f"\r\033[K{Tema.SYS}{YELLOW}Estabelecendo conexão com os servidores...{OFF}", end="", flush=True)
+        print(f"\r\033[K{Tema.SYS}{YELLOW}Estabelecendo conexão...{OFF}", end="", flush=True)
         self.secrets = secrets
         self.id = str(app_id)
         self.force_english = force_english
@@ -54,7 +54,7 @@ class Client:
                 if fresh_id:
                     self.id = fresh_id
                     self.secrets = list(b.get_secrets().values())
-                    print(f"\r\033[K{Tema.SYS}{GREEN}Chave da API sincronizada: APP_ID: ({self.id}). Autenticando..{OFF}", end="", flush=True)
+                    print(f"\r\033[K{Tema.SYS}{GREEN} APP_ID Sincronizado: ({self.id}){OFF}", end="", flush=True)
             except Exception as e:
                 logger.warning(f"Não foi possível atualizar app_id/secrets dinamicamente: {e}")
 
