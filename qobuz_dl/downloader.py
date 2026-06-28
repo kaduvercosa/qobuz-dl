@@ -664,7 +664,7 @@ class Download:
                     total_tracks = getattr(self.settings, 'playlist_total_count', '??')
                     prefix_str = f"[{t_no}/{str(total_tracks).zfill(2)}]"
 
-                elif getattr(self.'is_single_batch', False):
+                elif getattr(self,'is_single_batch', False):
                     l_icon = "🎼 LOTE DE SINGLES"
                     if not getattr(self.settings, '_badge_batch_printed', False):
                         t_lote = f"  {l_icon}"
