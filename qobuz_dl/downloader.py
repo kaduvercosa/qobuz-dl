@@ -22,7 +22,7 @@ import asyncio
 try:
     from Cryptodome.Cipher import AES
     HAS_NATIVE_CRYPTO = True
-except (ImportError, OsError):
+except (ImportError, OSError):
     try:
         from Crypto.Cipher import AES
         HAS_NATIVE_CRYPTO = True
