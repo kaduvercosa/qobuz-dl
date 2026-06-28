@@ -40,6 +40,7 @@ dependencies = [
     "beautifulsoup4",
     "colorama",
     "pycryptodome",
+    "pyaes",
     "lyricsgenius",
     "langdetect",
     "requests",

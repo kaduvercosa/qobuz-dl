@@ -8,6 +8,7 @@ pick==1.6.0
 beautifulsoup4
 colorama
 pycryptodome
+pyaes
 lyricsgenius
 langdetect
 requests

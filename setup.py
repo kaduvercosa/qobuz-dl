@@ -32,6 +32,7 @@ requirements = [
     "colorama",
     # NOTE: cryptography was replaced with pycryptodome for better portability (e.g. ish-shell/IOS)
     "pycryptodome",
+    "pyaes",
     "lyricsgenius",
     "langdetect",
     "requests",

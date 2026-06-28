@@ -233,7 +233,9 @@ class QobuzDL:
                 genius_token=self.genius_token, deepl_api_key=self.deepl_api_key, translate_lyrics=self.translate_lyrics, target_lang=self.target_lang,
                 no_credits=self.no_credits, settings=self.settings, download_db=self.downloads_db,
                 is_playlist=is_playlist, playlist_track_number=playlist_index, booklet_only=self.booklet_only,
-                is_single_batch=is_single_batch, single_batch_index=single_batch_index, single_batch_total=single_batch_total
+                is_single_batch=is_single_batch, 
+                single_batch_index=single_batch_index, 
+                    single_batch_total=single_batch_total
             )
             await dloader.download_id_by_type(not album)
         except (aiohttp.ClientError, asyncio.TimeoutError, NonStreamable) as exc:

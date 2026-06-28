@@ -21,8 +21,14 @@ import aiofiles
 import asyncio
 try:
     from Cryptodome.Cipher import AES
-except ImportError:
-    from Crypto.Cipher import AES
+    HAS_NATIVE_CRYPTO = True
+except (ImportError, OsError):
+    try:
+        from Crypto.Cipher import AES
+        HAS_NATIVE_CRYPTO = True
+    except ImportError:
+        import pyaes
+        HAS_NATIVE_CRYPTO = False
 from pathvalidate import sanitize_filename, sanitize_filepath
 from tqdm import tqdm
 
@@ -427,7 +433,7 @@ class Download:
                         t_tot = str(_track_count).zfill(2)
                         prefix_str = f"[{t_no}/{t_tot}]"
                         
-                        desc_name = track_item.get('title', 'Faixa Desconhecida')
+                        desc_name = _get_title(track_item) or 'Faixa Desconhecida'
                         t_artist = track_item.get('performer', {}).get('name') or a_meta.get('artist', {}).get('name', 'Unknown')
                         
                         c_bg_sec = Tema.BG_ALBUM_SEC
@@ -637,12 +643,13 @@ class Download:
                 c_bg = Tema.BG_SINGLE
                 c_bg_sec = Tema.BG_SINGLE_SEC
                 c_txt = Tema.TXT_SINGLE
-                l_icon = "🎵 SINGLE"
+                #l_icon = "🎵 SINGLE"
 
                 p_len = get_dynamic_pad()
                 prefix_str = ""
 
                 if getattr(self, 'is_playlist', False):
+                    l_icon = "🎶 PLAYLIST"
                     pl_name = getattr(self.settings, 'playlist_name', 'PLAYLIST')
                     pl_badge_key = f"_badge_pl_printed_{pl_name}"
                     if not getattr(self.settings, pl_badge_key, False):
@@ -657,7 +664,8 @@ class Download:
                     total_tracks = getattr(self.settings, 'playlist_total_count', '??')
                     prefix_str = f"[{t_no}/{str(total_tracks).zfill(2)}]"
 
-                elif self.is_single_batch:
+                elif getattr(self.'is_single_batch', False):
+                    l_icon = "🎼 LOTE DE SINGLES"
                     if not getattr(self.settings, '_badge_batch_printed', False):
                         t_lote = f"  {l_icon}"
                         if len(t_lote) > p_len: t_lote = t_lote[:p_len-3] + "..."
@@ -671,6 +679,7 @@ class Download:
                     prefix_str = f"[{t_no}/{t_tot}]"
                 
                 else:
+                    t_icon = "🎵 SINGLE"
                     t_single = f"  {l_icon}"
                     if len(t_single) > p_len: t_single = t_single[:p_len-3] + "..."
                     BADGE_S = f"{c_bg}{Tema.TXT_WHITE}{Tema.BOLD}{t_single} {Tema.OFF}"
@@ -849,21 +858,21 @@ class Download:
             
         final_file = Path(root_dir) / f"{formatted_path}{extension}"
 
-        desc_name = track_meta.get('title', 'Unknown')
+        desc_name = _get_title(track_meta) or  'Unknown'
         if len(desc_name) > 30: desc_name = desc_name[:27] + "..."
 
         if use_siglas:
             t_tag_arq    = f"{t_tag}{c_txt}{Tema.BOLD}[ÁUDIO]{Tema.OFF} {c_txt}├──{Tema.OFF}"
             t_tag_aviso  = f"{t_tag}{c_txt}{Tema.BOLD}[AVISO]{Tema.OFF} {c_txt}├──{Tema.OFF}"
             t_tag_letra  = f"{t_tag}{c_txt}{Tema.BOLD}[LETRA]{Tema.OFF} {c_txt}├──{Tema.OFF}"
-            t_tag_status = f"{t_tag}{c_txt}{Tema.BOLD}[FINAL]{Tema.OFF} {c_txt}└──{Tema.OFF}"
-            t_tag_bar    = f"{t_tag}{c_txt}{Tema.BOLD}       {Tema.OFF} {c_txt}│  {Tema.OFF}"
+            t_tag_status = f"{t_tag}{c_txt}{Tema.BOLD}[FINAL]{Tema.OFF} {c_txt}├──{Tema.OFF}"
+            t_tag_bar    = f"{t_tag}{c_txt}{Tema.BOLD}       {Tema.OFF} {c_txt}└──{Tema.OFF}"
         else:
             t_tag_arq    = f"{t_tag}{c_txt}├──{Tema.OFF}"
             t_tag_aviso  = f"{t_tag}{c_txt}├──{Tema.OFF}"
             t_tag_letra  = f"{t_tag}{c_txt}├──{Tema.OFF}"
-            t_tag_status = f"{t_tag}{c_txt}└──{Tema.OFF}"
-            t_tag_bar    = f"{t_tag}{c_txt}│  {Tema.OFF}"
+            t_tag_status = f"{t_tag}{c_txt}├──{Tema.OFF}"
+            t_tag_bar    = f"{t_tag}{c_txt}└──{Tema.OFF}"
 
         if final_file.exists():
             await _log(f"{t_tag_arq} 🎧 {Tema.BOLD}{desc_name}{Tema.OFF}")
@@ -1651,8 +1660,16 @@ def _decrypt_qobuz_segment(segment_data, raw_key, segment_uuid):
 
                 if flags:
                     c = bytes(buf[ptr : ptr + c_len]) + (b"\x00" * (16 - c_len))
-                    cipher = AES.new(raw_key, AES.MODE_CTR, initial_value=c, nonce=b'')
-                    buf[f_start:data_end] = cipher.decrypt(bytes(buf[f_start:data_end]))
+                    
+                    if HAS_NATIVE_CRYPTO: 
+                        cipher = AES.new(raw_key, AES.MODE_CTR, initial_value=c, nonce=b'')
+                        buf[f_start:data_end] = cipher.decrypt(bytes(buf[f_start:data_end]))
+                    else:
+                        counter_int = int.from_bytes(c, byteorder='big')
+                        counter = pyaes.Counter(initial_value=counter_int)
+                        cipher = pyaes.AESModeOfOperationCTR(raw_key, counter=counter)
+                        buf[f_start:data_end] = cipher.decrypt(bytes(buf[f_start:data_end]))
+
                 ptr += c_len
         pos += size
     return bytes(buf)
