@@ -38,22 +38,14 @@ def ensure_long_path(path: Union[str, Path]) -> str:
     except Exception:
         return str(path)
 
-is_ios = sys.platform == "ios"
-if not is_ios and sys.platform == "darwin":
-    if platform.machine().startswith(("iPhone", "iPad", "iPod")) or "PYTHONISTA_ROOT" in os.environ or "/var/mobile/" in str(Path.home()):
-        is_ios = True
+from qobuz_dl.constants import IS_IOS, CONFIG_PATH, DEFAULT_DOWNLOAD_DIR
 
 if os.name == "nt":
-    OS_CONFIG = Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming")
-elif is_ios:
-    OS_CONFIG = Path.home() / "Documents"
-else:
-    OS_CONFIG = Path(os.environ.get("HOME") or Path.home()) / ".config"
+    _win_base = Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming")
+    CONFIG_PATH = _win_base / "qobuz-dl"
 
-CONFIG_PATH = OS_CONFIG / "qobuz-dl"
 CONFIG_FILE = CONFIG_PATH / "config.ini"
-QOBUZ_DB = CONFIG_PATH / "qobuz_dl.db"
-
+QOBUZ_DB    = CONFIG_PATH / "qobuz_dl.db"
 
 # ==============================================================================
 # 2. FUNÇÕES UTILITÁRIAS E DE VERIFICAÇÃO (UTILITIES)
@@ -234,7 +226,7 @@ def _reset_config(config_file: Path) -> int:
 
         print(f"\n{YELLOW}--- 6. PREFERÊNCIAS DE DOWNLOAD ---{OFF}")
         directory = input(f"  ❯ Pasta principal de downloads {CYAN}[padrão: Qobuz Downloads]{OFF}: ").strip()
-        config["qobuz"]["directory"] = directory if directory else "Qobuz Downloads"
+        config["qobuz"]["directory"] = directory if directory else DEFAULT_DOWNLOAD_DIR
 
         folder_format = input(f"  ❯ Formato das subpastas {CYAN}[padrão: {DEFAULT_FOLDER}]{OFF}: ").strip()
         config["qobuz"]["folder_format"] = folder_format if folder_format else DEFAULT_FOLDER
@@ -333,7 +325,7 @@ async def _intercept_standalone_commands():
         _cfg = configparser.ConfigParser(interpolation=None)
         _cfg.read(CONFIG_FILE)
         _sec = "qobuz" if _cfg.has_section("qobuz") else "DEFAULT"
-        scan_dir = os.path.expanduser(_cfg.get(_sec, "directory", fallback=None) or _cfg.get(_sec, "default_folder", fallback="Qobuz Downloads"))
+        scan_dir = os.path.expanduser(_cfg.get(_sec, "directory", fallback=None) or _cfg.get(_sec, "default_folder", fallback=DEFAULT_DOWNLOAD_DIR))
 
         print(f"\n{CYAN}--- QOBUZ-DL MASTER -- LIBRARY STATISTICS ---{OFF}")
         force_full_scan = "--full-scan" in sys.argv or "--rescan" in sys.argv
@@ -384,7 +376,7 @@ async def _intercept_standalone_commands():
             _cfg = configparser.ConfigParser(interpolation=None)
             _cfg.read(CONFIG_FILE)
             _sec = "qobuz" if _cfg.has_section("qobuz") else "DEFAULT"
-            target_directory = sys.argv[2] if len(sys.argv) > 2 else _cfg.get(_sec, "directory", fallback="Qobuz Downloads")
+            target_directory = sys.argv[2] if len(sys.argv) > 2 else _cfg.get(_sec, "directory", fallback=DEFAULT_DOWNLOAD_DIR)
             _deepl = _cfg.get(_sec, "deepl_api_key", fallback=None)
             _lang = _cfg.get(_sec, "target_lang", fallback="PT-BR")
             await interactive_translate_lyrics(ensure_long_path(target_directory), deepl_api_key=_deepl, target_lang=_lang)
@@ -485,7 +477,7 @@ async def amain():
                 print(f"{YELLOW}[!] Notice: 'default_folder' is deprecated. Rename it to 'directory'.{OFF}")
                 default_folder = legacy_val
             else:
-                default_folder = "Qobuz Downloads"
+                default_folder = DEFAULT_DOWNLOAD_DIR
 
         default_limit = config.get(section, "default_limit")
         default_quality = config.get(section, "default_quality")

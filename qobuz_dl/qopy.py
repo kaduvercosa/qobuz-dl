@@ -19,6 +19,64 @@ except ImportError:
     from Crypto.Hash import SHA256
     from Crypto.Cipher import AES
     from Crypto.Util.Padding import unpad
+except ImportError:
+        # Fallback pure-Python para iOS/a-Shell (sem compilador C)
+        import hmac, hashlib, struct
+
+        class SHA256:
+            digest_size = 32
+            @staticmethod
+            def new(data=b""):
+                import hashlib
+                class _W:
+                    def __init__(self, d): self._h = hashlib.sha256(d)
+                    def digest(self): return self._h.digest()
+                    def update(self, d): self._h.update(d)
+                return _W(data)
+
+        def HKDF(master, key_len, salt, hashmod, num_keys=1, context=b""):
+            # HKDF-Extract
+            if salt is None:
+                salt = bytes(32)
+            prk = hmac.new(salt, master, hashlib.sha256).digest()
+            # HKDF-Expand
+            total = key_len * num_keys
+            n = -(-total // 32)  # ceil
+            okm, t = b"", b""
+            for i in range(1, n + 1):
+                t = hmac.new(prk, t + context + struct.pack("B", i), hashlib.sha256).digest()
+                okm += t
+            okm = okm[:total]
+            if num_keys == 1:
+                return okm
+            return tuple(okm[i*key_len:(i+1)*key_len] for i in range(num_keys))
+
+        try:
+            import pyaes
+            class AES:
+                MODE_CBC = 2
+                @staticmethod
+                def new(key, mode, iv):
+                    class _AES:
+                        def __init__(self, k, iv):
+                            self._k, self._iv = k, iv
+                        def decrypt(self, data):
+                            aes = pyaes.AESModeOfOperationCBC(self._k, iv=self._iv)
+                            out = b""
+                            for i in range(0, len(data), 16):
+                                out += aes.decrypt(data[i:i+16])
+                            return out
+                    return _AES(key, iv)
+
+            def unpad(data, block_size):
+                pad_len = data[-1]
+                return data[:-pad_len]
+
+        except ImportError:
+            raise ImportError(
+                "[!] Nenhuma biblioteca de criptografia encontrada.\n"
+                "    No a-Shell/iOS, instale: pip install pyaes"
+            )
 
 from qobuz_dl.exceptions import (
     AuthenticationError,

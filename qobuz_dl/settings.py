@@ -3,7 +3,7 @@ import configparser
 from dataclasses import dataclass, field
 from typing import List, Any, Dict
 
-from qobuz_dl.constants import DEFAULT_FOLDER, DEFAULT_TRACK, DEFAULT_MULTIPLE_DISC_TRACK
+from qobuz_dl.constants import DEFAULT_FOLDER, DEFAULT_TRACK, DEFAULT_MULTIPLE_DISC_TRACK, DEFAULT_DOWNLOAD_DIR
 
 @dataclass
 class QobuzDLSettings:
@@ -106,7 +106,7 @@ class QobuzDLSettings:
             # Opções Básicas
             'email': config.get(section, "email", fallback=""),
             'password': config.get(section, "password", fallback=""),
-            'default_folder': getattr(arguments, 'directory', None) or config.get(section, "default_folder", fallback="QobuzDownloads"),
+            'default_folder': getattr(arguments, 'directory', None) or config.get(section, "default_folder", fallback=DEFAULT_DOWNLOAD_DIR),
             'default_quality': getattr(arguments, 'quality', None) or config.get(section, "default_quality", fallback="6"),
             'default_limit': config.get(section, "default_limit", fallback="20"),
             'no_m3u': arg_or_config_bool('no_m3u', section, 'no_m3u', False),
