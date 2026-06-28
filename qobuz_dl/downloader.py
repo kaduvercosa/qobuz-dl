@@ -639,17 +639,17 @@ class Download:
                 file_format, quality_met, bit_depth, sampling_rate = await self._get_format(track_meta, is_track_id=True, track_url_dict=parse)
                 if not self.downgrade_quality and not quality_met:
                     return
-            
-                c_bg = Tema.BG_SINGLE
-                c_bg_sec = Tema.BG_SINGLE_SEC
-                c_txt = Tema.TXT_SINGLE
-                #l_icon = "🎵 SINGLE"
 
                 p_len = get_dynamic_pad()
                 prefix_str = ""
 
+                # MODO PLAYLIST
                 if getattr(self, 'is_playlist', False):
+                    c_bg = Tema.BG_PLAYLIST
+                    c_bg_sec = Tema.BG_PLAYLIST_SEC
+                    c_txt = Tema.TXT_PLAYLIST
                     l_icon = "🎶 PLAYLIST"
+
                     pl_name = getattr(self.settings, 'playlist_name', 'PLAYLIST')
                     pl_badge_key = f"_badge_pl_printed_{pl_name}"
                     if not getattr(self.settings, pl_badge_key, False):
@@ -664,8 +664,13 @@ class Download:
                     total_tracks = getattr(self.settings, 'playlist_total_count', '??')
                     prefix_str = f"[{t_no}/{str(total_tracks).zfill(2)}]"
 
+                # MODO LOTE DE SINGLES
                 elif getattr(self,'is_single_batch', False):
+                    c_bg = Tema.BG_LOTE
+                    c_bg_sec = Tema.BG_LOTE_SEC
+                    c_txt = Tema.TXT_LOTE
                     l_icon = "🎼 LOTE DE SINGLES"
+
                     if not getattr(self.settings, '_badge_batch_printed', False):
                         t_lote = f"  {l_icon}"
                         if len(t_lote) > p_len: t_lote = t_lote[:p_len-3] + "..."
@@ -677,9 +682,14 @@ class Download:
                     t_no = str(self.single_batch_index).zfill(2)
                     t_tot = str(self.single_batch_total).zfill(2)
                     prefix_str = f"[{t_no}/{t_tot}]"
-                
+
+                # MODO SINGLE ÚNICO
                 else:
-                    t_icon = "🎵 SINGLE"
+                    c_bg = Tema.BG_SINGLE
+                    c_bg_sec = Tema.BG_SINGLE_SEC
+                    c_txt = Tema.TXT_SINGLE
+                    l_icon = "🎵 SINGLE"
+
                     t_single = f"  {l_icon}"
                     if len(t_single) > p_len: t_single = t_single[:p_len-3] + "..."
                     BADGE_S = f"{c_bg}{Tema.TXT_WHITE}{Tema.BOLD}{t_single} {Tema.OFF}"
