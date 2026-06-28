@@ -63,7 +63,7 @@ class QobuzDLSettings:
     multiple_disc_track_format: str = DEFAULT_MULTIPLE_DISC_TRACK
 
     # Concorrência e API
-    max_workers: str = "1"
+    max_workers: str = "3"
     delay: int = 0
     user_auth_token: str = ""
 
@@ -155,7 +155,7 @@ class QobuzDLSettings:
             'multi_value_tags': getattr(arguments, 'multi_value_tags', False) or config.getboolean(section, "multi_value_tags", fallback=False),
             
             # Concorrência e APIs Extras
-            'max_workers': getattr(arguments, 'max_workers', None) or config.get(section, "max_workers", fallback="1"),
+            'max_workers': getattr(arguments, 'max_workers', None) or config.get(section, "max_workers", fallback="3"),
             'delay': getattr(arguments, 'delay', 0) or config.getint(section, "delay", fallback=0),
             'user_auth_token': config.get(section, "user_auth_token", fallback=""),
             'deepl_api_key':  getattr(arguments, 'deepl_api_key', config.get(section, "deepl_api_key", fallback="")),

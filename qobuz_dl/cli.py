@@ -271,7 +271,7 @@ def _reset_config(config_file: Path) -> int:
         "embedded_art_size": "org", "saved_art_size": "org",
         "multiple_disc_prefix": "CD", "multiple_disc_one_dir": "false",
         "multiple_disc_track_format": "{disc_number}.{track_number} - {track_title}",
-        "max_workers": "1", "user_auth_token": ""
+        "max_workers": "3", "user_auth_token": ""
     })
 
     print()
@@ -525,7 +525,7 @@ async def amain():
     if arguments.command == "lyrics":
         from qobuz_dl.retro_tagger import inject_lyrics_retroactively
         try:
-            await inject_lyrics_retroactively(ensure_long_path(arguments.DIR), genius_token=genius_token, deepl_api_key=deepl_api_key, overwrite=getattr(arguments, 'overwrite', False), target_lang=target_lang, translate_lyrics=translate_lyrics, max_workers=int(config.get(section, "max_workers", fallback=1)))
+            await inject_lyrics_retroactively(ensure_long_path(arguments.DIR), genius_token=genius_token, deepl_api_key=deepl_api_key, overwrite=getattr(arguments, 'overwrite', False), target_lang=target_lang, translate_lyrics=translate_lyrics, max_workers=int(config.get(section, "max_workers", fallback=3)))
         except KeyboardInterrupt: print(f"\n\n{RED}[!] Operation manually interrupted by the user (CTRL+C).{OFF}\n{YELLOW}Already processed files are safe. Exiting...{OFF}")
         sys.exit(0)
 

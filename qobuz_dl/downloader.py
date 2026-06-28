@@ -333,7 +333,7 @@ class Download:
             try: delay_time = int(sys.argv[sys.argv.index('--delay') + 1])
             except: pass
             
-        active_workers = int(getattr(self.settings, 'max_workers', 1))
+        active_workers = int(getattr(self.settings, 'max_workers', 3))
         is_parallel = active_workers > 1 and delay_time == 0
         
         if delay_time > 0:

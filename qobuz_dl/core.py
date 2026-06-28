@@ -370,7 +370,7 @@ class QobuzDL:
     async def download_list_of_urls(self, urls: List[str], txt_file: Optional[str] = None):
         if not urls or not isinstance(urls, list): return
         
-        try: max_batch_workers = int(getattr(self.settings, "max_workers", 1))
+        try: max_batch_workers = int(getattr(self.settings, "max_workers", 3))
         except (ValueError, TypeError): max_batch_workers = 1
         
         is_batch = len(urls) > 1
