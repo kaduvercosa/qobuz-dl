@@ -14,13 +14,13 @@ try:
     from Cryptodome.Hash import SHA256
     from Cryptodome.Cipher import AES
     from Cryptodome.Util.Padding import unpad
-except ImportError:
-    from Crypto.Protocol.KDF import HKDF
-    from Crypto.Hash import SHA256
-    from Crypto.Cipher import AES
-    from Crypto.Util.Padding import unpad
-except ImportError:
-        # Fallback pure-Python para iOS/a-Shell (sem compilador C)
+except (ImportError, OSError):
+    try:
+        from Crypto.Protocol.KDF import HKDF
+        from Crypto.Hash import SHA256
+        from Crypto.Cipher import AES
+        from Crypto.Util.Padding import unpad
+    except (ImportError, OSError):
         import hmac, hashlib, struct
 
         class SHA256:
