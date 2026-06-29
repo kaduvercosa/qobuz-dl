@@ -35,17 +35,44 @@ def is_mobile_screen() -> bool:
     return shutil.get_terminal_size((120, 20)).columns < 95
 
 def _read_key():
-    """Captura silenciosa das teclas (Virtual e Magic Keyboard)."""
-    fd = sys.stdin.fileno()
-    old_settings = termios.tcgetattr(fd)
+    """Captura silenciosa das teclas. Usa /dev/tty para evitar bloqueios no a-Shell."""
+    fd = None
+    is_dev_tty = False
+    try:
+        # Aceder diretamente ao hardware ignora bugs de emulação TTY do iOS
+        fd = os.open('/dev/tty', os.O_RDONLY)
+        is_dev_tty = True
+    except Exception:
+        fd = sys.stdin.fileno()
+
+    try:
+        old_settings = termios.tcgetattr(fd)
+    except Exception:
+        # Fallback de segurança extrema
+        if is_dev_tty: os.close(fd)
+        return sys.stdin.read(1)
+
     try:
         tty.setraw(fd)
-        ch = sys.stdin.read(1)
+        if is_dev_tty:
+            ch = os.read(fd, 1).decode('utf-8', errors='ignore')
+        else:
+            ch = sys.stdin.read(1)
+            
         if ch == '\x1b':
-            if select.select([sys.stdin], [], [], 0.05)[0]:
-                ch += sys.stdin.read(2)
+            if select.select([fd], [], [], 0.05)[0]:
+                if is_dev_tty:
+                    ch += os.read(fd, 2).decode('utf-8', errors='ignore')
+                else:
+                    ch += sys.stdin.read(2)
     finally:
-        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        try:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        except Exception:
+            pass
+        if is_dev_tty:
+            os.close(fd)
+            
     return ch
 
 def _gerar_tabela_rich(titulo: str, col_headers: list, opcoes: list, current_idx: int, selected_indices: set, multiselect: bool, is_mobile: bool):
@@ -130,7 +157,8 @@ async def abrir_interface(titulo: str, col_headers: list, opcoes: list, multisel
 
     with Live(_gerar_tabela_rich(titulo, col_headers, opcoes, current_idx, selected_indices, multiselect, is_mobile), console=console, refresh_per_second=12, transient=True) as live:
         while True:
-            key = await asyncio.to_thread(_read_key)
+            # Sem asyncio.to_thread! Executamos direto na main thread.
+            key = _read_key()
             
             if key in ('q', 'Q', '\x03'): 
                 return []
@@ -531,7 +559,7 @@ class QobuzDL:
         await self.download_list_of_urls(valid_urls, txt_file=txt_file)
 
     # ---------------------------------------------------------------------------
-    # Motor de Análise e Busca Qobuz API
+    # Tabela Inteligente (Adaptada para Rich)
     # ---------------------------------------------------------------------------
     async def search_by_type(self, query: Optional[str], item_type: str, limit: int = 10, lucky: bool = False, fav_subtype: Optional[str] = None):
         limit = int(limit)
@@ -648,8 +676,8 @@ class QobuzDL:
                 col_headers, options = await self.search_by_type(None, selected_type, limit=self.interactive_limit, fav_subtype=fav_subtype)
                 query_display = "MEUS FAVORITOS"
             else:
-                query = await asyncio.to_thread(input, f"\n{Tema.TERMO}Termo de pesquisa (ou Ctrl+C para sair):\n{Tema.TEXTO}{Tema.TITULO} {Tema.OFF}")
-                query = query.strip()
+                # O input sem threads para acionar o teclado confiavelmente no a-Shell
+                query = input(f"\n{Tema.TERMO}Termo de pesquisa (ou Ctrl+C para sair):\n{Tema.TEXTO}{Tema.TITULO} {Tema.OFF}").strip()
                 if not query: continue
                 
                 os.system('clear') 
