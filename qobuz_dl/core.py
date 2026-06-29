@@ -112,21 +112,25 @@ async def input_seguro(prompt_text: str) -> str:
 
 def _gerar_tabela_rich(titulo: str, col_headers: list, opcoes: list, current_idx: int, selected_indices: set, multiselect: bool, is_mobile: bool, start_idx: int, visible_items: int):
     """Constrói a grelha visual adaptativa e preenche a largura da tela."""
-    instrucoes = "↑/↓: Mover | Espaço: Marcar | Enter: Confirmar | Q: Sair\n📱 Toque no centro da tela p/ subir o Teclado Virtual" if multiselect else "↑/↓: Mover | Enter: Confirmar | Q: Sair\n📱 Toque no centro da tela p/ subir o Teclado Virtual"
+    
+    # -------------------------------------------------------------
+    # CABEÇALHO COMPACTO: Economiza espaço valioso no celular!
+    # -------------------------------------------------------------
+    if is_mobile:
+        instrucoes = "↕ Mover | ␣ Marcar | ↵ Confirmar | Q Sair" if multiselect else "↕ Mover | ↵ Confirmar | Q Sair"
+    else:
+        instrucoes = "↑/↓: Mover | Espaço: Marcar | Enter: Confirmar | Q: Sair" if multiselect else "↑/↓: Mover | Enter: Confirmar | Q: Sair"
 
     scroll_up = "▲ Mais itens acima..." if start_idx > 0 else ""
     scroll_down = "▼ Mais itens abaixo..." if start_idx + visible_items < len(opcoes) else ""
 
-    # =========================================================
-    # INDICADOR DE POSIÇÃO DINÂMICO
-    # =========================================================
-    posicao = f"Posição: {current_idx + 1} de {len(opcoes)}"
+    posicao = f"[{current_idx + 1}/{len(opcoes)}]"
     
-    titulo_formatado = f"[bold]{titulo}[/bold]\n[dim]{instrucoes}[/dim]\n[bold cyan]{posicao}[/bold cyan]"
+    # O contador entra do lado do título no celular, salvando 1 linha inteira
+    titulo_formatado = f"[bold]{titulo}[/bold] [cyan]{posicao}[/cyan]\n[dim]{instrucoes}[/dim]"
     
     if scroll_up: titulo_formatado += f"\n[cyan]{scroll_up}[/cyan]"
 
-    # Só expande tabelas que tenham 3 ou mais colunas (evita que o menu inicial fique bizarro)
     deve_expandir = len(col_headers) >= 3 if not is_mobile else True
 
     tabela = Table(
@@ -143,12 +147,12 @@ def _gerar_tabela_rich(titulo: str, col_headers: list, opcoes: list, current_idx
 
     if not is_mobile:
         if len(col_headers) >= 6:
-            tabela.add_column(col_headers[0], ratio=2, justify="center") # Artista
-            tabela.add_column(col_headers[1], ratio=3, justify="center") # Título
-            tabela.add_column(col_headers[2], ratio=2, justify="center") # Álbum/Gravadora
-            tabela.add_column(col_headers[3], ratio=1, justify="center") # Tipo
+            tabela.add_column(col_headers[0], ratio=2) # Artista
+            tabela.add_column(col_headers[1], ratio=3) # Título
+            tabela.add_column(col_headers[2], ratio=2) # Álbum/Gravadora
+            tabela.add_column(col_headers[3], ratio=1) # Tipo
             tabela.add_column(col_headers[4], ratio=1, justify="center") # Ano
-            tabela.add_column(col_headers[5], ratio=2, justify="center") # Qualidade
+            tabela.add_column(col_headers[5], ratio=2, justify="right") # Qualidade
         elif len(col_headers) == 2:
             tabela.add_column(col_headers[0], ratio=3)
             tabela.add_column(col_headers[1], ratio=1)
@@ -179,7 +183,8 @@ def _gerar_tabela_rich(titulo: str, col_headers: list, opcoes: list, current_idx
 
         coluna_sel = f"{cursor} {caixa}".strip()
         
-        estilo_linha = "bold white on #005f87" if is_hover else None
+        # BRANCO ABSOLUTO: Garante que o texto seja legível não importa o tema do terminal
+        estilo_linha = "bold #ffffff on #005f87" if is_hover else None
 
         if not is_mobile:
             col_render = [coluna_sel]
@@ -250,13 +255,14 @@ async def abrir_interface(titulo: str, col_headers: list, opcoes: list, multisel
             term_height = console.size.height
 
             # =========================================================
-            # CÁLCULO DINÂMICO DE ALTURA (FIM DOS BUGS DE TELA ESCONDIDA)
+            # CALCULO BLINDADO DE ALTURA PARA NÃO CORTAR COM O TECLADO
             # =========================================================
             if is_mobile:
-                # O cabeçalho gasta umas 10 linhas. Cada música gasta 4 linhas.
-                visible_items = max(2, (term_height - 11) // 4)
+                # Usa no máximo 8 linhas para o cabeçalho. Divide o resto por 5 (espaço que cada card usa).
+                # O 'max(1, ...)' garante que pelo menos UMA música inteira seja mostrada e não corte a linha.
+                visible_items = max(1, (term_height - 8) // 5)
             else:
-                visible_items = max(3, (term_height - 11) // 2)
+                visible_items = max(3, (term_height - 10) // 2)
 
             if current_idx >= start_idx + visible_items:
                 start_idx = current_idx - visible_items + 1
@@ -552,7 +558,7 @@ class QobuzDL:
             if self._is_interactive_session and url_type == "artist":
                 tipos = ["Album", "EP", "Single", "Live", "Compilation"]
                 opcoes_ui = [{"colunas": [opt], "data": opt} for opt in tipos]
-                titulo = f"*** FIL PARA {content_name.upper()} - TIPO DE LANÇAMENTO ***"
+                titulo = f"*** FILTRO PARA {content_name.upper()} - TIPO DE LANÇAMENTO ***"
 
                 selected_raw = await abrir_interface(titulo, ["OPÇÕES"], opcoes_ui, multiselect=True)
 
