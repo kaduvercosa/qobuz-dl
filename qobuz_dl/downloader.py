@@ -19,16 +19,9 @@ import yarl
 import aiohttp
 import aiofiles
 import asyncio
-try:
-    from Cryptodome.Cipher import AES
-    HAS_NATIVE_CRYPTO = True
-except (ImportError, OSError):
-    try:
-        from Crypto.Cipher import AES
-        HAS_NATIVE_CRYPTO = True
-    except ImportError:
-        import pyaes
-        HAS_NATIVE_CRYPTO = False
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.backends import default_backend
+        
 from pathvalidate import sanitize_filename, sanitize_filepath
 from tqdm import tqdm
 
@@ -1644,10 +1637,14 @@ def _get_qobuz_segment_uuid(segment_data):
         pos += size
     return None
 
-def _decrypt_qobuz_segment(segment_data, raw_key, segment_uuid):
-    if segment_uuid is None: return bytes(segment_data)
+def _decrypt_qobuz_segment(segment_data: bytes, raw_key: bytes, segment_uuid: bytes) -> bytes:
+    if segment_uuid is None: 
+        return bytes(segment_data)
+
     buf = bytearray(segment_data)
     pos = 0
+    backend = default_backend
+
     while pos + 8 <= len(buf):
         size = int.from_bytes(buf[pos : pos + 4], "big")
         if size <= 0 or pos + size > len(buf): break
@@ -1666,19 +1663,16 @@ def _decrypt_qobuz_segment(segment_data, raw_key, segment_uuid):
                 ptr += 6
                 flags = int.from_bytes(buf[ptr : ptr + 2], "big")
                 ptr += 2
+
                 f_start, data_end = data_end, data_end + f_len
 
                 if flags:
-                    c = bytes(buf[ptr : ptr + c_len]) + (b"\x00" * (16 - c_len))
+                    iv = bytes(buf[pos + ptr: pos + ptr + c_len]) + (b"\x00" * (16 - c_len))
                     
-                    if HAS_NATIVE_CRYPTO: 
-                        cipher = AES.new(raw_key, AES.MODE_CTR, initial_value=c, nonce=b'')
-                        buf[f_start:data_end] = cipher.decrypt(bytes(buf[f_start:data_end]))
-                    else:
-                        counter_int = int.from_bytes(c, byteorder='big')
-                        counter = pyaes.Counter(initial_value=counter_int)
-                        cipher = pyaes.AESModeOfOperationCTR(raw_key, counter=counter)
-                        buf[f_start:data_end] = cipher.decrypt(bytes(buf[f_start:data_end]))
+                    cipher = Cipher(algorithms.AES(raw_key), modes.CTR(iv), backend=backend)
+                    decryptor = cipher.decryptor()
+
+                    buf[f_start:data_end] = decryptor.update(bytes(buf[f_start:data_end])) + decryptor .finalize()
 
                 ptr += c_len
         pos += size

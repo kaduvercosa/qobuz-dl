@@ -39,7 +39,7 @@ dependencies = [
     "pick==1.6.0",
     "beautifulsoup4",
     "colorama",
-    "pycryptodome",
+    "cryptography",
     "pyaes",
     "lyricsgenius",
     "langdetect",

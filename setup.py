@@ -30,13 +30,12 @@ requirements = [
     "pick==1.6.0",
     "beautifulsoup4",
     "colorama",
-    # NOTE: cryptography was replaced with pycryptodome for better portability (e.g. ish-shell/IOS)
-    "pycryptodome",
+    "cryptography",
     "pyaes",
     "lyricsgenius",
     "langdetect",
     "requests",
-    "deepl",  # FIX: DeepL API Oficial para traduções de letras
+    "deepl",
     "Pillow"
 ]
 
