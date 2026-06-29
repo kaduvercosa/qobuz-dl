@@ -10,10 +10,12 @@ from typing import Optional, List, Tuple, Any
 import unicodedata
 
 # ---------------------------------------------------------------------------
-# Bibliotecas nativas para captura de hardware no iOS
+# Bibliotecas nativas para captura de hardware e estado do Terminal
 # ---------------------------------------------------------------------------
 import tty
 import termios
+import fcntl
+import time
 import select
 
 # ---------------------------------------------------------------------------
@@ -26,160 +28,273 @@ from rich import box
 
 from qobuz_dl.color import Tema, GREEN, YELLOW, RED, OFF, CYAN, RESET
 
+# Instância global do console para limpar a tela corretamente
+_console = Console()
+
 # ===========================================================================
-# 🚀 MOTOR DE INTERFACE (STUDIO MASTER RESPONSIVO)
+# 🚀 MOTOR DE INTERFACE (STUDIO MASTER RESPONSIVO E ASSÍNCRONO)
+# Imune a deadlocks do a-Shell. Suporta Magic Keyboard e Teclado Virtual.
 # ===========================================================================
 
-def is_mobile_screen() -> bool:
-    """Verifica se o terminal é estreito (ex: iPhone na vertical)"""
-    return shutil.get_terminal_size((120, 20)).columns < 95
+def is_mobile_screen(console: Console) -> bool:
+    """Verifica dinamicamente se o terminal é estreito"""
+    return console.size.width < 95
 
-def _read_key():
-    """Captura silenciosa das teclas. Usa /dev/tty para evitar bloqueios no a-Shell."""
-    fd = None
-    is_dev_tty = False
-    try:
-        # Aceder diretamente ao hardware ignora bugs de emulação TTY do iOS
-        fd = os.open('/dev/tty', os.O_RDONLY)
-        is_dev_tty = True
-    except Exception:
-        fd = sys.stdin.fileno()
 
+async def _read_key_async():
+    """
+    Leitura de teclado Assíncrona. Não congela o Event Loop.
+    """
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+    old_flags = fcntl.fcntl(fd, fcntl.F_GETFL)
     try:
-        old_settings = termios.tcgetattr(fd)
-    except Exception:
-        # Fallback de segurança extrema
-        if is_dev_tty: os.close(fd)
-        return sys.stdin.read(1)
+        tty.setcbreak(fd)
+        fcntl.fcntl(fd, fcntl.F_SETFL, old_flags | os.O_NONBLOCK)
 
-    try:
-        tty.setraw(fd)
-        if is_dev_tty:
-            ch = os.read(fd, 1).decode('utf-8', errors='ignore')
-        else:
-            ch = sys.stdin.read(1)
-            
-        if ch == '\x1b':
-            if select.select([fd], [], [], 0.05)[0]:
-                if is_dev_tty:
-                    ch += os.read(fd, 2).decode('utf-8', errors='ignore')
-                else:
-                    ch += sys.stdin.read(2)
+        while True:
+            try:
+                ch = sys.stdin.read(1)
+                if ch:
+                    # 🛑 INTERCEPTADOR GLOBAL DE CTRL+C
+                    if ch == '\x03':  
+                        raise KeyboardInterrupt
+
+                    if ch == '\x1b':
+                        await asyncio.sleep(0.05)
+                        try:
+                            seq = sys.stdin.read(2)
+                            if seq: ch += seq
+                        except Exception:
+                            pass
+                    return ch
+            except IOError:
+                pass
+            await asyncio.sleep(0.02)
     finally:
-        try:
-            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-        except Exception:
-            pass
-        if is_dev_tty:
-            os.close(fd)
-            
-    return ch
+        fcntl.fcntl(fd, fcntl.F_SETFL, old_flags)
+        termios.tcsetattr(fd, termios.TCSANOW, old_settings)
 
-def _gerar_tabela_rich(titulo: str, col_headers: list, opcoes: list, current_idx: int, selected_indices: set, multiselect: bool, is_mobile: bool):
-    """Constrói a grelha visual adaptando automaticamente para iPhone ou iPad."""
-    instrucoes = "↑/↓: Mover | Espaço: Marcar | Enter: Confirmar | Q: Sair" if multiselect else "↑/↓: Mover | Enter: Confirmar | Q: Sair"
+
+async def input_seguro(prompt_text: str) -> str:
+    """
+    Input 100% renderizado pelo Rich.
+    Caixa de texto responsiva com proporções para preencher a tela inteira.
+    """
+    console = Console()
+    query = ""
+    
+    console.clear()
+
+    with Live(auto_refresh=False, console=console, transient=True) as live:
+        while True:
+            # 🎨 COR AQUI: Borda da caixa de pesquisa (cyan)
+            tabela_input = Table(show_header=False, box=box.ROUNDED, border_style="cyan", expand=True)
+            tabela_input.add_column(ratio=1)
+            
+            # 🎨 CORES AQUI: Texto da pergunta e cursor piscando
+            tabela_input.add_row(f"[bold cyan]🔍 {prompt_text}[/bold cyan]")
+            tabela_input.add_row(f" [bold white]❯[/bold white] {query}[blink]_[/blink]")
+            tabela_input.add_row("[dim]Digite sua busca e pressione Enter (ou Ctrl+C para sair)[/dim]")
+
+            live.update(tabela_input, refresh=True)
+
+            key = await _read_key_async()
+
+            if key in ('\r', '\n'):  
+                break
+            elif key in ('\x7f', '\x08'):  
+                query = query[:-1]
+            elif len(key) == 1 and key.isprintable(): 
+                query += key
+
+    os.system('stty sane')
+    return query.strip()
+
+
+def _gerar_tabela_rich(titulo: str, col_headers: list, opcoes: list, current_idx: int, selected_indices: set, multiselect: bool, is_mobile: bool, start_idx: int, visible_items: int):
+    """Constrói a grelha visual adaptativa e preenche a largura da tela."""
+    instrucoes = "↑/↓: Mover | Espaço: Marcar | Enter: Confirmar | Q: Sair\n📱 Toque no centro da tela p/ subir o Teclado Virtual" if multiselect else "↑/↓: Mover | Enter: Confirmar | Q: Sair\n📱 Toque no centro da tela p/ subir o Teclado Virtual"
+
+    scroll_up = "▲ Mais itens acima..." if start_idx > 0 else ""
+    scroll_down = "▼ Mais itens abaixo..." if start_idx + visible_items < len(opcoes) else ""
+
     titulo_formatado = f"[bold]{titulo}[/bold]\n[dim]{instrucoes}[/dim]"
+    
+    # 🎨 CORES AQUI: Avisos de rolagem (cyan)
+    if scroll_up: titulo_formatado += f"\n[cyan]{scroll_up}[/cyan]"
+
+    # Só expande tabelas que tenham 3 ou mais colunas (evita que o menu inicial fique bizarro)
+    deve_expandir = len(col_headers) >= 3 if not is_mobile else True
 
     tabela = Table(
         title=titulo_formatado,
+        caption=f"[cyan]{scroll_down}[/cyan]" if scroll_down else None,
         box=box.ROUNDED,
         show_lines=True,
-        border_style="grey50",
-        header_style="bold white"
+        # 🎨 CORES AQUI: Borda e cabeçalho da tabela
+        border_style="cyan",
+        header_style="bold",  # Mantém apenas em negrito, assumindo a cor do tema
+        expand=deve_expandir
     )
 
     tabela.add_column("SEL", justify="center", width=5)
 
     if not is_mobile:
-        for header in col_headers:
-            tabela.add_column(header)
+        # Layout proporcional para tabelas grandes
+        if len(col_headers) >= 6:
+            tabela.add_column(col_headers[0], ratio=2, justify="center")# Artista
+            tabela.add_column(col_headers[1], ratio=3, justify="center")# Título
+            tabela.add_column(col_headers[2], ratio=2, justify="center")# Álbum/Gravadora
+            tabela.add_column(col_headers[3], ratio=1, justify="center")# Tipo
+            tabela.add_column(col_headers[4], ratio=1, justify="center") # Ano
+            tabela.add_column(col_headers[5], ratio=2, justify="center") # Qualidade
+        elif len(col_headers) == 2:
+            tabela.add_column(col_headers[0], ratio=3)
+            tabela.add_column(col_headers[1], ratio=1)
+        else:
+            # Layout simples para menus iniciais
+            for header in col_headers:
+                tabela.add_column(header, ratio=1)
     else:
-        tabela.add_column("DETALHES DO LANÇAMENTO")
+        tabela.add_column("DETALHES DO LANÇAMENTO", ratio=1)
 
-    for i, opt in enumerate(opcoes):
+    end_idx = min(len(opcoes), start_idx + visible_items)
+
+    for i in range(start_idx, end_idx):
+        opt = opcoes[i]
         is_hover = (i == current_idx)
         is_checked = (i in selected_indices)
 
-        cursor = "[bold cyan]❯[/bold cyan]" if is_hover else " "
-        
+        # =========================================================
+        # LÓGICA DE CORES DA SELEÇÃO E HOVER (MODO CLARO E ESCURO)
+        # =========================================================
+
+        # A setinha aparece apenas quando hover. 
+        cursor = "❯" if is_hover else " "
+
         if multiselect:
-            caixa = "[bold][X][/bold]" if is_checked else "[ ]"
+            caixa = "[X]" if is_checked else "[ ]"
+            # Se não está em hover, damos uma corzinha pra caixa para ela não ficar apagada
+            if not is_hover:
+                if is_checked:
+                    caixa = f"[bold cyan]{caixa}[/bold cyan]"
+                else:
+                    caixa = f"[dim]{caixa}[/dim]"
         else:
             caixa = ""
 
         coluna_sel = f"{cursor} {caixa}".strip()
-        estilo_linha = "on grey37" if is_hover else None
+        
+        # 🎨 COR PRINCIPAL AQUI: 'white on #005f87' força TEXTO BRANCO sobre FUNDO AZUL SAFIRA
+        estilo_linha = "bold white on #005f87" if is_hover else None
 
         if not is_mobile:
-            # RENDERIZAÇÃO IPAD/PC (TABELA LARGA)
             col_render = [coluna_sel]
             for col_text in opt["colunas"]:
                 text_str = str(col_text)
-                if "HI-RES" in text_str.upper():
-                    col_render.append(f"[yellow]{text_str}[/yellow]")
-                elif "16B" in text_str.upper() or "MP3" in text_str.upper() or "CD" in text_str.upper():
-                    col_render.append(f"[grey62]{text_str}[/grey62]")
+                
+                if is_hover:
+                    # Se estiver em hover, anexamos o texto PURO. 
+                    # Assim, ele herda o "white" definido na linha e fica legível no modo claro.
+                    col_render.append(text_str)
                 else:
-                    col_render.append(f"[bold]{text_str}[/bold]")
+                    # Se não estiver em hover, aplicamos as cores e pesos padrões (amarelo, cinza, etc)
+                    if "HI-RES" in text_str.upper():
+                        col_render.append(f"[yellow]{text_str}[/yellow]")
+                    elif "16B" in text_str.upper() or "MP3" in text_str.upper() or "CD" in text_str.upper():
+                        col_render.append(f"[grey62]{text_str}[/grey62]")
+                    else:
+                        col_render.append(f"[bold]{text_str}[/bold]")
+                        
             tabela.add_row(*col_render, style=estilo_linha)
 
         else:
-            # RENDERIZAÇÃO IPHONE (MODO CARTÃO)
             cols = opt["colunas"]
             if len(cols) >= 6:
                 artista, titulo_album, gravadora, tipo, ano, qual = cols[0], cols[1], cols[2], cols[3], cols[4], cols[5]
-                q_style = "yellow" if "HI-RES" in str(qual).upper() else "grey62"
                 
-                card_text = (
-                    f"[bold white]🎵 {titulo_album} - {artista} ({ano})[/bold white]\n"
-                    f" ├─ 🏷️ [bold]{tipo}[/bold] | 🏢 {gravadora}\n"
-                    f" └─ 🎧 [{q_style}]{qual}[/{q_style}]"
-                )
+                if is_hover:
+                    # Sem tags de cor interna, a linha inteira fica branca no hover!
+                    card_text = (
+                        f"🎵 {titulo_album} - {artista} ({ano})\n"
+                        f" ├─ 🏷️ {tipo} | 🏢 {gravadora}\n"
+                        f" └─ 🎧 {qual}"
+                    )
+                else:
+                    q_style = "yellow" if "HI-RES" in str(qual).upper() else "grey62"
+                    card_text = (
+                        f"[bold]🎵 {titulo_album} - {artista} ({ano})[/bold]\n"
+                        f" ├─ 🏷️ [bold]{tipo}[/bold] | 🏢 {gravadora}\n"
+                        f" └─ 🎧 [{q_style}]{qual}[/{q_style}]"
+                    )
             elif len(cols) == 2:
                 nome, contagem = cols[0], cols[1]
-                card_text = f"[bold white]📂 {nome}[/bold white]\n └─ [grey62]{contagem}[/grey62]"
+                if is_hover:
+                    card_text = f"📂 {nome}\n └─ {contagem}"
+                else:
+                    card_text = f"[bold]📂 {nome}[/bold]\n └─ [grey62]{contagem}[/grey62]"
             else:
-                # Fallback para menus simples (Categorias, Qualidades, Ações)
-                card_text = "[bold white]" + " - ".join(str(c) for c in cols) + "[/bold white]"
-            
+                if is_hover:
+                    card_text = " - ".join(str(c) for c in cols)
+                else:
+                    card_text = "[bold]" + " - ".join(str(c) for c in cols) + "[/bold]"
+
             tabela.add_row(coluna_sel, card_text, style=estilo_linha)
 
     return tabela
 
+
 async def abrir_interface(titulo: str, col_headers: list, opcoes: list, multiselect: bool = False):
-    """Lida com o Live Update da Tabela em resposta ao teclado."""
+    """Motor TUI Definitivo."""
     console = Console()
     current_idx = 0
     selected_indices = set()
-    is_mobile = is_mobile_screen()
+    
+    start_idx = 0
+    result = []
 
-    os.system('clear')
+    console.clear()
 
-    with Live(_gerar_tabela_rich(titulo, col_headers, opcoes, current_idx, selected_indices, multiselect, is_mobile), console=console, refresh_per_second=12, transient=True) as live:
+    with Live(auto_refresh=False, console=console, transient=True) as live:
         while True:
-            # Sem asyncio.to_thread! Executamos direto na main thread.
-            key = _read_key()
-            
-            if key in ('q', 'Q', '\x03'): 
-                return []
-            elif key == '\x1b[A': 
+            is_mobile = is_mobile_screen(console)
+            visible_items = 12 if not is_mobile else 6
+
+            if current_idx >= start_idx + visible_items:
+                start_idx = current_idx - visible_items + 1
+            elif current_idx < start_idx:
+                start_idx = current_idx
+
+            tabela = _gerar_tabela_rich(titulo, col_headers, opcoes, current_idx, selected_indices, multiselect, is_mobile, start_idx, visible_items)
+            live.update(tabela, refresh=True)
+
+            key = await _read_key_async()
+
+            if key in ('q', 'Q'):
+                result = []
+                break
+            elif key == '\x1b[A':  
                 current_idx = max(0, current_idx - 1)
-            elif key == '\x1b[B': 
+            elif key == '\x1b[B':  
                 current_idx = min(len(opcoes) - 1, current_idx + 1)
-            elif key == ' ' and multiselect: 
+            elif key == ' ' and multiselect:  
                 if current_idx in selected_indices:
                     selected_indices.remove(current_idx)
                 else:
                     selected_indices.add(current_idx)
-            elif key in ('\r', '\n'): 
+            elif key in ('\r', '\n'):  
                 if multiselect:
                     if not selected_indices:
-                        selected_indices.add(current_idx) 
-                    return [opcoes[i]["data"] for i in sorted(selected_indices)]
+                        selected_indices.add(current_idx)
+                    result = [opcoes[i]["data"] for i in sorted(selected_indices)]
                 else:
-                    return [opcoes[current_idx]["data"]]
+                    result = [opcoes[current_idx]["data"]]
+                break
 
-            live.update(_gerar_tabela_rich(titulo, col_headers, opcoes, current_idx, selected_indices, multiselect, is_mobile))
+    os.system('stty sane')
+    return result
+
 
 # ===========================================================================
 # 🚀 OTIMIZAÇÃO GLOBAL DE REDE (INJEÇÃO)
@@ -195,7 +310,7 @@ _original_tcp_connector = aiohttp.TCPConnector
 class FastTCPConnector(_original_tcp_connector):
     def __init__(self, *args, **kwargs):
         kwargs['ssl'] = False
-        kwargs['limit'] = 100  
+        kwargs['limit'] = 100
         if _fast_resolver and 'resolver' not in kwargs:
             kwargs['resolver'] = _fast_resolver
         super().__init__(*args, **kwargs)
@@ -231,7 +346,7 @@ def _align_text(text: str, width: int) -> str:
     if current_w <= width: return text + " " * (width - current_w)
     truncated = ""
     current_w = 0
-    target_w = width - 3 
+    target_w = width - 3
     for char in text:
         char_w = 2 if unicodedata.east_asian_width(char) in ('W', 'F') else 1
         if current_w + char_w > target_w: break
@@ -324,7 +439,7 @@ class QobuzDL:
         self.delay                = delay
         self.directory            = create_and_return_dir(directory)
         self.quality              = quality
-        self.embed_art            = True  
+        self.embed_art            = True
         self.lucky_limit          = lucky_limit
         self.lucky_type           = lucky_type
         self.interactive_limit    = interactive_limit
@@ -423,7 +538,7 @@ class QobuzDL:
             content = [item async for item in type_dict["func"](item_id)]
             content_name = content[0]["name"]
             is_playlist = (url_type == "playlist")
-            
+
             if not is_playlist:
                 print(f"\n{Tema.URL}{Tema.TITULO}{content_name}{Tema.OFF} ({url_type})")
 
@@ -441,9 +556,9 @@ class QobuzDL:
                 tipos = ["Album", "EP", "Single", "Live", "Compilation"]
                 opcoes_ui = [{"colunas": [opt], "data": opt} for opt in tipos]
                 titulo = f"*** FILTRO PARA {content_name.upper()} - TIPO DE LANÇAMENTO ***"
-                
+
                 selected_raw = await abrir_interface(titulo, ["OPÇÕES"], opcoes_ui, multiselect=True)
-                
+
                 self.allowed_release_types = [opt.lower() for opt in selected_raw] if selected_raw else []
                 if not self.allowed_release_types: items = []
             else:
@@ -477,7 +592,7 @@ class QobuzDL:
                 if is_playlist:
                     self.folder_format = original_folder_format
                     self.settings.multiple_disc_one_dir = original_multi_disc_setting
-                    
+
             if is_playlist:
                 try:
                     from qobuz_dl.telegram_uploader import upload_album_completo
@@ -515,10 +630,10 @@ class QobuzDL:
 
     async def download_list_of_urls(self, urls: List[str], txt_file: Optional[str] = None):
         if not urls or not isinstance(urls, list): return
-        
+
         try: max_batch_workers = int(getattr(self.settings, "max_workers", 1))
         except (ValueError, TypeError): max_batch_workers = 1
-        
+
         is_batch = len(urls) > 1
         total_urls = len(urls)
 
@@ -528,7 +643,7 @@ class QobuzDL:
             self.settings.max_workers = 1
             sem = asyncio.Semaphore(max_batch_workers)
 
-            async def sem_process(url: str):
+            async def sem_process(idx: int, url: str):
                 async with sem: await self._process_single_url(url, txt_file, is_batch, idx, total_urls)
 
             try: await asyncio.gather(*[sem_process(idx, u) for idx, u in enumerate(urls, start=1)])
@@ -563,12 +678,21 @@ class QobuzDL:
     # ---------------------------------------------------------------------------
     async def search_by_type(self, query: Optional[str], item_type: str, limit: int = 10, lucky: bool = False, fav_subtype: Optional[str] = None):
         limit = int(limit)
-        if item_type != "favorites" and (not query or len(query) < 3): return [], []
         
+        # =====================================================================
+        # Aumentando o limite para Singles e Álbuns (o app usa scroll infinito)
+        # =====================================================================
+        if item_type == "single":
+            limit = 100  # Puxa 100 músicas na busca de singles
+        elif item_type == "album_ep":
+            limit = 50   # Puxa 50 álbuns
+
+        if item_type != "favorites" and (not query or len(query) < 3): return [], []
+
         api_type = item_type
         if item_type == "album_ep": api_type = "album"
         elif item_type == "single": api_type = "track"
-        
+
         actual_fav_subtype = fav_subtype
         if fav_subtype == "albums": actual_fav_subtype = "albums"
         elif fav_subtype == "singles": actual_fav_subtype = "tracks"
@@ -580,26 +704,26 @@ class QobuzDL:
             "playlist":  {"func": self.client.search_playlists, "key": "playlists", "requires_extra": False},
             "favorites": {"func": self.client.get_favorites,    "key": "favorites", "requires_extra": True},
         }
-        
+
         try:
             mode_dict = possibles[api_type]
             if item_type == "favorites":
-                fetch_limit = limit if actual_fav_subtype not in ("albums", "tracks") else 100
+                fetch_limit = limit if actual_fav_subtype not in ("albums", "tracks") else max(limit, 100)
                 results = await mode_dict["func"](fav_type=actual_fav_subtype, limit=fetch_limit)
                 iterable = results.get("favorites", {}).get(actual_fav_subtype, {}).get("items", []) or results.get(actual_fav_subtype, {}).get("items", [])
                 mode_dict["requires_extra"] = actual_fav_subtype not in ("artists", "playlists")
             else:
-                fetch_limit = limit if item_type not in ("album_ep", "single") else 50
+                fetch_limit = limit
                 results = await mode_dict["func"](query, fetch_limit)
                 if not results or mode_dict["key"] not in results or "items" not in results[mode_dict["key"]]: return [], []
                 iterable = results[mode_dict["key"]]["items"]
 
             item_list = []
-            
+
             if mode_dict["requires_extra"]:
                 is_track_search = (api_type == "track" or actual_fav_subtype == "tracks")
                 col_headers = ["ARTISTA", "TÍTULO", "ÁLBUM" if is_track_search else "GRAVADORA", "TIPO", "ANO", "QUALIDADE"]
-                
+
                 valid_count = 0
                 for i in iterable:
                     if is_track_search:
@@ -607,32 +731,32 @@ class QobuzDL:
                         col3_val = i.get("album", {}).get("title", "Unknown")
                     else:
                         r_type_str = classificar_tipo_lancamento(
-                            raw_type=i.get("release_type") or i.get("product_type"), 
-                            title=str(i.get("title", "")), 
-                            version=str(i.get("version", "")), 
-                            t_count=i.get("tracks_count", 0), 
+                            raw_type=i.get("release_type") or i.get("product_type"),
+                            title=str(i.get("title", "")),
+                            version=str(i.get("version", "")),
+                            t_count=i.get("tracks_count", 0),
                             duration=i.get("duration", 0)
                         )
                         if r_type_str not in ("album", "ep"): continue
                         rel_type = "EP" if r_type_str == "ep" else r_type_str.title()
                         col3_val = i.get("label", {}).get("name", "Independente")
-                    
+
                     artist = i.get("artist", {}).get("name") or i.get("performer", {}).get("name") or "Unknown"
                     title = i.get("title") or i.get("name") or "Unknown"
                     if i.get("version"): title = f"{title} ({i['version']})"
                     if i.get("parental_warning"): title = f"{title} [E]"
                     year = str(i.get("release_date_original") or i.get("release_date") or "    ")[:4]
-                    
+
                     quality = f"[HI-RES] {i.get('maximum_bit_depth', 24)}b/{i.get('maximum_sampling_rate', 96.0)}kHz" if i.get("hires_streamable") else "[ CD ] 16b/44.1kHz"
-                    
+
                     url_category = actual_fav_subtype[:-1] if item_type == "favorites" and actual_fav_subtype else api_type
                     url = f"{WEB_URL}{url_category}/{i.get('id', '')}"
-                    
+
                     item_list.append({
                         "colunas": [artist, title, col3_val, rel_type, year, quality],
                         "data": url
                     })
-                    
+
                     valid_count += 1
                     if valid_count >= limit: break
 
@@ -641,10 +765,10 @@ class QobuzDL:
                 for i in iterable:
                     name = i.get('name', 'Unknown')
                     count_str = f"{i.get('albums_count', i.get('tracks_count', 0))} itens"
-                    
+
                     url_category = actual_fav_subtype[:-1] if item_type == "favorites" and actual_fav_subtype else api_type
                     url = f"{WEB_URL}{url_category}/{i.get('id', '')}"
-                    
+
                     item_list.append({
                         "colunas": [name, count_str],
                         "data": url
@@ -658,7 +782,7 @@ class QobuzDL:
     # ---------------------------------------------------------------------------
     async def _interactive_search_loop(self, selected_type: str, fav_subtype: str) -> List[str]:
         final_url_list = []
-        
+
         tipo_map = {
             "album_ep": "ÁLBUNS E EPs",
             "single": "SINGLES",
@@ -666,76 +790,84 @@ class QobuzDL:
             "playlist": "PLAYLISTS",
             "favorites": f"FAVORITOS ({fav_subtype.upper()})"
         }
-        
+
         while True:
-            os.system('clear') 
-            tipo_str = tipo_map.get(selected_type, "RESULTADOS")
-            
-            if selected_type == "favorites":
-                print(f"\n{Tema.BUSCA}A carregar {fav_subtype} dos favoritos...")
-                col_headers, options = await self.search_by_type(None, selected_type, limit=self.interactive_limit, fav_subtype=fav_subtype)
-                query_display = "MEUS FAVORITOS"
-            else:
-                # O input sem threads para acionar o teclado confiavelmente no a-Shell
-                query = input(f"\n{Tema.TERMO}Termo de pesquisa (ou Ctrl+C para sair):\n{Tema.TEXTO}{Tema.TITULO} {Tema.OFF}").strip()
-                if not query: continue
-                
-                os.system('clear') 
-                print(f"\n{Tema.BUSCA}A procurar por '{query}' nos servidores da Qobuz...")
-                col_headers, options = await self.search_by_type(query, selected_type, self.interactive_limit)
-                query_display = query.upper()
+            try:
+                _console.clear()
+                tipo_str = tipo_map.get(selected_type, "RESULTADOS")
 
-            if not options:
-                print(f"{Tema.ALERTA}{Tema.AVISO}Nenhum resultado encontrado.{Tema.OFF}")
-                await asyncio.sleep(2)
-                if selected_type == "favorites": break
-                continue
+                if selected_type == "favorites":
+                    print(f"\n{Tema.BUSCA}A carregar {fav_subtype} dos favoritos...")
+                    col_headers, options = await self.search_by_type(None, selected_type, limit=self.interactive_limit, fav_subtype=fav_subtype)
+                    query_display = "MEUS FAVORITOS"
+                else:
+                    query = await input_seguro("Qual termo você deseja pesquisar?")
+                    if not query: continue
 
-            title_text = f"*** RESULTADOS PARA {query_display} - {tipo_str} ***"
-            
-            selected_urls = await abrir_interface(title_text, col_headers, options, multiselect=True)
+                    _console.clear()
+                    print(f"\n{Tema.BUSCA}A procurar por '{query}' nos servidores da Qobuz...")
+                    col_headers, options = await self.search_by_type(query, selected_type, self.interactive_limit)
+                    query_display = query.upper()
 
-            if selected_urls:
-                await asyncio.sleep(0.5) 
-                intercept_artist = False
-                
-                for url in selected_urls:
-                    if selected_type == "artist" or (selected_type == "favorites" and fav_subtype == "artists"):
-                        intercept_artist = True
-                        artist_id = url.rstrip("/").split("/")[-1]
-                        
-                        artist_name = "ARTISTA"
-                        for opt in options:
-                            if opt["data"] == url:
-                                artist_name = opt["colunas"][0]
-                                break
-                                
-                        albums_urls = await self._fetch_and_pick_artist_albums(artist_id, artist_name)
-                        final_url_list.extend(albums_urls)
-                    else:
-                        final_url_list.append(url)
-
-                if intercept_artist and not final_url_list:
+                if not options:
+                    print(f"{Tema.ALERTA}{Tema.AVISO}Nenhum resultado encontrado.{Tema.OFF}")
+                    await asyncio.sleep(2)
+                    if selected_type == "favorites": break
                     continue
-                
-                action_ui = [
-                    {"colunas": ["⬇️ Iniciar Download"], "data": "download"}, 
-                    {"colunas": ["🔍 Pesquisar Mais"], "data": "search"}
-                ]
-                action_sel = await abrir_interface("*** O QUE DESEJA FAZER AGORA? ***", ["AÇÃO"], action_ui, multiselect=False)
-                if action_sel and action_sel[0] == "download": 
-                    break
-            else:
-                await asyncio.sleep(1)
-                if selected_type == "favorites": break
-                continue
 
-        return final_url_list
+                title_text = f"*** RESULTADOS PARA {query_display} - {tipo_str} ***"
+
+                selected_urls = await abrir_interface(title_text, col_headers, options, multiselect=True)
+
+                if selected_urls:
+                    await asyncio.sleep(0.5)
+                    intercept_artist = False
+
+                    for url in selected_urls:
+                        if selected_type == "artist" or (selected_type == "favorites" and fav_subtype == "artists"):
+                            intercept_artist = True
+                            artist_id = url.rstrip("/").split("/")[-1]
+
+                            artist_name = "ARTISTA"
+                            for opt in options:
+                                if opt["data"] == url:
+                                    artist_name = opt["colunas"][0]
+                                    break
+
+                            albums_urls = await self._fetch_and_pick_artist_albums(artist_id, artist_name)
+                            final_url_list.extend(albums_urls)
+                        else:
+                            final_url_list.append(url)
+
+                    if intercept_artist and not final_url_list:
+                        continue
+
+                    action_ui = [
+                        {"colunas": ["⬇️ Iniciar Download"], "data": "download"},
+                        {"colunas": ["🔍 Pesquisar Mais"], "data": "search"}
+                    ]
+                    action_sel = await abrir_interface("*** O QUE DESEJA FAZER AGORA? ***", ["AÇÃO"], action_ui, multiselect=False)
+                    
+                    if action_sel and action_sel[0] == "download":
+                        return final_url_list
+
+                else:
+                    await asyncio.sleep(1)
+                    if selected_type == "favorites":
+                        return final_url_list
+                    continue
+
+                return final_url_list
+            except KeyboardInterrupt:
+                _console.clear()
+                print(f"\n{Tema.SYS}{Tema.ERRO}Operação abortada pelo utilizador.{Tema.OFF}\n")
+                os.system('stty sane')
+                return []
 
     async def _fetch_and_pick_artist_albums(self, artist_id: str, artist_name: str) -> List[str]:
-        os.system('clear') 
+        _console.clear()
         print(f"\n{Tema.BUSCA}A analisar discografia completa de {Tema.TITULO}{artist_name}{Tema.OFF}...")
-        
+
         all_albums = []
         try:
             async for page in self.client.get_artist_meta(artist_id):
@@ -743,13 +875,13 @@ class QobuzDL:
                 all_albums.extend(items)
         except Exception as e:
             print(f"{Tema.ALERTA}{Tema.ERRO}Erro ao buscar discografia: {e}{Tema.OFF}")
-            
+
         if not all_albums:
-            os.system('clear')
+            _console.clear()
             print(f"{Tema.ALERTA}{Tema.AVISO}Nenhum lançamento encontrado para este artista.{Tema.OFF}")
             await asyncio.sleep(1.5)
             return []
-            
+
         raw_data = []
         for i in all_albums:
             title = i.get("title") or i.get("name") or "Unknown"
@@ -759,50 +891,50 @@ class QobuzDL:
             r_type_str = classificar_tipo_lancamento(raw_type=i.get("release_type") or i.get("product_type"), title=str(i.get("title", "")), version=str(i.get("version", "")), t_count=i.get("tracks_count", 0), duration=i.get("duration", 0))
             rel_type = "EP" if r_type_str == "ep" else r_type_str.title()
             quality = f"[HI-RES] {i.get('maximum_bit_depth', 24)}b/{i.get('maximum_sampling_rate', 96.0)}kHz" if i.get("hires_streamable") else "[ CD ] 16b/44.1kHz"
-            
+
             raw_data.append((title, rel_type, year, quality, i, r_type_str))
-            
+
         type_order = {"album": 1, "ep": 2, "single": 3, "live": 4, "compilation": 5}
         raw_data.sort(key=lambda x: (type_order.get(x[5], 9), -int(x[2] if x[2].isdigit() else 0)))
-        
+
         col_headers = ["TÍTULO", "TIPO", "ANO", "QUALIDADE"]
         options_ui = []
-        
+
         for title, rel_type, year, quality, i, _ in raw_data:
             url = f"{WEB_URL}album/{i.get('id', '')}"
             options_ui.append({
                 "colunas": [title, rel_type, year, quality],
                 "data": url
             })
-            
+
         title_text = f"*** DISCOGRAFIA DE {artist_name.upper()} ***"
         selected = await abrir_interface(title_text, col_headers, options_ui, multiselect=True)
-        
+
         return selected if selected else []
 
     async def interactive(self, download: bool = True):
         self._is_interactive_session = True
-        
+
         try:
-            os.system('clear') 
+            _console.clear()
             item_types = ["Álbuns e EPs", "Singles", "Artistas", "Playlists", "Favoritos"]
             options_types = [{"colunas": [opt], "data": opt} for opt in item_types]
-            
+
             selected_type_list = await abrir_interface("*** O QUE DESEJA PESQUISAR? ***", ["CATEGORIA"], options_types, multiselect=False)
             if not selected_type_list: return
             selected_type_raw = selected_type_list[0]
-            
+
             fav_subtype = ""
-            
+
             if selected_type_raw == "Favoritos":
                 selected_type = "favorites"
                 fav_subtypes = ["Álbuns e EPs", "Singles", "Artistas", "Playlists"]
                 options_fav = [{"colunas": [opt], "data": opt} for opt in fav_subtypes]
-                
+
                 fav_subtype_list = await abrir_interface("*** NAVEGAR NOS FAVORITOS ***", ["CATEGORIA"], options_fav, multiselect=False)
                 if not fav_subtype_list: return
                 fav_subtype_raw = fav_subtype_list[0]
-                
+
                 if fav_subtype_raw == "Álbuns e EPs": fav_subtype = "albums"
                 elif fav_subtype_raw == "Singles": fav_subtype = "singles"
                 elif fav_subtype_raw == "Artistas": fav_subtype = "artists"
@@ -818,23 +950,24 @@ class QobuzDL:
             if final_url_list:
                 qualities = [{"q_string": "320kbps MP3", "q": 5}, {"q_string": "Lossless 16-bit", "q": 6}, {"q_string": "Hi-Res =< 96kHz", "q": 7}, {"q_string": "Hi-Res > 96kHz", "q": 27}]
                 options_q = [{"colunas": [q["q_string"]], "data": q["q"]} for q in qualities]
-                
+
                 selected_q = await abrir_interface("*** DEFINA A QUALIDADE MÁXIMA ***", ["QUALIDADE"], options_q, multiselect=False)
-                
+
                 if selected_q:
                     self.quality = selected_q[0]
                     if download: await self.download_list_of_urls(final_url_list)
                 return final_url_list
 
         except KeyboardInterrupt:
-            os.system('clear')
+            _console.clear()
             print(f"\n{Tema.SYS}{Tema.ERRO}Operação abortada pelo utilizador.{Tema.OFF}\n")
+            os.system('stty sane')
             return
 
     async def download_lastfm_pl(self, playlist_url: str):
         from qobuz_dl.lastfm_parser import fetch_lastfm_playlist
         print(f"\n{Tema.URL}{Tema.AVISO}Integração Last.fm detetada{Tema.OFF}")
-        
+
         tracks_list = await fetch_lastfm_playlist(playlist_url)
         if not tracks_list:
             print(f"{Tema.ALERTA}{Tema.ERRO}Abortado: Nenhuma faixa encontrada na playlist.{Tema.OFF}")
@@ -846,7 +979,7 @@ class QobuzDL:
 
         print(f"{Tema.FILA}Baixando Playlist: {Tema.TITULO}{pl_title}{Tema.OFF}")
         print(f"{Tema.FILA}Cruzando {len(tracks_list)} faixas com a API Qobuz...")
-        
+
         track_ids = await self.client.get_track_ids_from_list(tracks_list)
         if not track_ids:
             print(f"{Tema.ALERTA}{Tema.ERRO}Falha: Nenhuma faixa coincidiu no catálogo da Qobuz.{Tema.OFF}")
