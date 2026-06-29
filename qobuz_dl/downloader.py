@@ -1490,19 +1490,24 @@ async def tqdm_download(session, url: str, fname: str, log_prefix: str = "", is_
 
                 async with aiofiles.open(fname, 'ab' if d_size > 0 else 'wb') as file:
                     # =========================================================
-                    # BARRA DE PROGRESSO DINÂMICA
+                    # BARRA DE PROGRESSO DINÂMICA (CORRIGIDA)
                     # =========================================================
                     term_width = shutil.get_terminal_size((80, 20)).columns
-                    display_name = track_name
-                    bar_fmt = "{desc}: {percentage:3.0f}% |{bar}| {n_fmt}/{total_fmt} [{rate_fmt}]"
+                    safe_width = term_width - 2 # Impede a barra de pular linha
                     
-                    if term_width < 65: # Modo iPhone / Ecrã apertado
+                    if term_width < 75: # Modo Celular
                         display_name = track_name[:12] + ".." if track_name and len(track_name) > 12 else track_name
-                        bar_fmt = "{desc}: {percentage:3.0f}% |{bar}| {n_fmt}/{total_fmt}"
-                        
-                    bar_desc = f"{log_prefix}⬇️ {display_name}" if display_name else f"{log_prefix}⬇️ "
+                        bar_desc = f"⬇️ {display_name}"
+                        # Barra compacta para não transbordar a tela
+                        bar_fmt = "{desc} {percentage:3.0f}% |{bar:10}| {n_fmt}/{total_fmt}"
+                    else:
+                        display_name = track_name
+                        # Removemos as tags ANSI ocultas apenas do bar_desc para a matemática da barra não falhar
+                        clean_prefix = re.sub(r'\033\[[0-9;]*m', '', log_prefix)
+                        bar_desc = f"{clean_prefix}⬇️ {display_name}"
+                        bar_fmt = "{desc}: {percentage:3.0f}% |{bar}| {n_fmt}/{total_fmt} [{rate_fmt}]"
                     
-                    with tqdm(total=t_size, unit="B", unit_scale=True, desc=bar_desc, initial=d_size, disable=is_parallel, leave=False, dynamic_ncols=True, bar_format=bar_fmt) as bar:
+                    with tqdm(total=t_size, unit="B", unit_scale=True, desc=bar_desc, initial=d_size, disable=is_parallel, leave=False, dynamic_ncols=False, ncols=safe_width, bar_format=bar_fmt) as bar:
                         async for data in r.content.iter_chunked(262144):
                             if LoopGlobals.get('abort_event').is_set(): break
                             if data:
@@ -1564,19 +1569,22 @@ async def tqdm_download_segments(session, track_url: dict, fname: str, log_prefi
     try:
         async with aiofiles.open(tmp_fname, "wb") as f:
             # =========================================================
-            # BARRA DE PROGRESSO DINÂMICA (Segmentos)
+            # BARRA DE PROGRESSO DINÂMICA (Segmentos - CORRIGIDA)
             # =========================================================
             term_width = shutil.get_terminal_size((80, 20)).columns
-            display_name = track_name
-            bar_fmt = "{desc}: {percentage:3.0f}% |{bar}| {n_fmt}/{total_fmt} [{rate_fmt}]"
+            safe_width = term_width - 2
             
-            if term_width < 65:
+            if term_width < 75:
                 display_name = track_name[:12] + ".." if track_name and len(track_name) > 12 else track_name
-                bar_fmt = "{desc}: {percentage:3.0f}% |{bar}| {n_fmt}/{total_fmt}"
+                bar_desc = f"✂️ {display_name}"
+                bar_fmt = "{desc} {percentage:3.0f}% |{bar:10}| {n_fmt}/{total_fmt}"
+            else:
+                display_name = track_name
+                clean_prefix = re.sub(r'\033\[[0-9;]*m', '', log_prefix)
+                bar_desc = f"{clean_prefix}✂️ {display_name}"
+                bar_fmt = "{desc}: {percentage:3.0f}% |{bar}| {n_fmt}/{total_fmt} [{rate_fmt}]"
                 
-            bar_desc = f"{log_prefix}✂️ {display_name}" if display_name else f"{log_prefix}✂️ "
-            
-            with tqdm(total=n_seg, unit="seg", desc=bar_desc, disable=is_parallel, leave=False, dynamic_ncols=True, bar_format=bar_fmt) as bar:
+            with tqdm(total=n_seg, unit="seg", desc=bar_desc, disable=is_parallel, leave=False, dynamic_ncols=False, ncols=safe_width, bar_format=bar_fmt) as bar:
                 seg_uuid = None
                 for i in range(2):
                     data = await fetch_seg(session, i, bar)

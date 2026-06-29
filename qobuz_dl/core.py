@@ -88,11 +88,9 @@ async def input_seguro(prompt_text: str) -> str:
 
     with Live(auto_refresh=False, console=console, transient=True) as live:
         while True:
-            # 🎨 COR AQUI: Borda da caixa de pesquisa (cyan)
             tabela_input = Table(show_header=False, box=box.ROUNDED, border_style="cyan", expand=True)
             tabela_input.add_column(ratio=1)
             
-            # 🎨 CORES AQUI: Texto da pergunta e cursor piscando
             tabela_input.add_row(f"[bold cyan]🔍 {prompt_text}[/bold cyan]")
             tabela_input.add_row(f" [bold white]❯[/bold white] {query}[blink]_[/blink]")
             tabela_input.add_row("[dim]Digite sua busca e pressione Enter (ou Ctrl+C para sair)[/dim]")
@@ -119,9 +117,13 @@ def _gerar_tabela_rich(titulo: str, col_headers: list, opcoes: list, current_idx
     scroll_up = "▲ Mais itens acima..." if start_idx > 0 else ""
     scroll_down = "▼ Mais itens abaixo..." if start_idx + visible_items < len(opcoes) else ""
 
-    titulo_formatado = f"[bold]{titulo}[/bold]\n[dim]{instrucoes}[/dim]"
+    # =========================================================
+    # INDICADOR DE POSIÇÃO DINÂMICO
+    # =========================================================
+    posicao = f"Posição: {current_idx + 1} de {len(opcoes)}"
     
-    # 🎨 CORES AQUI: Avisos de rolagem (cyan)
+    titulo_formatado = f"[bold]{titulo}[/bold]\n[dim]{instrucoes}[/dim]\n[bold cyan]{posicao}[/bold cyan]"
+    
     if scroll_up: titulo_formatado += f"\n[cyan]{scroll_up}[/cyan]"
 
     # Só expande tabelas que tenham 3 ou mais colunas (evita que o menu inicial fique bizarro)
@@ -132,28 +134,25 @@ def _gerar_tabela_rich(titulo: str, col_headers: list, opcoes: list, current_idx
         caption=f"[cyan]{scroll_down}[/cyan]" if scroll_down else None,
         box=box.ROUNDED,
         show_lines=True,
-        # 🎨 CORES AQUI: Borda e cabeçalho da tabela
         border_style="cyan",
-        header_style="bold",  # Mantém apenas em negrito, assumindo a cor do tema
+        header_style="bold",
         expand=deve_expandir
     )
 
     tabela.add_column("SEL", justify="center", width=5)
 
     if not is_mobile:
-        # Layout proporcional para tabelas grandes
         if len(col_headers) >= 6:
-            tabela.add_column(col_headers[0], ratio=2, justify="center")# Artista
-            tabela.add_column(col_headers[1], ratio=3, justify="center")# Título
-            tabela.add_column(col_headers[2], ratio=2, justify="center")# Álbum/Gravadora
-            tabela.add_column(col_headers[3], ratio=1, justify="center")# Tipo
+            tabela.add_column(col_headers[0], ratio=2, justify="center") # Artista
+            tabela.add_column(col_headers[1], ratio=3, justify="center") # Título
+            tabela.add_column(col_headers[2], ratio=2, justify="center") # Álbum/Gravadora
+            tabela.add_column(col_headers[3], ratio=1, justify="center") # Tipo
             tabela.add_column(col_headers[4], ratio=1, justify="center") # Ano
             tabela.add_column(col_headers[5], ratio=2, justify="center") # Qualidade
         elif len(col_headers) == 2:
             tabela.add_column(col_headers[0], ratio=3)
             tabela.add_column(col_headers[1], ratio=1)
         else:
-            # Layout simples para menus iniciais
             for header in col_headers:
                 tabela.add_column(header, ratio=1)
     else:
@@ -166,16 +165,10 @@ def _gerar_tabela_rich(titulo: str, col_headers: list, opcoes: list, current_idx
         is_hover = (i == current_idx)
         is_checked = (i in selected_indices)
 
-        # =========================================================
-        # LÓGICA DE CORES DA SELEÇÃO E HOVER (MODO CLARO E ESCURO)
-        # =========================================================
-
-        # A setinha aparece apenas quando hover. 
         cursor = "❯" if is_hover else " "
 
         if multiselect:
             caixa = "[X]" if is_checked else "[ ]"
-            # Se não está em hover, damos uma corzinha pra caixa para ela não ficar apagada
             if not is_hover:
                 if is_checked:
                     caixa = f"[bold cyan]{caixa}[/bold cyan]"
@@ -186,7 +179,6 @@ def _gerar_tabela_rich(titulo: str, col_headers: list, opcoes: list, current_idx
 
         coluna_sel = f"{cursor} {caixa}".strip()
         
-        # 🎨 COR PRINCIPAL AQUI: 'white on #005f87' força TEXTO BRANCO sobre FUNDO AZUL SAFIRA
         estilo_linha = "bold white on #005f87" if is_hover else None
 
         if not is_mobile:
@@ -195,11 +187,8 @@ def _gerar_tabela_rich(titulo: str, col_headers: list, opcoes: list, current_idx
                 text_str = str(col_text)
                 
                 if is_hover:
-                    # Se estiver em hover, anexamos o texto PURO. 
-                    # Assim, ele herda o "white" definido na linha e fica legível no modo claro.
                     col_render.append(text_str)
                 else:
-                    # Se não estiver em hover, aplicamos as cores e pesos padrões (amarelo, cinza, etc)
                     if "HI-RES" in text_str.upper():
                         col_render.append(f"[yellow]{text_str}[/yellow]")
                     elif "16B" in text_str.upper() or "MP3" in text_str.upper() or "CD" in text_str.upper():
@@ -215,7 +204,6 @@ def _gerar_tabela_rich(titulo: str, col_headers: list, opcoes: list, current_idx
                 artista, titulo_album, gravadora, tipo, ano, qual = cols[0], cols[1], cols[2], cols[3], cols[4], cols[5]
                 
                 if is_hover:
-                    # Sem tags de cor interna, a linha inteira fica branca no hover!
                     card_text = (
                         f"🎵 {titulo_album} - {artista} ({ano})\n"
                         f" ├─ 🏷️ {tipo} | 🏢 {gravadora}\n"
@@ -259,7 +247,16 @@ async def abrir_interface(titulo: str, col_headers: list, opcoes: list, multisel
     with Live(auto_refresh=False, console=console, transient=True) as live:
         while True:
             is_mobile = is_mobile_screen(console)
-            visible_items = 12 if not is_mobile else 6
+            term_height = console.size.height
+
+            # =========================================================
+            # CÁLCULO DINÂMICO DE ALTURA (FIM DOS BUGS DE TELA ESCONDIDA)
+            # =========================================================
+            if is_mobile:
+                # O cabeçalho gasta umas 10 linhas. Cada música gasta 4 linhas.
+                visible_items = max(2, (term_height - 11) // 4)
+            else:
+                visible_items = max(3, (term_height - 11) // 2)
 
             if current_idx >= start_idx + visible_items:
                 start_idx = current_idx - visible_items + 1
@@ -555,7 +552,7 @@ class QobuzDL:
             if self._is_interactive_session and url_type == "artist":
                 tipos = ["Album", "EP", "Single", "Live", "Compilation"]
                 opcoes_ui = [{"colunas": [opt], "data": opt} for opt in tipos]
-                titulo = f"*** FILTRO PARA {content_name.upper()} - TIPO DE LANÇAMENTO ***"
+                titulo = f"*** FIL PARA {content_name.upper()} - TIPO DE LANÇAMENTO ***"
 
                 selected_raw = await abrir_interface(titulo, ["OPÇÕES"], opcoes_ui, multiselect=True)
 
@@ -679,13 +676,10 @@ class QobuzDL:
     async def search_by_type(self, query: Optional[str], item_type: str, limit: int = 10, lucky: bool = False, fav_subtype: Optional[str] = None):
         limit = int(limit)
         
-        # =====================================================================
-        # Aumentando o limite para Singles e Álbuns (o app usa scroll infinito)
-        # =====================================================================
         if item_type == "single":
-            limit = 100  # Puxa 100 músicas na busca de singles
+            limit = 100 
         elif item_type == "album_ep":
-            limit = 50   # Puxa 50 álbuns
+            limit = 50  
 
         if item_type != "favorites" and (not query or len(query) < 3): return [], []
 
