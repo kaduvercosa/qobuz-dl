@@ -4,10 +4,11 @@ aiofiles
 ffmpeg-python
 mutagen
 tqdm
-pick==1.6.0
+pick
 beautifulsoup4
 colorama
 cryptography
+rich
 pyaes
 lyricsgenius
 langdetect

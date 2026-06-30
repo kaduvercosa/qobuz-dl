@@ -38,7 +38,7 @@ _console = Console()
 
 def is_mobile_screen(console: Console) -> bool:
     """Verifica dinamicamente se o terminal é estreito"""
-    return console.size.width < 95
+    return shutil.get_terminal_size((120, 20)).columns < 95
 
 
 async def _read_key_async():
@@ -113,20 +113,16 @@ async def input_seguro(prompt_text: str) -> str:
 def _gerar_tabela_rich(titulo: str, col_headers: list, opcoes: list, current_idx: int, selected_indices: set, multiselect: bool, is_mobile: bool, start_idx: int, visible_items: int):
     """Constrói a grelha visual adaptativa e preenche a largura da tela."""
     
-    # -------------------------------------------------------------
-    # CABEÇALHO COMPACTO: Economiza espaço valioso no celular!
-    # -------------------------------------------------------------
     if is_mobile:
         instrucoes = "↕ Mover | ␣ Marcar | ↵ Confirmar | Q Sair" if multiselect else "↕ Mover | ↵ Confirmar | Q Sair"
     else:
-        instrucoes = "↑/↓: Mover | Espaço: Marcar | Enter: Confirmar | Q: Sair" if multiselect else "↑/↓: Mover | Enter: Confirmar | Q: Sair"
+        instrucoes = "↑/↓: Mover | Espaço: Marcar | Enter: Confirmar | Q: Sair\n📱 Toque no centro da tela p/ subir o Teclado Virtual" if multiselect else "↑/↓: Mover | Enter: Confirmar | Q: Sair\n📱 Toque no centro da tela p/ subir o Teclado Virtual"
 
     scroll_up = "▲ Mais itens acima..." if start_idx > 0 else ""
     scroll_down = "▼ Mais itens abaixo..." if start_idx + visible_items < len(opcoes) else ""
 
     posicao = f"[{current_idx + 1}/{len(opcoes)}]"
     
-    # O contador entra do lado do título no celular, salvando 1 linha inteira
     titulo_formatado = f"[bold]{titulo}[/bold] [cyan]{posicao}[/cyan]\n[dim]{instrucoes}[/dim]"
     
     if scroll_up: titulo_formatado += f"\n[cyan]{scroll_up}[/cyan]"
@@ -143,24 +139,26 @@ def _gerar_tabela_rich(titulo: str, col_headers: list, opcoes: list, current_idx
         expand=deve_expandir
     )
 
-    tabela.add_column("SEL", justify="center", width=5)
+    # 🛑 FORÇANDO NO_WRAP E OVERFLOW="ELLIPSIS" EM TODAS AS COLUNAS
+    tabela.add_column("SEL", justify="center", width=5, no_wrap=True)
 
     if not is_mobile:
         if len(col_headers) >= 6:
-            tabela.add_column(col_headers[0], ratio=2) # Artista
-            tabela.add_column(col_headers[1], ratio=3) # Título
-            tabela.add_column(col_headers[2], ratio=2) # Álbum/Gravadora
-            tabela.add_column(col_headers[3], ratio=1) # Tipo
-            tabela.add_column(col_headers[4], ratio=1, justify="center") # Ano
-            tabela.add_column(col_headers[5], ratio=2, justify="right") # Qualidade
+            tabela.add_column(col_headers[0], ratio=2, justify="center", no_wrap=True, overflow="ellipsis") # Artista
+            tabela.add_column(col_headers[1], ratio=3, justify="center", no_wrap=True, overflow="ellipsis") # Título
+            tabela.add_column(col_headers[2], ratio=2, justify="center", no_wrap=True, overflow="ellipsis") # Álbum/Gravadora
+            tabela.add_column(col_headers[3], ratio=1, justify="center", no_wrap=True, overflow="ellipsis") # Tipo
+            tabela.add_column(col_headers[4], ratio=1, justify="center", no_wrap=True)                      # Ano
+            tabela.add_column(col_headers[5], ratio=2, justify="center", no_wrap=True, overflow="ellipsis") # Qualidade
         elif len(col_headers) == 2:
-            tabela.add_column(col_headers[0], ratio=3)
-            tabela.add_column(col_headers[1], ratio=1)
+            tabela.add_column(col_headers[0], ratio=3, no_wrap=True, overflow="ellipsis")
+            tabela.add_column(col_headers[1], ratio=1, no_wrap=True, overflow="ellipsis")
         else:
             for header in col_headers:
-                tabela.add_column(header, ratio=1)
+                tabela.add_column(header, ratio=1, no_wrap=True, overflow="ellipsis")
     else:
-        tabela.add_column("DETALHES DO LANÇAMENTO", ratio=1)
+        # Modo mobile também proíbe quebras de linha automáticas (vai respeitar apenas os '\n' do código)
+        tabela.add_column("DETALHES DO LANÇAMENTO", ratio=1, no_wrap=True, overflow="ellipsis")
 
     end_idx = min(len(opcoes), start_idx + visible_items)
 
@@ -183,7 +181,6 @@ def _gerar_tabela_rich(titulo: str, col_headers: list, opcoes: list, current_idx
 
         coluna_sel = f"{cursor} {caixa}".strip()
         
-        # BRANCO ABSOLUTO: Garante que o texto seja legível não importa o tema do terminal
         estilo_linha = "bold #ffffff on #005f87" if is_hover else None
 
         if not is_mobile:
@@ -252,17 +249,14 @@ async def abrir_interface(titulo: str, col_headers: list, opcoes: list, multisel
     with Live(auto_refresh=False, console=console, transient=True) as live:
         while True:
             is_mobile = is_mobile_screen(console)
-            term_height = console.size.height
+            term_height = shutil.get_terminal_size((80, 20)).lines
+            
+            overhead = 12
 
-            # =========================================================
-            # CALCULO BLINDADO DE ALTURA PARA NÃO CORTAR COM O TECLADO
-            # =========================================================
             if is_mobile:
-                # Usa no máximo 8 linhas para o cabeçalho. Divide o resto por 5 (espaço que cada card usa).
-                # O 'max(1, ...)' garante que pelo menos UMA música inteira seja mostrada e não corte a linha.
-                visible_items = max(1, (term_height - 8) // 5)
+                visible_items = max(1, (term_height - overhead) // 5)
             else:
-                visible_items = max(3, (term_height - 10) // 2)
+                visible_items = max(1, (term_height - overhead) // 2)
 
             if current_idx >= start_idx + visible_items:
                 start_idx = current_idx - visible_items + 1

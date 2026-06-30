@@ -119,7 +119,7 @@ def _get_cover_info(cover_path: Path) -> str:
             elif saved_q == "org":
                 provider_tag = " [Qobuz]"
             elif saved_q:
-                provider_tag = f" [Qobuz_{saved_q}]"
+                provider_tag = f" [Qobuz: _{saved_q}]"
         except Exception:
             pass
     try:
@@ -212,10 +212,8 @@ def tag_flac(filename: str, root_dir: Union[str, Path], final_name: str, d: Qobu
                 audio[k] = [str(i) for i in v]
             else:
                 audio[k] = str(v)
-
     audio.save()
 
-    # Cofre de tentativas (Micro-pausas para não congelar as outras threads no asyncio)
     for _ in range(15):
         try:
             shutil.move(filename, final_name)
@@ -226,7 +224,6 @@ def tag_flac(filename: str, root_dir: Union[str, Path], final_name: str, d: Qobu
     try:
         os.rename(filename, final_name)
     except OSError as e:
-        # [FIX] Antes essa falha desaparecia 100% em silêncio (except OSError: pass): o download "parecia" concluído com sucesso, mas o arquivo final podia nem existir no destino (disco cheio, permissão, path longo demais, etc). Mantemos o comportamento de não derrubar o loop do downloader, mas agora pelo menos fica registrado no log pra dar pra investigar depois.
         logger.error(f"Falha ao mover/renomear arquivo final '{filename}' -> '{final_name}': {e}")
 
 def tag_mp3(filename: str, root_dir: Union[str, Path], final_name: str, d: QobuzItem, album: QobuzAlbum, istrack: bool = True, em_image: bool = False, settings: Optional[QobuzDLSettings] = None) -> None:
@@ -265,15 +262,6 @@ def tag_mp3(filename: str, root_dir: Union[str, Path], final_name: str, d: Qobuz
                 elif id3tag == id3.COMM:
                     audio.add(id3tag(encoding=3, lang='eng', desc='', text=[v] if isinstance(v, str) else v))
                 elif id3tag == id3.TDAT:
-                    # [FIX] TDAT no ID3v2.3 é, por spec, só DDMM (dia+mês,
-                    # 4 dígitos) -- não uma data ISO completa. Antes a string
-                    # inteira (ex.: "2024-05-01") era jogada direto nesse
-                    # frame, fora do spec (a maioria dos players é tolerante
-                    # e ignora isso, mas é tecnicamente incorreto).
-                    # Continuamos guardando a data completa normalmente em
-                    # DATE pro FLAC (Vorbis aceita ISO sem problema) -- esse
-                    # reformatação é só pro frame TDAT específico do MP3.
-                    # O ano continua coberto separadamente pelo frame TYER.
                     date_str = v if isinstance(v, str) else (v[0] if v else "")
                     m = re.match(r"(\d{4})-(\d{2})-(\d{2})", date_str)
                     if m:
@@ -297,8 +285,6 @@ def tag_mp3(filename: str, root_dir: Union[str, Path], final_name: str, d: Qobuz
     try:
         os.rename(filename, final_name)
     except OSError as e:
-        # [FIX] Mesmo motivo do tag_flac() acima: agora registra no log em
-        # vez de falhar 100% em silêncio.
         logger.error(f"Falha ao mover/renomear arquivo final '{filename}' -> '{final_name}': {e}")
 
 def _get_tags_to_add(qobuz_album: QobuzAlbum, qobuz_item: QobuzItem, settings: Optional[QobuzDLSettings] = None) -> Dict[str, Any]:
