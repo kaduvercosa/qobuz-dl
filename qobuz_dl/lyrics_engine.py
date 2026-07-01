@@ -53,25 +53,19 @@ class LyricsEngine:
     @staticmethod
     def _decode_symbol_escapes(raw: str) -> str:
         """
-        Converte sequências de escape digitadas no config.ini em caracteres reais.
-        Necessário porque o configparser remove espaços/tabs "de verdade" que
-        estejam no início ou no fim do valor -- então o usuário digita a versão
-        escapada, que não sofre esse corte:
-            \\t  -> tab real (recuo)
-            \\s  -> espaço real (útil no fim do símbolo, que senão seria cortado)
-            \\n  -> quebra de linha real
-            \\\\ -> barra invertida literal
-        Exemplo no config.ini: translation_symbol = \\t~\\s
+        Converte sequências de escape em caracteres reais protegidos contra o trim dos leitores.
+        - \\s vira 1 Non-Breaking Space (\\u00A0)
+        - \\t vira 4 Non-Breaking Spaces (\\u00A0\\u00A0\\u00A0\\u00A0) para simular um Tab indestrutível
+        - \\n vira uma quebra de linha real
         """
         if not raw:
             return raw
         return (raw
-                .replace("\\\\", "\x00")  # protege barras invertidas literais antes das outras trocas
-                .replace("\\t", "\t")
-                .replace("\\s", " ")
+                .replace("\\\\", "\x00")  # Protege as barras invertidas literais
+                .replace("\\t", "\u00A0\u00A0\u00A0\u00A0") # Tab convertido em 4 NBSP contra trim
+                .replace("\\s", "\u00A0") # Espaço convertido em NBSP
                 .replace("\\n", "\n")
                 .replace("\x00", "\\"))
-
 
     async def get_session(self):
         if self._shared_session is None or self._shared_session.closed:
@@ -161,7 +155,7 @@ class LyricsEngine:
                     return data["translations"][0]["text"]
                 elif response.status == 456:
                     self._deepl_quota_exceeded = True
-                    print(f" {Tema.AVISO}⚠️ Cota mensal do DeepL (500k) excedida! Transição invísivel para o Google Translate ativada.{Tema.OFF}")
+                    print(f" {Tema.AVISO}⚠️ Cota mensal do DeepL (500k) excedida! Transição invisível para o Google Translate ativada.{Tema.OFF}")
                     return None
         except Exception as e:
             logger.error(f"Erro na API do DeepL: {e}")
@@ -180,8 +174,6 @@ class LyricsEngine:
                         data = await response.json()
                         return "".join([linha[0] for linha in data[0] if linha[0]])
                     elif response.status == 429:
-                        # Google limitou por volume. Espera com backoff exponencial (1s, 2s, 4s...)
-                        # antes de tentar de novo, em vez de desistir e devolver o texto original.
                         espera = 2 ** tentativa
                         logger.warning(f"Google Translate retornou 429 (rate limit). Aguardando {espera}s antes de tentar novamente...")
                         await asyncio.sleep(espera)
@@ -288,8 +280,6 @@ class LyricsEngine:
                 if txt: mapping.append(('text', None, txt))
                 else: mapping.append(('empty', None, ''))
 
-        # Idiomas detectados por linha pendente de tradução, na mesma ordem de texts_to_translate.
-        # Guardamos aqui pra não ter que rodar o detector de novo mais embaixo.
         detected_source_langs = []
 
         if self.translate:
@@ -301,9 +291,6 @@ class LyricsEngine:
                     words = set(clean_txt.split())
                     is_filler = bool(words) and words.issubset(self.pt_false_positives)
                     lang, conf = self._detect_lang(txt_no_tags)
-                    # Verifica linha a linha se o idioma já bate com o target_lang do config.ini
-                    # (antes era fixo em português, então músicas com trechos em outro idioma
-                    # que não o alvo escolhido acabavam não sendo detectadas corretamente).
                     ja_no_idioma_alvo = self._line_matches_target(lang, conf)
                     if not ja_no_idioma_alvo and not is_filler:
                         texts_to_translate.append((i, txt))
@@ -314,27 +301,21 @@ class LyricsEngine:
 
         if texts_to_translate:
             try:
-                # Agrupa as linhas pendentes pelo idioma de origem detectado. Assim, uma
-                # música com 2 idiomas gera só 2 requisições (uma por idioma), não uma
-                # por linha -- evita tanto o "sl=auto" misturando idiomas quanto o excesso
-                # de chamadas que pode fazer o Google devolver 429 (rate limit).
                 grupos = {}
                 for (idx, txt), lang in zip(texts_to_translate, detected_source_langs):
                     chave = lang or "desconhecido"
                     grupos.setdefault(chave, []).append((idx, txt))
 
                 for chave, itens in grupos.items():
-                    # Dedup: linhas com texto idêntico dentro do mesmo grupo (refrão que
-                    # repete "yeah yeah yeah" várias vezes) só são traduzidas uma vez; o
-                    # resultado é reaproveitado pros demais índices com o mesmo texto.
                     textos_unicos = list(dict.fromkeys(txt for _, txt in itens))
 
                     if len(textos_unicos) == 1:
                         trad_unica, fonte_grupo = await self._translate_text(textos_unicos[0])
                         for idx, txt in itens:
                             translation_map[idx] = trad_unica.strip()
-                        if fonte_grupo == "DeepL API":
-                            fonte_usada = fonte_grupo
+                        
+                        # Atualiza a fonte dinamicamente, seja Google ou DeepL
+                        if fonte_grupo: fonte_usada = fonte_grupo
                         continue
 
                     raw_texts = "\n".join(textos_unicos)
@@ -345,13 +326,10 @@ class LyricsEngine:
                         mapa_unico = {orig: trad.strip() for orig, trad in zip(textos_unicos, translated_lines)}
                         for idx, txt in itens:
                             translation_map[idx] = mapa_unico.get(txt, txt)
-                        if fonte_grupo == "DeepL API":
-                            fonte_usada = fonte_grupo
+                            
+                        # Atualiza a fonte dinamicamente
+                        if fonte_grupo: fonte_usada = fonte_grupo
                     else:
-                        # Contagem não bateu (o Google às vezes quebra ou junta linhas de
-                        # forma inesperada) -- cai pro fallback linha a linha, mas só dentro
-                        # deste grupo específico, com concorrência baixa pra não estourar
-                        # o rate limit do Google.
                         sem = asyncio.Semaphore(3)
                         async def translate_single(idx, text_to_trans):
                             async with sem:
@@ -362,8 +340,8 @@ class LyricsEngine:
                         resultados = await asyncio.gather(*tasks)
                         for idx, trad, f_usada in resultados:
                             translation_map[idx] = trad.strip()
-                            if f_usada == "DeepL API":
-                                fonte_usada = f_usada
+                            # Atualiza a fonte dinamicamente
+                            if f_usada: fonte_usada = f_usada
             except Exception as e:
                 logger.error(f"Erro traducao: {e}")
 
