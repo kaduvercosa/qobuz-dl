@@ -3,6 +3,7 @@ import difflib
 import string
 import re
 import configparser
+import io
 import logging
 import os
 import signal
@@ -162,6 +163,7 @@ def _reset_config(config_file: Path) -> int:
         config["qobuz"]["fetch_lyrics"] = "true" if fetch_lyrics else "false"
 
         target_lang, genius_token, deepl_api_key, translate_lyrics = "PT-BR", "", "", False
+        translation_symbol_input = ""
         
         if fetch_lyrics:
             translate_opt = input("  ❯ Traduzir as letras estrangeiras para o seu idioma? (S/n): ").strip().lower()
@@ -169,6 +171,9 @@ def _reset_config(config_file: Path) -> int:
             if translate_lyrics:
                 target_lang_input = input("\n  ❯ Idioma alvo para tradução (ex: 'PT-BR', 'EN-US') [padrão: PT-BR]: ").strip()
                 if target_lang_input: target_lang = target_lang_input.upper()
+
+                print(f"\n  {CYAN}[!] Símbolo mostrado antes da linha traduzida no .lrc. Use \\t (tab), \\s (espaço) e \\n (quebra de linha) em vez dos caracteres reais, pois espaços/tabs reais no início ou fim são cortados ao salvar no config.ini.{OFF}")
+                translation_symbol_input = input("  ❯ Símbolo da tradução [padrão: 3 espaços + ~ + espaço]: ").strip()
 
                 print(f"\n {CYAN}[HIERARQUIA] 1º Oficial Qobuz -> 2º DeepL API -> 3º Google Translate {OFF}")
                 deepl_input = input("  ❯ Token API do DeepL (Opcional - deixe em branco, para utilizar o Google): ").strip()
@@ -181,6 +186,12 @@ def _reset_config(config_file: Path) -> int:
         config["qobuz"]["translate_lyrics"] = "true" if translate_lyrics else "false"
         config["qobuz"]["deepl_api_key"] = deepl_api_key
         config["qobuz"]["genius_token"] = genius_token
+        # Só grava a chave se o usuário escolheu algo. Se deixar em branco, o
+        # projeto usa o padrão "   ~ " (com espaços reais) direto no código --
+        # se a gente escrevesse esse padrão aqui, na próxima leitura do
+        # config.ini os espaços do início/fim seriam cortados sem querer.
+        if translation_symbol_input:
+            config["qobuz"]["translation_symbol"] = translation_symbol_input
 
         print(f"\n{YELLOW}--- 3. PLAYLISTS INTELIGENTES (IA) ---{OFF}")
         print("    1) Nenhuma (Saltar)")
@@ -273,7 +284,23 @@ def _reset_config(config_file: Path) -> int:
     config["qobuz"]["secrets"] = ",".join(bundle.get_secrets().values())
 
     with open(config_file, "w") as configfile:
-        config.write(configfile)
+        # Escreve primeiro em memória pra poder injetar um comentário-lembrete
+        # sobre a notação de escape do translation_symbol (o configparser não
+        # tem suporte nativo a comentários associados a uma chave específica).
+        buffer = io.StringIO()
+        config.write(buffer)
+        config_text = buffer.getvalue()
+
+        aviso_symbol = (
+            "; DICA: pra mudar o símbolo mostrado antes da linha traduzida no .lrc,\n"
+            "; adicione (ou edite) a linha 'translation_symbol' abaixo. Use \\t (tab),\n"
+            "; \\s (espaço) e \\n (quebra de linha) em vez dos caracteres reais -- espaços\n"
+            "; e tabs reais no início/fim do valor são cortados ao ler o arquivo.\n"
+            "; Exemplo: translation_symbol = \\t~\\s   (padrão se omitido: 3 espaços + ~ + espaço)\n"
+        )
+        config_text = config_text.replace("target_lang = ", aviso_symbol + "target_lang = ")
+
+        configfile.write(config_text)
         
     logging.info(f"\n{GREEN}[+] Configuração guardada com sucesso em:{OFF} {config_file}\n")
     return 0
