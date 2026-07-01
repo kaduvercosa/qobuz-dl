@@ -379,7 +379,8 @@ async def _intercept_standalone_commands():
             target_directory = sys.argv[2] if len(sys.argv) > 2 else _cfg.get(_sec, "directory", fallback=DEFAULT_DOWNLOAD_DIR)
             _deepl = _cfg.get(_sec, "deepl_api_key", fallback=None)
             _lang = _cfg.get(_sec, "target_lang", fallback="PT-BR")
-            await interactive_translate_lyrics(ensure_long_path(target_directory), deepl_api_key=_deepl, target_lang=_lang)
+            _tsymbol = _cfg.get(_sec, "translation_symbol", fallback="   ~ ")
+            await interactive_translate_lyrics(ensure_long_path(target_directory), deepl_api_key=_deepl, target_lang=_lang, translation_symbol=_tsymbol)
         except KeyboardInterrupt: print(f"\n\n{RED}[!] Tradutor interrompido pelo utilizador (CTRL+C).{OFF}\n")
         sys.exit(0)
     
@@ -467,6 +468,10 @@ async def amain():
         deepl_api_key = config.get(section, "deepl_api_key", fallback=None)
         translate_lyrics = config.getboolean(section, "translate_lyrics", fallback=True)
         target_lang = config.get(section, "target_lang", fallback="PT-BR")
+        # Símbolo que marca o início da linha traduzida no .lrc. Aceita escapes:
+        # \t (tab/recuo), \s (espaço, útil no fim já que o configparser corta
+        # espaços reais ali) e \n. Ex no config.ini: translation_symbol = \t~\s
+        translation_symbol = config.get(section, "translation_symbol", fallback="   ~ ")
         
         directory_val = config.get(section, "directory", fallback=None)
         if directory_val is not None:
@@ -517,13 +522,13 @@ async def amain():
     if arguments.command == "lyrics":
         from qobuz_dl.retro_tagger import inject_lyrics_retroactively
         try:
-            await inject_lyrics_retroactively(ensure_long_path(arguments.DIR), genius_token=genius_token, deepl_api_key=deepl_api_key, overwrite=getattr(arguments, 'overwrite', False), target_lang=target_lang, translate_lyrics=translate_lyrics, max_workers=int(config.get(section, "max_workers", fallback=3)))
+            await inject_lyrics_retroactively(ensure_long_path(arguments.DIR), genius_token=genius_token, deepl_api_key=deepl_api_key, overwrite=getattr(arguments, 'overwrite', False), target_lang=target_lang, translation_symbol=translation_symbol, translate_lyrics=translate_lyrics, max_workers=int(config.get(section, "max_workers", fallback=3)))
         except KeyboardInterrupt: print(f"\n\n{RED}[!] Operation manually interrupted by the user (CTRL+C).{OFF}\n{YELLOW}Already processed files are safe. Exiting...{OFF}")
         sys.exit(0)
 
     elif arguments.command in ("fix-lyrics", "fl"):
         from qobuz_dl.retro_tagger import interactive_fix_lyrics
-        try: await interactive_fix_lyrics(ensure_long_path(arguments.DIR), genius_token=genius_token, deepl_api_key=deepl_api_key, target_lang=target_lang, translate_lyrics=translate_lyrics)
+        try: await interactive_fix_lyrics(ensure_long_path(arguments.DIR), genius_token=genius_token, deepl_api_key=deepl_api_key, target_lang=target_lang, translation_symbol=translation_symbol, translate_lyrics=translate_lyrics)
         except KeyboardInterrupt: print(f"\n\n{RED}[!] Operation manually interrupted (CTRL+C).{OFF}")
         sys.exit(0)
 
@@ -554,7 +559,7 @@ async def amain():
         smart_discography=getattr(arguments, 'smart_discography', False) or config.getboolean(section, "smart_discography", fallback=False),
         fetch_lyrics=fetch_lyrics, no_lrc_files=("--no-lrc-files" in sys.argv) or no_lrc_files_config,
         genius_token=genius_token, deepl_api_key=deepl_api_key, translate_lyrics=translate_lyrics,
-        target_lang=target_lang, force_english=force_english, no_credits=no_credits_flag,
+        target_lang=target_lang, translation_symbol=translation_symbol, force_english=force_english, no_credits=no_credits_flag,
         settings=settings, booklet_only=getattr(arguments, 'booklet_only', False),
         blacklist=getattr(arguments, 'blacklist', None) or blacklist_config,
     )

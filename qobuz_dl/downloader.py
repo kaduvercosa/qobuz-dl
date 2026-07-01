@@ -185,6 +185,7 @@ class Download:
         deepl_api_key: str = None,
         translate_lyrics: bool = True,
         target_lang: str = "PT-BR",
+        translation_symbol: str = "   ~ ",
         no_credits: bool = False,
         settings: QobuzDLSettings = None,
         download_db=None,
@@ -211,6 +212,7 @@ class Download:
         self.fetch_lyrics = fetch_lyrics
         self.no_lrc_files = no_lrc_files
         self.target_lang = target_lang
+        self.translation_symbol = translation_symbol
         self.translate_lyrics = translate_lyrics
         self.is_single_batch = is_single_batch
         self.single_batch_index = single_batch_index
@@ -222,6 +224,7 @@ class Download:
                 deepl_api_key=deepl_api_key, 
                 translate=self.translate_lyrics, 
                 target_lang=self.target_lang,
+                translation_symbol=self.translation_symbol,
                 session=self.client.session
             )
 
