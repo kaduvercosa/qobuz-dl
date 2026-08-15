@@ -19,7 +19,7 @@ from typing import Optional
 
 from qobuz_dl.core import QobuzDL, classificar_tipo_lancamento
 from qobuz_dl.bundle import Bundle
-from qobuz_dl.utils import get_url_info, sanitize_filename, create_and_return_dir
+from qobuz_dl.utils import get_url_info, clean_filename, create_and_return_dir
 from qobuz_dl.settings import QobuzDLSettings
 
 from .progress import Job, current_job
