@@ -14,6 +14,8 @@ lógica de download/tag -- isso continua 100% dentro de `downloader.py` e
      `download_from_id`, mantendo a MESMA função de download por baixo.
 """
 import asyncio
+import shutil
+import tempfile
 from pathlib import Path
 from typing import Optional
 
@@ -23,6 +25,21 @@ from qobuz_dl.utils import get_url_info, clean_filename, create_and_return_dir
 from qobuz_dl.settings import QobuzDLSettings
 
 from .progress import Job, current_job
+
+# Raiz onde cada job baixa para uma subpasta isolada (job_id), em vez de
+# escrever direto no download_dir "definitivo". Isso é o que permite ao
+# endpoint /api/download/{job_id}/file entregar o zip/arquivo pro navegador
+# e depois apagar tudo do servidor, sem risco de mexer em arquivos de outro
+# job ou em uma biblioteca já existente.
+JOBS_ROOT = Path(tempfile.gettempdir()) / "qbdl_jobs"
+
+
+def cleanup_stale_job_dirs() -> None:
+    """Remove pastas de jobs de execuções anteriores (ex.: server reiniciou
+    antes do usuário baixar o resultado). Chamado uma vez no startup."""
+    if JOBS_ROOT.exists():
+        shutil.rmtree(JOBS_ROOT, ignore_errors=True)
+    JOBS_ROOT.mkdir(parents=True, exist_ok=True)
 
 
 class QobuzSession:
@@ -129,6 +146,11 @@ class QobuzSession:
         token = current_job.set(job)
         qdl = self._require_client()
         job.status = "running"
+
+        # Pasta exclusiva deste job -- nada é escrito no download_dir global.
+        job_dir = JOBS_ROOT / job.id
+        job_dir.mkdir(parents=True, exist_ok=True)
+        job.job_dir = str(job_dir)
         job.emit()
         try:
             url_type, item_id = get_url_info(job.url)
@@ -136,7 +158,7 @@ class QobuzSession:
             if url_type in ("album", "track"):
                 job.content_name = f"{url_type.title()} {item_id}"
                 job.set_track(job.content_name, 1, 1)
-                await qdl.download_from_id(item_id, album=(url_type == "album"))
+                await qdl.download_from_id(item_id, album=(url_type == "album"), alt_path=str(job_dir))
 
             elif url_type in ("playlist", "artist", "label"):
                 fetch_map = {
@@ -153,9 +175,10 @@ class QobuzSession:
                 job.track_total = len(items)
 
                 is_playlist = url_type == "playlist"
-                base_dir = qdl.directory
+                # bug corrigido: a função certa é clean_filename (sanitize_filename
+                # nunca existiu em qobuz_dl.utils -- isso derrubava esse branch inteiro)
                 new_path = create_and_return_dir(
-                    str(Path(base_dir) / ("Playlist" if is_playlist else "") / sanitize_filename(content_name))
+                    str(job_dir / ("Playlist" if is_playlist else "") / clean_filename(content_name))
                 )
 
                 for idx, item in enumerate(items, start=1):
@@ -177,6 +200,9 @@ class QobuzSession:
             job.status = "error"
             job.error = str(exc)
             job.emit()
+            # não deixa lixo no disco se o download falhou no meio
+            shutil.rmtree(job_dir, ignore_errors=True)
+            job.job_dir = None
         finally:
             current_job.reset(token)
 

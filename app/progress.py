@@ -45,6 +45,10 @@ class Job:
     error: Optional[str] = None
     queue: "asyncio.Queue" = field(default_factory=asyncio.Queue)
     created_at: float = field(default_factory=time.time)
+    # Pasta temporária exclusiva deste job (ver JOBS_ROOT em qobuz_service.py).
+    # Fica None depois que os arquivos já foram entregues/removidos pelo
+    # endpoint /api/download/{job_id}/file, ou se o job nunca baixou nada.
+    job_dir: Optional[str] = None
 
     def snapshot(self) -> dict:
         pct_track = (
@@ -62,6 +66,8 @@ class Job:
             "bytes_done": self.bytes_done,
             "bytes_total": self.bytes_total,
             "error": self.error,
+            # true assim que dá pra chamar GET /api/download/{job_id}/file
+            "file_ready": self.status == "done" and self.job_dir is not None,
         }
 
     def emit(self):
