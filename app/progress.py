@@ -35,7 +35,7 @@ current_job: contextvars.ContextVar[Optional["Job"]] = contextvars.ContextVar(
 class Job:
     id: str
     url: str
-    status: str = "queued"          # queued | running | done | error
+    status: str = "queued"          # queued | running | done | error | cancelled
     content_name: str = ""          # nome do álbum/artista/playlist resolvido
     track_name: str = ""            # faixa atual
     track_index: int = 0
@@ -50,12 +50,19 @@ class Job:
     # endpoint /api/download/{job_id}/file, ou se o job nunca baixou nada.
     job_dir: Optional[str] = None
     # Metadados só pra exibição na fila (capa, artista, nº de faixas do
-    # álbum/playlist) -- resolvidos uma vez no início do job em
+    # álbum/playlist, ano, hi-res) -- resolvidos uma vez no início do job em
     # qobuz_service.run_download_job, não afetam o download em si.
     cover_url: Optional[str] = None
     artist: Optional[str] = None
     content_type: Optional[str] = None       # album | track | playlist | artist | label
     content_tracks_count: Optional[int] = None
+    year: Optional[str] = None
+    hires: Optional[bool] = None
+    # Fila real (ver JobManager abaixo): posição 1-indexed enquanto "queued",
+    # None assim que começa a rodar. task guarda a asyncio.Task pra dar cancel().
+    position: Optional[int] = None
+    cancel_requested: bool = False
+    task: Optional["asyncio.Task"] = field(default=None, repr=False, compare=False)
 
     def snapshot(self) -> dict:
         pct_track = (
@@ -79,6 +86,10 @@ class Job:
             "artist": self.artist,
             "content_type": self.content_type,
             "content_tracks_count": self.content_tracks_count,
+            "year": self.year,
+            "hires": self.hires,
+            "queue_position": self.position,
+            "cancellable": self.status in ("queued", "running"),
         }
 
     def emit(self):
@@ -98,8 +109,19 @@ class Job:
 
 
 class JobManager:
-    def __init__(self):
+    """Fila real: `enqueue()` só registra o job e acorda os workers;
+    `start_workers()` sobe N tasks que processam em ordem (FIFO), uma job
+    de cada vez por worker -- então com concurrency=2, até 2 downloads
+    rodam ao mesmo tempo e o resto espera com `position` visível. Cancelar
+    um job na fila só o remove; cancelar um em execução dá `Task.cancel()`
+    de verdade nele."""
+
+    def __init__(self, concurrency: int = 2):
         self._jobs: Dict[str, Job] = {}
+        self._pending: list[str] = []
+        self._cond = asyncio.Condition()
+        self._concurrency = concurrency
+        self._workers_started = False
 
     def create(self, url: str) -> Job:
         job = Job(id=uuid4().hex[:12], url=url)
@@ -108,6 +130,73 @@ class JobManager:
 
     def get(self, job_id: str) -> Optional[Job]:
         return self._jobs.get(job_id)
+
+    def list(self) -> list[Job]:
+        """Todos os jobs desta sessão do servidor, do mais antigo pro mais
+        novo -- usado pra repopular a fila no frontend quando a página é
+        recarregada (o backend nunca esquece um job por conta própria)."""
+        return sorted(self._jobs.values(), key=lambda j: j.created_at)
+
+    def _reindex_positions(self):
+        for i, jid in enumerate(self._pending, start=1):
+            j = self._jobs.get(jid)
+            if j:
+                j.position = i
+
+    async def enqueue(self, job: Job) -> None:
+        async with self._cond:
+            self._pending.append(job.id)
+            self._reindex_positions()
+            self._cond.notify_all()
+        job.emit()
+
+    async def cancel(self, job_id: str) -> bool:
+        job = self._jobs.get(job_id)
+        if not job:
+            return False
+        if job.status == "queued":
+            async with self._cond:
+                if job_id in self._pending:
+                    self._pending.remove(job_id)
+                    self._reindex_positions()
+            job.cancel_requested = True
+            job.status = "cancelled"
+            job.position = None
+            job.emit()
+            return True
+        if job.status == "running" and job.task is not None:
+            job.cancel_requested = True
+            job.task.cancel()
+            return True
+        return False
+
+    def start_workers(self, run_fn) -> None:
+        """`run_fn` é `session.run_download_job` -- passado de fora (main.py)
+        pra não criar import circular entre progress.py e qobuz_service.py."""
+        if self._workers_started:
+            return
+        self._workers_started = True
+        for _ in range(self._concurrency):
+            asyncio.create_task(self._worker_loop(run_fn))
+
+    async def _worker_loop(self, run_fn) -> None:
+        while True:
+            async with self._cond:
+                while not self._pending:
+                    await self._cond.wait()
+                job_id = self._pending.pop(0)
+                self._reindex_positions()
+            job = self._jobs.get(job_id)
+            if job is None or job.cancel_requested:
+                continue
+            job.task = asyncio.current_task()
+            try:
+                await run_fn(job)
+            except asyncio.CancelledError:
+                job.status = "cancelled"
+                job.emit()
+            finally:
+                job.task = None
 
 
 jobs = JobManager()

@@ -299,6 +299,8 @@ class QobuzSession:
                     job.artist = preview.get("artist")
                     job.cover_url = preview.get("cover_url")
                     job.content_tracks_count = preview.get("tracks_count")
+                    job.year = preview.get("year") or None
+                    job.hires = bool(preview.get("hires"))
                 except Exception:
                     pass  # não é crítico -- se falhar, o download segue normalmente
                 job.set_track(job.content_name, 1, 1)
@@ -316,10 +318,13 @@ class QobuzSession:
                 job.content_name = content_name
                 job.content_type = url_type
                 job.cover_url = self._pick_cover(url_type, content[0] if content else {}, [])
+                if url_type == "playlist":
+                    job.artist = (content[0].get("owner") or {}).get("name") if content else None
 
                 items = [it for chunk in content for it in chunk.get(iterable_key, {}).get("items", [])]
                 job.track_total = len(items)
                 job.content_tracks_count = len(items)
+                job.hires = any(bool(it.get("hires_streamable")) for it in items)
 
                 is_playlist = url_type == "playlist"
                 # bug corrigido: a função certa é clean_filename (sanitize_filename
@@ -343,6 +348,12 @@ class QobuzSession:
 
             job.status = "done"
             job.emit()
+        except asyncio.CancelledError:
+            job.status = "cancelled"
+            job.emit()
+            shutil.rmtree(job_dir, ignore_errors=True)
+            job.job_dir = None
+            raise
         except Exception as exc:  # noqa: BLE001 -- reportar qualquer erro pro cliente via WS
             job.status = "error"
             job.error = str(exc)

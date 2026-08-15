@@ -1,4 +1,3 @@
-import asyncio
 from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
@@ -11,7 +10,7 @@ from starlette.background import BackgroundTask
 from . import progress
 from .progress import jobs
 from .qobuz_service import session, cleanup_stale_job_dirs
-from .utils_delivery import collect_files, build_zip, cleanup_job
+from .utils_delivery import collect_files, build_zip, build_download_filename, cleanup_job
 
 app = FastAPI(title="QBDL backend")
 
@@ -25,6 +24,7 @@ app.add_middleware(
 async def _startup():
     progress.install()  # ativa a ponte de progresso tqdm -> WebSocket (ver progress.py)
     cleanup_stale_job_dirs()  # limpa pastas de jobs de uma execução anterior do server
+    jobs.start_workers(session.run_download_job)  # sobe os workers da fila (2 downloads simultâneos)
 
 
 # --------------------------------------------------------------------- auth
@@ -114,8 +114,22 @@ async def start_download(body: DownloadBody):
     if not session.logged_in:
         raise HTTPException(status_code=401, detail="Faça login antes de baixar.")
     job = jobs.create(body.url)
-    asyncio.create_task(session.run_download_job(job))
-    return {"job_id": job.id}
+    await jobs.enqueue(job)  # fila real -- ver JobManager em progress.py
+    return {"job_id": job.id, "queue_position": job.position}
+
+
+@app.delete("/api/jobs/{job_id}")
+async def cancel_job(job_id: str):
+    """Cancela um job -- se ainda estiver na fila, só o remove; se já
+    estiver baixando, interrompe de verdade (Task.cancel()) e limpa a
+    pasta temporária dele."""
+    job = jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="job não encontrado")
+    ok = await jobs.cancel(job_id)
+    if not ok:
+        raise HTTPException(status_code=409, detail=f"job não pode ser cancelado (status={job.status})")
+    return {"ok": True}
 
 
 @app.get("/api/download/{job_id}/file")
@@ -140,7 +154,7 @@ async def download_file(job_id: str, as_zip: bool | None = None):
     if not files:
         raise HTTPException(status_code=404, detail="nenhum arquivo encontrado pra esse job")
 
-    zip_stem = job.content_name or job_id
+    zip_stem = build_download_filename(job)
     want_zip = as_zip if as_zip is not None else (len(files) > 1)
 
     if want_zip:
@@ -161,6 +175,13 @@ async def download_file(job_id: str, as_zip: bool | None = None):
         filename=only_file.name,
         background=BackgroundTask(cleanup_job, job, None),
     )
+
+
+@app.get("/api/jobs")
+async def list_jobs():
+    """Todos os jobs desta sessão do servidor -- usado pelo frontend pra
+    repopular a fila quando a página é recarregada."""
+    return {"jobs": [j.snapshot() for j in jobs.list()]}
 
 
 @app.get("/api/jobs/{job_id}")

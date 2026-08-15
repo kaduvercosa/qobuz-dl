@@ -12,6 +12,8 @@ import zipfile
 from pathlib import Path
 from typing import List, Optional
 
+from qobuz_dl.utils import clean_filename
+
 # extensões/arquivos que não fazem parte do conteúdo baixado (temporários,
 # metadados do SO etc.) -- não entram no zip nem contam pra decidir se é
 # "arquivo único"
@@ -45,6 +47,26 @@ def build_zip(job_dir: Path, zip_stem: str, files: List[Path]) -> Path:
         for f in files:
             zf.write(f, arcname=str(f.relative_to(job_dir)))
     return zip_path
+
+
+def build_download_filename(job) -> str:
+    """Monta um nome de arquivo/zip legível a partir do que o job baixou --
+    em vez de sempre 'FIXME.zip' ou o job_id cru. Exemplos:
+      "Tame Impala - Currents (2015) [Hi-Res].zip"
+      "Kendrick Lamar - To Pimp a Butterfly.zip"          (sem ano/hi-res quando não sabido)
+      "Selecionadas.zip"                                   (playlist, sem artista único)
+    """
+    base = (job.content_name or "").strip() or job.id
+    if job.artist and job.content_type in ("album", "track"):
+        name = f"{job.artist} - {base}"
+    else:
+        name = base
+    if job.year:
+        name += f" ({job.year})"
+    if job.hires:
+        name += " [Hi-Res]"
+    cleaned = clean_filename(name)
+    return cleaned or job.id
 
 
 def cleanup_job(job, zip_path: Optional[Path] = None) -> None:

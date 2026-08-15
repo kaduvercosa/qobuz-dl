@@ -4,6 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>QOBUZ · DL</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='38' fill='%23ff1e1e'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Doto:wght@400..900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -11,6 +12,7 @@
   :root{
     --bg:#070707;
     --bg-elevated:#121212;
+    --bg-shimmer:#1d1d1d;
     --bg-card:#0f0f0f;
     --border:#242424;
     --border-soft:#1a1a1a;
@@ -22,6 +24,7 @@
     --radius:0px;
     --mono:'JetBrains Mono', ui-monospace, monospace;
     --dot:'Doto', var(--mono);
+    --ease:cubic-bezier(.16,1,.3,1);
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
@@ -39,12 +42,27 @@
   button, input, select, textarea{font-family:inherit;}
   img{display:block;}
 
+  @keyframes fadeSlideUp{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:translateY(0);}}
+  @keyframes shimmer{0%{background-position:-300% 0;}100%{background-position:300% 0;}}
+  @keyframes glowPulse{0%,100%{box-shadow:0 0 0 rgba(255,30,30,0);}50%{box-shadow:0 0 9px rgba(255,30,30,.5);}}
+  @keyframes toastIn{from{opacity:0;transform:translateY(10px) scale(.97);}to{opacity:1;transform:translateY(0) scale(1);}}
+  @keyframes toastOut{to{opacity:0;transform:translateY(6px) scale(.97);}}
+  @keyframes imgFadeIn{from{opacity:0;}to{opacity:1;}}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  @keyframes popIn{from{opacity:0;transform:scale(.9);}to{opacity:1;transform:scale(1);}}
+
   .wrap{max-width:820px;margin:0 auto;padding:0 20px 90px;}
 
   /* header ---------------------------------------------------------- */
   header{
     display:flex;align-items:center;justify-content:space-between;
     padding:20px 20px 16px;max-width:820px;margin:0 auto;
+    position:relative;
+  }
+  header::after{
+    content:"";position:absolute;left:20px;right:20px;bottom:0;height:1px;
+    background:linear-gradient(90deg, var(--accent-dim), transparent 60%);
+    opacity:.6;
   }
   .wordmark{
     font-family:var(--dot);font-weight:700;font-size:21px;letter-spacing:1px;
@@ -56,7 +74,7 @@
     width:9px;height:9px;border-radius:50%;
     background:var(--fg-faint);
     box-shadow:0 0 0 3px rgba(255,255,255,0.03);
-    flex:none;
+    flex:none;transition:background-color .25s ease;
   }
   .glyph.online{background:var(--accent);animation:pulse 2.2s ease-in-out infinite;}
   .glyph.busy{background:var(--accent);animation:pulse 0.7s ease-in-out infinite;}
@@ -67,22 +85,26 @@
   .icon-btn{
     background:none;border:1px solid var(--border);color:var(--fg-dim);width:30px;height:30px;
     display:flex;align-items:center;justify-content:center;cursor:pointer;border-radius:var(--radius);font-size:14px;
+    transition:border-color .15s ease,color .15s ease,transform .1s ease;
   }
   .icon-btn:hover{border-color:var(--accent);color:var(--accent);}
+  .icon-btn:active{transform:scale(.92);}
 
   /* settings panel ---------------------------------------------------*/
   #settings-panel{
-    display:none;max-width:820px;margin:0 auto;padding:16px 20px;border-top:1px solid var(--border-soft);
-    border-bottom:1px solid var(--border-soft);background:var(--bg-card);
+    max-height:0;overflow:hidden;max-width:820px;margin:0 auto;
+    border-bottom:1px solid transparent;background:var(--bg-card);
+    transition:max-height .3s var(--ease), border-color .3s ease;
   }
-  #settings-panel.open{display:block;}
+  #settings-panel.open{max-height:140px;border-bottom-color:var(--border-soft);}
+  #settings-panel .inner{padding:16px 20px;}
   .settings-row{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;}
   .settings-label{font-size:11px;color:var(--fg-dim);text-transform:uppercase;letter-spacing:.06em;}
 
   /* login gate -------------------------------------------------------- */
   .card{
     background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);
-    padding:22px;margin-top:24px;
+    padding:22px;margin-top:24px;animation:fadeSlideUp .4s var(--ease) both;
   }
   .card h2{
     font-family:var(--dot);font-size:14px;letter-spacing:.08em;text-transform:uppercase;
@@ -93,6 +115,7 @@
   input[type=text], input[type=password], input[type=url]{
     width:100%;background:var(--bg-elevated);border:1px solid var(--border);color:var(--fg);
     padding:12px 13px;border-radius:var(--radius);font-size:14px;outline:none;
+    transition:border-color .15s ease;
   }
   input:focus{border-color:var(--accent);}
   .field{margin-bottom:14px;}
@@ -100,7 +123,7 @@
   .row .field{flex:1;}
   .toggle-link{
     background:none;border:none;color:var(--fg-dim);font-size:11px;text-decoration:underline;
-    cursor:pointer;padding:0;margin-top:2px;text-underline-offset:3px;
+    cursor:pointer;padding:0;margin-top:2px;text-underline-offset:3px;transition:color .15s ease;
   }
   .toggle-link:hover{color:var(--accent);}
 
@@ -108,15 +131,17 @@
     appearance:none;border:1px solid var(--accent);background:var(--accent);color:#0a0a0a;
     font-family:var(--mono);font-weight:700;font-size:12.5px;letter-spacing:.06em;text-transform:uppercase;
     padding:12px 18px;border-radius:var(--radius);cursor:pointer;white-space:nowrap;
+    transition:background-color .15s ease,transform .1s ease,opacity .15s ease;
   }
   .btn:hover{background:#ff3b3b;}
-  .btn:disabled{background:var(--fg-faint);border-color:var(--fg-faint);color:#0a0a0a;cursor:not-allowed;opacity:.6;}
+  .btn:active{transform:scale(.96);}
+  .btn:disabled{background:var(--fg-faint);border-color:var(--fg-faint);color:#0a0a0a;cursor:not-allowed;opacity:.6;transform:none;}
   .btn.ghost{background:transparent;color:var(--fg);border-color:var(--border);}
   .btn.ghost:hover{border-color:var(--accent);color:var(--accent);}
   .btn.small{padding:8px 12px;font-size:11px;}
   .btn.full{width:100%;}
 
-  .error-msg{color:var(--accent);font-size:12px;margin-top:10px;}
+  .error-msg{color:var(--accent);font-size:12px;margin-top:10px;animation:fadeSlideUp .25s var(--ease) both;}
 
   #login-card.hidden{display:none;}
   #app{display:none;}
@@ -130,18 +155,21 @@
     background:none;border:none;color:var(--fg-dim);font-family:var(--mono);font-weight:600;
     font-size:12px;letter-spacing:.06em;text-transform:uppercase;padding:12px 4px;margin-right:26px;
     cursor:pointer;border-bottom:2px solid transparent;display:flex;align-items:center;gap:7px;
+    transition:color .18s ease,border-color .18s ease;
   }
   .tab.active{color:var(--accent);border-bottom-color:var(--accent);}
   .tab-count{
     background:var(--accent);color:#0a0a0a;font-size:10px;font-weight:700;padding:1px 6px;border-radius:var(--radius);
+    animation:popIn .2s var(--ease) both;
   }
   .panel{display:none;padding-top:22px;}
   .panel.active{display:block;}
+  .panel.enter{animation:fadeSlideUp .32s var(--ease) both;}
 
   /* link panel ------------------------------------------------------- */
   .link-input-row{display:flex;gap:8px;}
   .link-input-row input{flex:1;}
-  #batch-box{margin-top:12px;background:var(--bg-card);border:1px solid var(--border);padding:14px;}
+  #batch-box{margin-top:12px;background:var(--bg-card);border:1px solid var(--border);padding:14px;animation:fadeSlideUp .25s var(--ease) both;}
   #batch-box textarea{
     width:100%;min-height:70px;resize:vertical;background:transparent;border:none;color:var(--fg);
     font-family:var(--mono);font-size:13px;outline:none;line-height:1.5;margin-bottom:10px;
@@ -149,12 +177,14 @@
 
   .skeleton{
     margin-top:20px;border:1px solid var(--border);background:var(--bg-card);padding:20px;
-    display:flex;gap:16px;
+    display:flex;gap:16px;animation:fadeSlideUp .25s var(--ease) both;
   }
-  .skel-box{background:var(--bg-elevated);animation:sk 1.3s ease-in-out infinite;}
-  @keyframes sk{0%,100%{opacity:.5}50%{opacity:1}}
+  .skel-box{
+    background:linear-gradient(90deg, var(--bg-elevated) 25%, var(--bg-shimmer) 37%, var(--bg-elevated) 63%);
+    background-size:400% 100%;animation:shimmer 1.4s ease infinite;
+  }
 
-  .preview-card{margin-top:20px;border:1px solid var(--border);background:var(--bg-card);}
+  .preview-card{margin-top:20px;border:1px solid var(--border);background:var(--bg-card);animation:fadeSlideUp .35s var(--ease) both;}
   .breadcrumb{
     display:flex;align-items:center;gap:8px;padding:10px 18px;border-bottom:1px solid var(--border-soft);
     font-size:11px;color:var(--fg-dim);
@@ -166,7 +196,7 @@
     width:132px;height:132px;flex:none;background:var(--bg-elevated);border:1px solid var(--border-soft);
     position:relative;overflow:hidden;
   }
-  .cover-wrap img{width:100%;height:100%;object-fit:cover;}
+  .cover-wrap img{width:100%;height:100%;object-fit:cover;animation:imgFadeIn .35s ease;}
   .cover-fallback{
     width:100%;height:100%;display:flex;align-items:center;justify-content:center;
     color:var(--fg-faint);font-size:34px;font-family:var(--dot);
@@ -181,16 +211,17 @@
   .badges{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;}
   .badge-pill{
     font-size:10.5px;color:var(--fg-dim);border:1px solid var(--border);padding:4px 8px;letter-spacing:.03em;
+    animation:popIn .25s var(--ease) both;
   }
   .badge-pill.hires{color:var(--accent);border-color:var(--accent-dim);}
-  .preview-actions{display:flex;gap:8px;flex-wrap:wrap;}
-  .preview-actions a{font-size:11px;color:var(--fg-dim);text-decoration:underline;text-underline-offset:3px;align-self:center;}
+  .preview-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+  .preview-actions a{font-size:11px;color:var(--fg-dim);text-decoration:underline;text-underline-offset:3px;}
   .preview-actions a:hover{color:var(--accent);}
 
   .tracklist{border-top:1px solid var(--border-soft);}
   .track-row{
     display:flex;align-items:center;gap:12px;padding:10px 20px;border-bottom:1px solid var(--border-soft);
-    font-size:12.5px;
+    font-size:12.5px;animation:fadeSlideUp .3s var(--ease) both;
   }
   .track-row:last-child{border-bottom:none;}
   .track-num{color:var(--fg-faint);width:26px;flex:none;text-align:right;font-size:11px;}
@@ -205,8 +236,10 @@
     display:grid;grid-template-columns:repeat(auto-fill, minmax(130px,1fr));gap:14px;padding:20px;
     border-top:1px solid var(--border-soft);
   }
-  .album-card{cursor:pointer;}
-  .album-card .cover-wrap{width:100%;height:auto;aspect-ratio:1/1;}
+  .album-card{cursor:pointer;animation:fadeSlideUp .3s var(--ease) both;transition:transform .18s ease;}
+  .album-card:hover{transform:translateY(-3px);}
+  .album-card .cover-wrap{width:100%;height:auto;aspect-ratio:1/1;transition:border-color .18s ease;}
+  .album-card:hover .cover-wrap{border-color:var(--accent-dim);}
   .album-card .ac-title{font-size:12px;margin-top:8px;color:var(--fg);word-break:break-word;line-height:1.3;}
   .album-card .ac-sub{font-size:10.5px;color:var(--fg-faint);margin-top:2px;}
 
@@ -217,28 +250,41 @@
   .qbtn{
     border:1px solid var(--border);background:var(--bg-elevated);color:var(--fg-dim);
     padding:8px 10px;font-size:11px;letter-spacing:.03em;cursor:pointer;border-radius:var(--radius);
+    transition:border-color .15s ease,color .15s ease,transform .1s ease;
   }
   .qbtn.active{border-color:var(--accent);color:var(--accent);background:rgba(255,30,30,.07);}
+  .qbtn:active{transform:scale(.94);}
 
   .search-grid{
     display:grid;grid-template-columns:repeat(auto-fill, minmax(140px,1fr));gap:14px;margin-top:20px;
   }
-  .search-card{background:var(--bg-card);border:1px solid var(--border);cursor:pointer;position:relative;}
+  .search-card{
+    background:var(--bg-card);border:1px solid var(--border);cursor:pointer;position:relative;
+    animation:fadeSlideUp .3s var(--ease) both;transition:transform .18s ease,border-color .18s ease;
+  }
+  .search-card:hover{transform:translateY(-3px);border-color:var(--border-soft);}
   .search-card .cover-wrap{width:100%;height:auto;aspect-ratio:1/1;border:none;border-bottom:1px solid var(--border-soft);}
   .search-card .sc-body{padding:10px;}
   .sc-title{font-size:12px;color:var(--fg);line-height:1.3;word-break:break-word;}
   .sc-sub{font-size:10.5px;color:var(--fg-faint);margin-top:3px;}
   .sc-quick{
-    position:absolute;top:6px;right:6px;width:26px;height:26px;background:rgba(7,7,7,.8);
+    position:absolute;top:6px;right:6px;width:26px;height:26px;background:rgba(7,7,7,.82);
     border:1px solid var(--border);color:var(--fg);display:flex;align-items:center;justify-content:center;
-    cursor:pointer;font-size:13px;
+    cursor:pointer;font-size:13px;transition:border-color .15s ease,color .15s ease,transform .1s ease;
   }
   .sc-quick:hover{border-color:var(--accent);color:var(--accent);}
-  .empty-note{font-size:12px;color:var(--fg-faint);margin-top:20px;text-align:center;padding:30px 0;}
+  .sc-quick:active{transform:scale(.88);}
+  .empty-note{font-size:12px;color:var(--fg-faint);margin-top:20px;text-align:center;padding:30px 0;animation:fadeSlideUp .3s var(--ease) both;}
 
   /* queue/jobs ----------------------------------------------------------*/
-  .jobs{margin-top:4px;display:flex;flex-direction:column;gap:12px;}
-  .job{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:14px;display:flex;gap:14px;}
+  .queue-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;}
+  .queue-head .jobs-title{font-family:var(--dot);font-size:12px;letter-spacing:.08em;color:var(--fg-faint);text-transform:uppercase;}
+  .jobs{margin-top:0;display:flex;flex-direction:column;gap:12px;}
+  .job{
+    background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:14px;display:flex;gap:14px;
+    animation:fadeSlideUp .35s var(--ease) both;transition:border-color .25s ease;
+  }
+  .job.status-running{border-color:var(--accent-dim);}
   .job .cover-wrap{width:56px;height:56px;flex:none;}
   .job-body{flex:1;min-width:0;}
   .job-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;}
@@ -246,12 +292,13 @@
   .job-sub{font-size:11px;color:var(--fg-faint);margin-top:1px;}
   .badge{
     font-size:10px;letter-spacing:.06em;text-transform:uppercase;padding:3px 7px;border-radius:var(--radius);
-    border:1px solid var(--border);color:var(--fg-dim);white-space:nowrap;flex:none;
+    border:1px solid var(--border);color:var(--fg-dim);white-space:nowrap;flex:none;transition:color .2s ease,border-color .2s ease;
   }
   .badge.running{color:var(--accent);border-color:var(--accent-dim);}
   .badge.done{color:var(--fg);border-color:var(--fg-dim);}
   .badge.error{color:var(--accent);border-color:var(--accent);}
   .badge.queued{color:var(--fg-faint);}
+  .badge.cancelled{color:var(--fg-faint);border-color:var(--fg-faint);text-decoration:line-through;}
 
   .track-line{font-size:11.5px;color:var(--fg-dim);margin-top:9px;display:flex;justify-content:space-between;gap:8px;}
   .bar-track{
@@ -261,12 +308,27 @@
   .bar-fill{
     height:100%;width:0%;
     background-image:repeating-linear-gradient(90deg, var(--accent) 0 5px, transparent 5px 8px);
-    transition:width .25s linear;
+    transition:width .3s var(--ease);
   }
+  .bar-fill.running{animation:glowPulse 1.7s ease-in-out infinite;}
   .job-error-text{color:var(--accent);font-size:12px;margin-top:9px;}
   .job-actions{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;}
 
   footer{max-width:820px;margin:40px auto 0;padding:0 20px;font-size:11px;color:var(--fg-faint);}
+
+  /* toasts -------------------------------------------------------------*/
+  #toast-container{
+    position:fixed;bottom:16px;left:50%;transform:translateX(-50%);
+    display:flex;flex-direction:column-reverse;gap:8px;z-index:80;
+    width:min(380px, calc(100vw - 32px));pointer-events:none;
+  }
+  .toast{
+    background:var(--bg-elevated);border:1px solid var(--border);padding:11px 14px;font-size:12px;color:var(--fg);
+    display:flex;align-items:center;gap:9px;animation:toastIn .25s var(--ease) both;pointer-events:auto;
+  }
+  .toast.error{border-color:var(--accent);}
+  .toast.leaving{animation:toastOut .2s ease forwards;}
+  .toast-dot{width:6px;height:6px;border-radius:50%;background:var(--accent);flex:none;}
 
   @media (max-width:480px){
     .wordmark{font-size:18px;}
@@ -288,7 +350,7 @@
   </header>
 
   <div id="settings-panel">
-    <div class="wrap" style="padding:0;">
+    <div class="wrap inner" style="padding-left:20px;padding-right:20px;">
       <div class="settings-row" style="margin-bottom:14px;">
         <span class="settings-label">Qualidade</span>
         <div class="quality-select" id="quality-select" style="display:flex;gap:6px;flex-wrap:wrap;">
@@ -351,7 +413,7 @@
       <!-- TAB: LINK -->
       <section class="panel active" id="panel-link">
         <div class="link-input-row">
-          <input type="url" id="link-url" placeholder="cole o link do Qobuz — álbum, faixa, playlist, artista..." autocomplete="off" />
+          <input type="text" id="link-url" placeholder="cole o link do Qobuz — ou digite pra buscar" autocomplete="off" />
           <button class="btn" id="link-go">Ver</button>
         </div>
         <button class="toggle-link" id="toggle-batch">colar vários links de uma vez (modo lote, sem preview)</button>
@@ -382,6 +444,10 @@
 
       <!-- TAB: FILA -->
       <section class="panel" id="panel-queue">
+        <div class="queue-head">
+          <span class="jobs-title">Fila de downloads</span>
+          <button class="toggle-link" id="clear-done">limpar concluídos</button>
+        </div>
         <div class="jobs" id="jobs-list"></div>
         <div class="empty-note" id="queue-empty">nada na fila ainda — cole um link ou busque algo pra baixar</div>
       </section>
@@ -391,6 +457,8 @@
   </div>
 
   <footer>qobuz-dl master edition · sessão local ao navegador · nada é salvo no servidor além da duração do download</footer>
+
+  <div id="toast-container"></div>
 
 <script>
 (() => {
@@ -438,6 +506,8 @@
   const jobsList = $("#jobs-list");
   const queueEmpty = $("#queue-empty");
   const queueCount = $("#queue-count");
+  const clearDoneBtn = $("#clear-done");
+  const toastContainer = $("#toast-container");
 
   let quality = Number(localStorage.getItem("qbdl_quality") || 7);
   let usingToken = true;
@@ -465,21 +535,36 @@
     return `<div class="cover-wrap ${sizeClass}"><img src="${escapeHtml(url)}" loading="lazy" onerror="this.parentElement.innerHTML='<div class=&quot;cover-fallback&quot;>○</div>'" /></div>`;
   }
   function typeLabel(t) {
-    return { album: "Álbum", track: "Faixa", playlist: "Playlist", artist: "Artista", label: "Label" }[t] || t;
+    return { album: "Álbum", track: "Faixa", playlist: "Playlist", artist: "Artista", label: "Label" }[t] || t || "";
   }
   function qobuzUrlFor(type, id) {
     return `https://open.qobuz.com/${type}/${id}`;
   }
-
   function setGlyph(state) {
     glyph.className = "glyph " + state;
     statusText.textContent = { online: "online", busy: "baixando", error: "erro", offline: "offline" }[state] || state;
+  }
+  function toast(msg, isError = false) {
+    const el = document.createElement("div");
+    el.className = "toast" + (isError ? " error" : "");
+    el.innerHTML = `<span class="toast-dot"></span><span>${escapeHtml(msg)}</span>`;
+    toastContainer.appendChild(el);
+    setTimeout(() => { el.classList.add("leaving"); setTimeout(() => el.remove(), 220); }, 3400);
   }
 
   // ------------------------------------------------------------- tabs
   function setTab(name) {
     tabs.forEach((t) => t.classList.toggle("active", t.dataset.tab === name));
-    Object.entries(panels).forEach(([k, el]) => el.classList.toggle("active", k === name));
+    Object.entries(panels).forEach(([k, el]) => {
+      if (k === name) {
+        el.classList.add("active");
+        el.classList.remove("enter");
+        void el.offsetWidth; // força reflow pra reiniciar a animação
+        el.classList.add("enter");
+      } else {
+        el.classList.remove("active");
+      }
+    });
   }
   tabs.forEach((t) => t.addEventListener("click", () => setTab(t.dataset.tab)));
 
@@ -536,6 +621,7 @@
       app.classList.add("visible");
       settingsBtn.style.display = "";
       sessionInfo.textContent = usingToken ? "sessão ativa · token" : "sessão ativa · email/senha";
+      hydrateJobs();
       return true;
     } catch (err) {
       setGlyph("error");
@@ -575,12 +661,11 @@
     if (data.year) badges.push(`<span class="badge-pill">${escapeHtml(data.year)}</span>`);
     if (data.genre) badges.push(`<span class="badge-pill">${escapeHtml(data.genre)}</span>`);
     if (data.tracks_count) badges.push(`<span class="badge-pill">${data.tracks_count} faixa${data.tracks_count > 1 ? "s" : ""}</span>`);
-    if (data.albums_count) badges.push(`<span class="badge-pill">${data.albums_count} álbun${data.albums_count > 1 ? "s" : "s"}</span>`);
+    if (data.albums_count) badges.push(`<span class="badge-pill">${data.albums_count} álbuns</span>`);
     if (data.duration_seconds) badges.push(`<span class="badge-pill">${fmtDuration(data.duration_seconds)}</span>`);
 
     const sub = data.type === "playlist" ? `por ${escapeHtml(data.owner || "desconhecido")}`
-      : data.type === "track" ? escapeHtml(data.artist || "")
-      : data.type === "album" ? escapeHtml(data.artist || "")
+      : (data.type === "track" || data.type === "album") ? escapeHtml(data.artist || "")
       : "";
 
     const breadcrumb = previewStack.length > 1 ? `
@@ -591,8 +676,8 @@
 
     let body = "";
     if (Array.isArray(data.tracks) && data.tracks.length) {
-      body = `<div class="tracklist">${data.tracks.map((t) => `
-        <div class="track-row">
+      body = `<div class="tracklist">${data.tracks.map((t, i) => `
+        <div class="track-row" style="animation-delay:${Math.min(i * 18, 300)}ms">
           <span class="track-num">${t.number ?? ""}</span>
           <span class="track-title"><span class="t-main">${escapeHtml(t.title)}</span>${t.version ? ` <span class="t-version">(${escapeHtml(t.version)})</span>` : ""}</span>
           ${data.type === "playlist" ? `<span class="track-artist">${escapeHtml(t.artist || "")}</span>` : ""}
@@ -600,8 +685,8 @@
           <span class="track-dur">${t.duration_seconds ? fmtDuration(t.duration_seconds) : ""}</span>
         </div>`).join("")}</div>`;
     } else if (Array.isArray(data.albums) && data.albums.length) {
-      body = `<div class="album-grid">${data.albums.map((al) => `
-        <div class="album-card" data-action="open-album" data-id="${escapeHtml(al.id)}">
+      body = `<div class="album-grid">${data.albums.map((al, i) => `
+        <div class="album-card" data-action="open-album" data-id="${escapeHtml(al.id)}" style="animation-delay:${Math.min(i * 25, 300)}ms">
           ${coverHtml(al.cover_url)}
           <div class="ac-title">${escapeHtml(al.title)}</div>
           <div class="ac-sub">${escapeHtml(al.year || "")}${al.hires ? " · HI-RES" : ""}</div>
@@ -669,15 +754,29 @@
     }
   }
 
+  function handleLinkSubmit() {
+    const v = linkUrl.value.trim();
+    if (!v) return;
+    clearTimeout(resolveTimer);
+    if (/^https?:\/\//i.test(v)) {
+      resolveUrl(v);
+    } else {
+      // não parece link -- trata como busca, pra aceitar "o que for" na caixa
+      searchQ.value = v;
+      setTab("search");
+      runSearch();
+    }
+  }
+
   let resolveTimer = null;
   linkUrl.addEventListener("input", () => {
     clearTimeout(resolveTimer);
     const v = linkUrl.value.trim();
-    if (!v.startsWith("http")) return;
+    if (!/^https?:\/\//i.test(v)) return;
     resolveTimer = setTimeout(() => resolveUrl(v), 550);
   });
-  linkGo.addEventListener("click", () => { const v = linkUrl.value.trim(); if (v) resolveUrl(v); });
-  linkUrl.addEventListener("keydown", (e) => { if (e.key === "Enter") { clearTimeout(resolveTimer); const v = linkUrl.value.trim(); if (v) resolveUrl(v); } });
+  linkGo.addEventListener("click", handleLinkSubmit);
+  linkUrl.addEventListener("keydown", (e) => { if (e.key === "Enter") handleLinkSubmit(); });
 
   toggleBatch.addEventListener("click", () => {
     const open = batchBox.style.display !== "none";
@@ -687,6 +786,7 @@
     const urls = batchInput.value.split("\n").map((s) => s.trim()).filter(Boolean);
     if (!urls.length) return;
     urls.forEach((u) => queueDownload(u));
+    toast(`${urls.length} item${urls.length > 1 ? "s" : ""} enfileirado${urls.length > 1 ? "s" : ""}`);
     batchInput.value = "";
     setTab("queue");
   });
@@ -721,8 +821,8 @@
 
   function renderSearchResults(items) {
     if (!items.length) { searchResults.innerHTML = `<div class="empty-note">nada encontrado</div>`; return; }
-    searchResults.innerHTML = items.map((it) => `
-      <div class="search-card" data-action="preview" data-type="${escapeHtml(it.type)}" data-id="${escapeHtml(it.id)}">
+    searchResults.innerHTML = items.map((it, i) => `
+      <div class="search-card" data-action="preview" data-type="${escapeHtml(it.type)}" data-id="${escapeHtml(it.id)}" style="animation-delay:${Math.min(i * 25, 300)}ms">
         ${coverHtml(it.cover_url)}
         <button class="sc-quick" data-action="quick-dl" data-type="${escapeHtml(it.type)}" data-id="${escapeHtml(it.id)}" title="baixar direto">⬇</button>
         <div class="sc-body">
@@ -759,11 +859,15 @@
   const lastSnapshot = new Map();
 
   function updateQueueBadge() {
-    const active = [...lastSnapshot.values()].filter((j) => j.status === "queued" || j.status === "running").length;
+    const vals = [...lastSnapshot.values()];
+    const active = vals.filter((j) => j.status === "queued" || j.status === "running").length;
     queueCount.textContent = active;
     queueCount.style.display = active > 0 ? "" : "none";
     queueEmpty.style.display = jobEls.size > 0 ? "none" : "block";
-    if (active === 0) { const anyErr = [...lastSnapshot.values()].some((j) => j.status === "error"); setGlyph(anyErr ? "error" : "online"); }
+    if (active === 0) {
+      const anyErr = vals.some((j) => j.status === "error");
+      setGlyph(anyErr ? "error" : "online");
+    }
   }
 
   function renderJob(job) {
@@ -776,8 +880,9 @@
       jobEls.set(job.job_id, rec);
     }
     const el = rec.el;
+    el.classList.toggle("status-running", job.status === "running");
     const badgeClass = job.status || "queued";
-    const badgeLabel = { queued: "na fila", running: "baixando", done: "pronto", error: "erro" }[job.status] || job.status;
+    const badgeLabel = { queued: "na fila", running: "baixando", done: "pronto", error: "erro", cancelled: "cancelado" }[job.status] || job.status;
     const sub = [job.content_type ? typeLabel(job.content_type) : null, job.artist, job.content_tracks_count ? `${job.content_tracks_count} faixas` : null].filter(Boolean).join(" · ");
 
     el.innerHTML = `
@@ -785,17 +890,18 @@
       <div class="job-body">
         <div class="job-top">
           <div>
-            <div class="job-name">${escapeHtml(job.content_name || job.title || "resolvendo…")}</div>
+            <div class="job-name">${escapeHtml(job.content_name || "resolvendo…")}</div>
             ${sub ? `<div class="job-sub">${escapeHtml(sub)}</div>` : ""}
           </div>
           <span class="badge ${badgeClass}">${badgeLabel}</span>
         </div>
-        ${job.status === "running" || (job.status === "done" && job.bytes_total) ? `
+        ${job.status === "queued" && job.queue_position ? `<div class="job-sub" style="margin-top:9px;">aguardando · posição ${job.queue_position}</div>` : ""}
+        ${job.status === "running" ? `
           <div class="track-line">
             <span>${escapeHtml(job.track_name || "")}</span>
             <span>${job.bytes_total ? fmtBytes(job.bytes_done) + " / " + fmtBytes(job.bytes_total) : ""}</span>
           </div>
-          <div class="bar-track"><div class="bar-fill" style="width:${job.track_progress_pct || 0}%"></div></div>
+          <div class="bar-track"><div class="bar-fill running" style="width:${job.track_progress_pct || 0}%"></div></div>
         ` : ""}
         ${job.status === "error" ? `<div class="job-error-text">ERRO: ${escapeHtml(job.error || "desconhecido")}</div>` : ""}
         ${job.status === "done" && job.file_ready ? `
@@ -804,6 +910,7 @@
             <button class="btn ghost small" data-action="download" data-mode="zip">Forçar .zip</button>
           </div>` : ""}
         ${job.status === "done" && !job.file_ready ? `<div class="job-sub" style="margin-top:9px;">já entregue e removido do servidor</div>` : ""}
+        ${job.cancellable ? `<div class="job-actions"><button class="btn ghost small" data-action="cancel">Cancelar</button></div>` : ""}
       </div>`;
 
     el.querySelectorAll('[data-action="download"]').forEach((btn) => {
@@ -815,17 +922,43 @@
         document.body.appendChild(a);
         a.click();
         a.remove();
-        el.querySelector(".job-actions").innerHTML = '<span class="job-sub">enviado pro navegador — removido do servidor em seguida</span>';
+        el.querySelectorAll(".job-actions")[0].innerHTML = '<span class="job-sub">enviado pro navegador — removido do servidor em seguida</span>';
       });
+    });
+    el.querySelector('[data-action="cancel"]')?.addEventListener("click", async (e) => {
+      e.target.disabled = true;
+      e.target.textContent = "Cancelando...";
+      try {
+        const r = await fetch(`${API}/api/jobs/${job.job_id}`, { method: "DELETE" });
+        if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.detail || "não consegui cancelar"); }
+      } catch (err) {
+        toast(err.message, true);
+        e.target.disabled = false;
+        e.target.textContent = "Cancelar";
+      }
     });
 
     updateQueueBadge();
   }
 
-  function trackJob(job_id, url, seedPreview) {
-    const seed = { status: "queued", url, content_name: seedPreview?.title, cover_url: seedPreview?.cover_url, content_type: seedPreview?.type };
-    lastSnapshot.set(job_id, seed);
-    renderJob({ job_id, ...seed });
+  function applyJobUpdate(job_id, job) {
+    job.job_id = job_id;
+    const prev = lastSnapshot.get(job_id);
+    lastSnapshot.set(job_id, job);
+    renderJob(job);
+    updateQueueBadge();
+    if (prev && prev.status !== job.status) {
+      if (job.status === "done") toast(`pronto — ${job.content_name || "download"}`);
+      else if (job.status === "error") toast(`erro em ${job.content_name || "download"}${job.error ? ": " + job.error : ""}`, true);
+      else if (job.status === "cancelled") toast(`cancelado — ${job.content_name || "download"}`);
+    }
+    if (job.status === "running" || job.status === "queued") setGlyph("busy");
+    else if (job.status === "error") setGlyph("error");
+  }
+
+  function trackJob(job_id, seedPreview) {
+    const seed = { status: "queued", content_name: seedPreview?.title, cover_url: seedPreview?.cover_url, content_type: seedPreview?.type };
+    applyJobUpdate(job_id, seed);
     connectWs(job_id);
   }
 
@@ -834,18 +967,10 @@
     try { ws = new WebSocket(`${WS_PROTO}//${location.host}/ws/jobs/${job_id}`); }
     catch { return pollJob(job_id); }
     let gotAny = false;
-    ws.onmessage = (ev) => {
-      gotAny = true;
-      const job = JSON.parse(ev.data);
-      job.job_id = job.job_id || job_id;
-      lastSnapshot.set(job_id, job);
-      renderJob(job);
-      setGlyph(job.status === "running" ? "busy" : job.status === "error" ? "error" : "online");
-      updateQueueBadge();
-    };
+    ws.onmessage = (ev) => { gotAny = true; applyJobUpdate(job_id, JSON.parse(ev.data)); };
     ws.onclose = () => {
       const snap = lastSnapshot.get(job_id);
-      if (!snap || (snap.status !== "done" && snap.status !== "error")) pollJob(job_id);
+      if (!snap || !["done", "error", "cancelled"].includes(snap.status)) pollJob(job_id);
     };
     ws.onerror = () => { if (!gotAny) pollJob(job_id); };
   }
@@ -856,19 +981,24 @@
         const r = await fetch(`${API}/api/jobs/${job_id}`);
         if (!r.ok) return;
         const job = await r.json();
-        job.job_id = job_id;
-        const prev = lastSnapshot.get(job_id) || {};
-        job.url = prev.url;
-        job.content_name = job.content_name || prev.content_name;
-        job.cover_url = job.cover_url || prev.cover_url;
-        lastSnapshot.set(job_id, job);
-        renderJob(job);
-        updateQueueBadge();
-        if (job.status === "done" || job.status === "error") return;
+        applyJobUpdate(job_id, job);
+        if (["done", "error", "cancelled"].includes(job.status)) return;
       } catch {}
       setTimeout(tick, 2000);
     };
     tick();
+  }
+
+  async function hydrateJobs() {
+    try {
+      const r = await fetch(`${API}/api/jobs`);
+      if (!r.ok) return;
+      const data = await r.json();
+      (data.jobs || []).forEach((job) => {
+        applyJobUpdate(job.job_id, job);
+        if (job.status === "queued" || job.status === "running") connectWs(job.job_id);
+      });
+    } catch {}
   }
 
   async function queueDownload(url, seedPreview) {
@@ -878,13 +1008,26 @@
       });
       const data = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(data.detail || `falha ao iniciar (${r.status})`);
-      trackJob(data.job_id, url, seedPreview);
-      setGlyph("busy");
+      trackJob(data.job_id, seedPreview);
+      toast(`enfileirado — ${seedPreview?.title || url}`);
     } catch (err) {
       linkError.textContent = err.message;
       linkError.style.display = "block";
+      toast(err.message, true);
     }
   }
+
+  clearDoneBtn.addEventListener("click", () => {
+    [...jobEls.entries()].forEach(([id, rec]) => {
+      const snap = lastSnapshot.get(id);
+      if (snap && ["done", "error", "cancelled"].includes(snap.status)) {
+        rec.el.remove();
+        jobEls.delete(id);
+        lastSnapshot.delete(id);
+      }
+    });
+    updateQueueBadge();
+  });
 
   // ------------------------------------------------------------- boot
   (async function boot() {
