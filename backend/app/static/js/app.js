@@ -282,7 +282,7 @@ async function refreshQueueList() {
 
     const all = [...data.active, ...data.completed.slice(0, 10), ...data.failed];
     if (all.length === 0) {
-      container.innerHTML = "<div style="color: var(--text-dim); text-align: center; padding: 20px;">A fila está vazia.</div>";
+      container.innerHTML = '<div style="color: var(--text-dim); text-align: center; padding: 20px;">A fila está vazia.</div>';
       return;
     }
 
