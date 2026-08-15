@@ -1,32 +1,25 @@
 from abc import ABC, abstractmethod
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
-class MusicProvider(ABC):
-    """
-    O contrato oficial para qualquer serviço de música no Maestro.
-    """
-    
-    @property
-    @abstractmethod
-    def provider_name(self) -> str:
-        """Retorna o nome do serviço (ex: 'Qobuz', 'Apple', 'Tidal')"""
-        pass
+class ProviderBase(ABC):
+    """Abstract base class for audio providers."""
 
-    @property
     @abstractmethod
-    def supported_domains(self) -> List[str]:
-        """Domínios que este provedor aceita. Ex: ['play.qobuz.com', 'open.qobuz.com']"""
+    def authenticate(self, **kwargs) -> Dict[str, Any]:
         pass
 
     @abstractmethod
-    async def authenticate(self, credentials: Dict[str, str]) -> bool:
-        """Autentica o serviço com os tokens necessários (App ID, Secrets, etc)."""
+    def resolve(self, url: str) -> Dict[str, Any]:
         pass
 
     @abstractmethod
-    async def process_url(self, url: str) -> None:
-        """
-        Recebe a URL validada pelo Maestro e inicia o processo de extração 
-        de metadados e download.
-        """
+    def get_track_metadata(self, track_id: str) -> Dict[str, Any]:
+        pass
+
+    @abstractmethod
+    def get_album_metadata(self, album_id: str) -> Dict[str, Any]:
+        pass
+
+    @abstractmethod
+    def get_download_url(self, track_id: str, quality: int) -> Dict[str, Any]:
         pass

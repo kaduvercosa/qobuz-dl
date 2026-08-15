@@ -1,1047 +1,244 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>QOBUZ · DL</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='38' fill='%23ff1e1e'/%3E%3C/svg%3E">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Doto:wght@400..900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-<style>
-  :root{
-    --bg:#070707;
-    --bg-elevated:#121212;
-    --bg-shimmer:#1d1d1d;
-    --bg-card:#0f0f0f;
-    --border:#242424;
-    --border-soft:#1a1a1a;
-    --fg:#f2f1ec;
-    --fg-dim:#8c8c86;
-    --fg-faint:#4d4d49;
-    --accent:#ff1e1e;
-    --accent-dim:#5c0f0f;
-    --radius:0px;
-    --mono:'JetBrains Mono', ui-monospace, monospace;
-    --dot:'Doto', var(--mono);
-    --ease:cubic-bezier(.16,1,.3,1);
-  }
-  *{box-sizing:border-box;}
-  html,body{margin:0;padding:0;}
-  body{
-    background:
-      radial-gradient(circle, #151515 1px, transparent 1px) 0 0/22px 22px,
-      var(--bg);
-    color:var(--fg);
-    font-family:var(--mono);
-    min-height:100dvh;
-    -webkit-font-smoothing:antialiased;
-  }
-  ::selection{background:var(--accent);color:#0a0a0a;}
-  a{color:inherit;}
-  button, input, select, textarea{font-family:inherit;}
-  img{display:block;}
-
-  @keyframes fadeSlideUp{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:translateY(0);}}
-  @keyframes shimmer{0%{background-position:-300% 0;}100%{background-position:300% 0;}}
-  @keyframes glowPulse{0%,100%{box-shadow:0 0 0 rgba(255,30,30,0);}50%{box-shadow:0 0 9px rgba(255,30,30,.5);}}
-  @keyframes toastIn{from{opacity:0;transform:translateY(10px) scale(.97);}to{opacity:1;transform:translateY(0) scale(1);}}
-  @keyframes toastOut{to{opacity:0;transform:translateY(6px) scale(.97);}}
-  @keyframes imgFadeIn{from{opacity:0;}to{opacity:1;}}
-  @keyframes spin{to{transform:rotate(360deg);}}
-  @keyframes popIn{from{opacity:0;transform:scale(.9);}to{opacity:1;transform:scale(1);}}
-
-  .wrap{max-width:820px;margin:0 auto;padding:0 20px 90px;}
-
-  /* header ---------------------------------------------------------- */
-  header{
-    display:flex;align-items:center;justify-content:space-between;
-    padding:20px 20px 16px;max-width:820px;margin:0 auto;
-    position:relative;
-  }
-  header::after{
-    content:"";position:absolute;left:20px;right:20px;bottom:0;height:1px;
-    background:linear-gradient(90deg, var(--accent-dim), transparent 60%);
-    opacity:.6;
-  }
-  .wordmark{
-    font-family:var(--dot);font-weight:700;font-size:21px;letter-spacing:1px;
-    display:flex;align-items:center;gap:10px;
-  }
-  .wordmark .sep{color:var(--accent);}
-  .header-right{display:flex;align-items:center;gap:14px;}
-  .glyph{
-    width:9px;height:9px;border-radius:50%;
-    background:var(--fg-faint);
-    box-shadow:0 0 0 3px rgba(255,255,255,0.03);
-    flex:none;transition:background-color .25s ease;
-  }
-  .glyph.online{background:var(--accent);animation:pulse 2.2s ease-in-out infinite;}
-  .glyph.busy{background:var(--accent);animation:pulse 0.7s ease-in-out infinite;}
-  .glyph.error{background:var(--accent);animation:blink 0.5s steps(2,jump-none) infinite;}
-  @keyframes pulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(255,30,30,.35)}50%{opacity:.35;box-shadow:0 0 0 6px rgba(255,30,30,0)}}
-  @keyframes blink{50%{opacity:.15}}
-  .status-line{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--fg-dim);text-transform:uppercase;letter-spacing:.06em;}
-  .icon-btn{
-    background:none;border:1px solid var(--border);color:var(--fg-dim);width:30px;height:30px;
-    display:flex;align-items:center;justify-content:center;cursor:pointer;border-radius:var(--radius);font-size:14px;
-    transition:border-color .15s ease,color .15s ease,transform .1s ease;
-  }
-  .icon-btn:hover{border-color:var(--accent);color:var(--accent);}
-  .icon-btn:active{transform:scale(.92);}
-
-  /* settings panel ---------------------------------------------------*/
-  #settings-panel{
-    max-height:0;overflow:hidden;max-width:820px;margin:0 auto;
-    border-bottom:1px solid transparent;background:var(--bg-card);
-    transition:max-height .3s var(--ease), border-color .3s ease;
-  }
-  #settings-panel.open{max-height:140px;border-bottom-color:var(--border-soft);}
-  #settings-panel .inner{padding:16px 20px;}
-  .settings-row{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;}
-  .settings-label{font-size:11px;color:var(--fg-dim);text-transform:uppercase;letter-spacing:.06em;}
-
-  /* login gate -------------------------------------------------------- */
-  .card{
-    background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);
-    padding:22px;margin-top:24px;animation:fadeSlideUp .4s var(--ease) both;
-  }
-  .card h2{
-    font-family:var(--dot);font-size:14px;letter-spacing:.08em;text-transform:uppercase;
-    margin:0 0 4px;color:var(--fg-dim);font-weight:600;
-  }
-  .card p.hint{font-size:12px;color:var(--fg-dim);margin:0 0 18px;line-height:1.5;}
-  label{display:block;font-size:11px;color:var(--fg-dim);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;}
-  input[type=text], input[type=password], input[type=url]{
-    width:100%;background:var(--bg-elevated);border:1px solid var(--border);color:var(--fg);
-    padding:12px 13px;border-radius:var(--radius);font-size:14px;outline:none;
-    transition:border-color .15s ease;
-  }
-  input:focus{border-color:var(--accent);}
-  .field{margin-bottom:14px;}
-  .row{display:flex;gap:10px;}
-  .row .field{flex:1;}
-  .toggle-link{
-    background:none;border:none;color:var(--fg-dim);font-size:11px;text-decoration:underline;
-    cursor:pointer;padding:0;margin-top:2px;text-underline-offset:3px;transition:color .15s ease;
-  }
-  .toggle-link:hover{color:var(--accent);}
-
-  .btn{
-    appearance:none;border:1px solid var(--accent);background:var(--accent);color:#0a0a0a;
-    font-family:var(--mono);font-weight:700;font-size:12.5px;letter-spacing:.06em;text-transform:uppercase;
-    padding:12px 18px;border-radius:var(--radius);cursor:pointer;white-space:nowrap;
-    transition:background-color .15s ease,transform .1s ease,opacity .15s ease;
-  }
-  .btn:hover{background:#ff3b3b;}
-  .btn:active{transform:scale(.96);}
-  .btn:disabled{background:var(--fg-faint);border-color:var(--fg-faint);color:#0a0a0a;cursor:not-allowed;opacity:.6;transform:none;}
-  .btn.ghost{background:transparent;color:var(--fg);border-color:var(--border);}
-  .btn.ghost:hover{border-color:var(--accent);color:var(--accent);}
-  .btn.small{padding:8px 12px;font-size:11px;}
-  .btn.full{width:100%;}
-
-  .error-msg{color:var(--accent);font-size:12px;margin-top:10px;animation:fadeSlideUp .25s var(--ease) both;}
-
-  #login-card.hidden{display:none;}
-  #app{display:none;}
-  #app.visible{display:block;}
-
-  /* tabs ----------------------------------------------------------- */
-  .tabbar{
-    display:flex;gap:0;border-bottom:1px solid var(--border);margin-top:22px;
-  }
-  .tab{
-    background:none;border:none;color:var(--fg-dim);font-family:var(--mono);font-weight:600;
-    font-size:12px;letter-spacing:.06em;text-transform:uppercase;padding:12px 4px;margin-right:26px;
-    cursor:pointer;border-bottom:2px solid transparent;display:flex;align-items:center;gap:7px;
-    transition:color .18s ease,border-color .18s ease;
-  }
-  .tab.active{color:var(--accent);border-bottom-color:var(--accent);}
-  .tab-count{
-    background:var(--accent);color:#0a0a0a;font-size:10px;font-weight:700;padding:1px 6px;border-radius:var(--radius);
-    animation:popIn .2s var(--ease) both;
-  }
-  .panel{display:none;padding-top:22px;}
-  .panel.active{display:block;}
-  .panel.enter{animation:fadeSlideUp .32s var(--ease) both;}
-
-  /* link panel ------------------------------------------------------- */
-  .link-input-row{display:flex;gap:8px;}
-  .link-input-row input{flex:1;}
-  #batch-box{margin-top:12px;background:var(--bg-card);border:1px solid var(--border);padding:14px;animation:fadeSlideUp .25s var(--ease) both;}
-  #batch-box textarea{
-    width:100%;min-height:70px;resize:vertical;background:transparent;border:none;color:var(--fg);
-    font-family:var(--mono);font-size:13px;outline:none;line-height:1.5;margin-bottom:10px;
-  }
-
-  .skeleton{
-    margin-top:20px;border:1px solid var(--border);background:var(--bg-card);padding:20px;
-    display:flex;gap:16px;animation:fadeSlideUp .25s var(--ease) both;
-  }
-  .skel-box{
-    background:linear-gradient(90deg, var(--bg-elevated) 25%, var(--bg-shimmer) 37%, var(--bg-elevated) 63%);
-    background-size:400% 100%;animation:shimmer 1.4s ease infinite;
-  }
-
-  .preview-card{margin-top:20px;border:1px solid var(--border);background:var(--bg-card);animation:fadeSlideUp .35s var(--ease) both;}
-  .breadcrumb{
-    display:flex;align-items:center;gap:8px;padding:10px 18px;border-bottom:1px solid var(--border-soft);
-    font-size:11px;color:var(--fg-dim);
-  }
-  .breadcrumb button{background:none;border:none;color:var(--accent);cursor:pointer;font-family:var(--mono);font-size:11px;padding:0;}
-
-  .preview-head{display:flex;gap:18px;padding:20px;flex-wrap:wrap;}
-  .cover-wrap{
-    width:132px;height:132px;flex:none;background:var(--bg-elevated);border:1px solid var(--border-soft);
-    position:relative;overflow:hidden;
-  }
-  .cover-wrap img{width:100%;height:100%;object-fit:cover;animation:imgFadeIn .35s ease;}
-  .cover-fallback{
-    width:100%;height:100%;display:flex;align-items:center;justify-content:center;
-    color:var(--fg-faint);font-size:34px;font-family:var(--dot);
-  }
-  .preview-meta{flex:1;min-width:200px;}
-  .type-pill{
-    display:inline-block;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);
-    border:1px solid var(--accent-dim);padding:3px 8px;margin-bottom:8px;
-  }
-  .preview-title{font-family:var(--dot);font-size:19px;font-weight:700;line-height:1.25;margin:0 0 2px;word-break:break-word;}
-  .preview-sub{font-size:13px;color:var(--fg-dim);margin:0 0 12px;}
-  .badges{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;}
-  .badge-pill{
-    font-size:10.5px;color:var(--fg-dim);border:1px solid var(--border);padding:4px 8px;letter-spacing:.03em;
-    animation:popIn .25s var(--ease) both;
-  }
-  .badge-pill.hires{color:var(--accent);border-color:var(--accent-dim);}
-  .preview-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
-  .preview-actions a{font-size:11px;color:var(--fg-dim);text-decoration:underline;text-underline-offset:3px;}
-  .preview-actions a:hover{color:var(--accent);}
-
-  .tracklist{border-top:1px solid var(--border-soft);}
-  .track-row{
-    display:flex;align-items:center;gap:12px;padding:10px 20px;border-bottom:1px solid var(--border-soft);
-    font-size:12.5px;animation:fadeSlideUp .3s var(--ease) both;
-  }
-  .track-row:last-child{border-bottom:none;}
-  .track-num{color:var(--fg-faint);width:26px;flex:none;text-align:right;font-size:11px;}
-  .track-title{flex:1;min-width:0;}
-  .track-title .t-main{color:var(--fg);word-break:break-word;}
-  .track-title .t-version{color:var(--fg-faint);font-size:11px;}
-  .track-artist{color:var(--fg-faint);font-size:11px;flex:none;max-width:130px;text-overflow:ellipsis;overflow:hidden;white-space:nowrap;}
-  .track-hires{color:var(--accent);font-size:9px;border:1px solid var(--accent-dim);padding:1px 4px;flex:none;}
-  .track-dur{color:var(--fg-dim);font-size:11px;flex:none;width:42px;text-align:right;}
-
-  .album-grid{
-    display:grid;grid-template-columns:repeat(auto-fill, minmax(130px,1fr));gap:14px;padding:20px;
-    border-top:1px solid var(--border-soft);
-  }
-  .album-card{cursor:pointer;animation:fadeSlideUp .3s var(--ease) both;transition:transform .18s ease;}
-  .album-card:hover{transform:translateY(-3px);}
-  .album-card .cover-wrap{width:100%;height:auto;aspect-ratio:1/1;transition:border-color .18s ease;}
-  .album-card:hover .cover-wrap{border-color:var(--accent-dim);}
-  .album-card .ac-title{font-size:12px;margin-top:8px;color:var(--fg);word-break:break-word;line-height:1.3;}
-  .album-card .ac-sub{font-size:10.5px;color:var(--fg-faint);margin-top:2px;}
-
-  /* search panel ------------------------------------------------------*/
-  .search-row{display:flex;gap:8px;}
-  .search-row input{flex:1;}
-  .type-select{display:flex;gap:6px;margin-top:12px;flex-wrap:wrap;}
-  .qbtn{
-    border:1px solid var(--border);background:var(--bg-elevated);color:var(--fg-dim);
-    padding:8px 10px;font-size:11px;letter-spacing:.03em;cursor:pointer;border-radius:var(--radius);
-    transition:border-color .15s ease,color .15s ease,transform .1s ease;
-  }
-  .qbtn.active{border-color:var(--accent);color:var(--accent);background:rgba(255,30,30,.07);}
-  .qbtn:active{transform:scale(.94);}
-
-  .search-grid{
-    display:grid;grid-template-columns:repeat(auto-fill, minmax(140px,1fr));gap:14px;margin-top:20px;
-  }
-  .search-card{
-    background:var(--bg-card);border:1px solid var(--border);cursor:pointer;position:relative;
-    animation:fadeSlideUp .3s var(--ease) both;transition:transform .18s ease,border-color .18s ease;
-  }
-  .search-card:hover{transform:translateY(-3px);border-color:var(--border-soft);}
-  .search-card .cover-wrap{width:100%;height:auto;aspect-ratio:1/1;border:none;border-bottom:1px solid var(--border-soft);}
-  .search-card .sc-body{padding:10px;}
-  .sc-title{font-size:12px;color:var(--fg);line-height:1.3;word-break:break-word;}
-  .sc-sub{font-size:10.5px;color:var(--fg-faint);margin-top:3px;}
-  .sc-quick{
-    position:absolute;top:6px;right:6px;width:26px;height:26px;background:rgba(7,7,7,.82);
-    border:1px solid var(--border);color:var(--fg);display:flex;align-items:center;justify-content:center;
-    cursor:pointer;font-size:13px;transition:border-color .15s ease,color .15s ease,transform .1s ease;
-  }
-  .sc-quick:hover{border-color:var(--accent);color:var(--accent);}
-  .sc-quick:active{transform:scale(.88);}
-  .empty-note{font-size:12px;color:var(--fg-faint);margin-top:20px;text-align:center;padding:30px 0;animation:fadeSlideUp .3s var(--ease) both;}
-
-  /* queue/jobs ----------------------------------------------------------*/
-  .queue-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;}
-  .queue-head .jobs-title{font-family:var(--dot);font-size:12px;letter-spacing:.08em;color:var(--fg-faint);text-transform:uppercase;}
-  .jobs{margin-top:0;display:flex;flex-direction:column;gap:12px;}
-  .job{
-    background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:14px;display:flex;gap:14px;
-    animation:fadeSlideUp .35s var(--ease) both;transition:border-color .25s ease;
-  }
-  .job.status-running{border-color:var(--accent-dim);}
-  .job .cover-wrap{width:56px;height:56px;flex:none;}
-  .job-body{flex:1;min-width:0;}
-  .job-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;}
-  .job-name{font-size:13.5px;font-weight:600;word-break:break-word;}
-  .job-sub{font-size:11px;color:var(--fg-faint);margin-top:1px;}
-  .badge{
-    font-size:10px;letter-spacing:.06em;text-transform:uppercase;padding:3px 7px;border-radius:var(--radius);
-    border:1px solid var(--border);color:var(--fg-dim);white-space:nowrap;flex:none;transition:color .2s ease,border-color .2s ease;
-  }
-  .badge.running{color:var(--accent);border-color:var(--accent-dim);}
-  .badge.done{color:var(--fg);border-color:var(--fg-dim);}
-  .badge.error{color:var(--accent);border-color:var(--accent);}
-  .badge.queued{color:var(--fg-faint);}
-  .badge.cancelled{color:var(--fg-faint);border-color:var(--fg-faint);text-decoration:line-through;}
-
-  .track-line{font-size:11.5px;color:var(--fg-dim);margin-top:9px;display:flex;justify-content:space-between;gap:8px;}
-  .bar-track{
-    height:7px;margin-top:7px;background:var(--bg-elevated);border:1px solid var(--border-soft);
-    position:relative;overflow:hidden;
-  }
-  .bar-fill{
-    height:100%;width:0%;
-    background-image:repeating-linear-gradient(90deg, var(--accent) 0 5px, transparent 5px 8px);
-    transition:width .3s var(--ease);
-  }
-  .bar-fill.running{animation:glowPulse 1.7s ease-in-out infinite;}
-  .job-error-text{color:var(--accent);font-size:12px;margin-top:9px;}
-  .job-actions{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;}
-
-  footer{max-width:820px;margin:40px auto 0;padding:0 20px;font-size:11px;color:var(--fg-faint);}
-
-  /* toasts -------------------------------------------------------------*/
-  #toast-container{
-    position:fixed;bottom:16px;left:50%;transform:translateX(-50%);
-    display:flex;flex-direction:column-reverse;gap:8px;z-index:80;
-    width:min(380px, calc(100vw - 32px));pointer-events:none;
-  }
-  .toast{
-    background:var(--bg-elevated);border:1px solid var(--border);padding:11px 14px;font-size:12px;color:var(--fg);
-    display:flex;align-items:center;gap:9px;animation:toastIn .25s var(--ease) both;pointer-events:auto;
-  }
-  .toast.error{border-color:var(--accent);}
-  .toast.leaving{animation:toastOut .2s ease forwards;}
-  .toast-dot{width:6px;height:6px;border-radius:50%;background:var(--accent);flex:none;}
-
-  @media (max-width:480px){
-    .wordmark{font-size:18px;}
-    .card,.job{padding:15px;}
-    .preview-head{padding:16px;}
-    .cover-wrap{width:96px;height:96px;}
-    .track-artist{display:none;}
-  }
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Qobuz-DL // Web Client</title>
+  <link rel="stylesheet" href="/static/css/theme.css">
+  <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
 </head>
 <body>
 
-  <header>
-    <div class="wordmark">QOBUZ<span class="sep">○</span>DL</div>
-    <div class="header-right">
-      <div class="status-line"><span class="glyph" id="glyph"></span><span id="status-text">offline</span></div>
-      <button class="icon-btn" id="settings-btn" title="sessão" style="display:none;">⚙</button>
-    </div>
-  </header>
+  <!-- NAVBAR -->
+  <nav class="navbar">
+    <a href="/" class="brand">
+      <div class="brand-logo">Q</div>
+      <div class="brand-title">Qobuz-DL</div>
+      <span class="badge-pill">WEB CLIENT</span>
+    </a>
 
-  <div id="settings-panel">
-    <div class="wrap inner" style="padding-left:20px;padding-right:20px;">
-      <div class="settings-row" style="margin-bottom:14px;">
-        <span class="settings-label">Qualidade</span>
-        <div class="quality-select" id="quality-select" style="display:flex;gap:6px;flex-wrap:wrap;">
-          <button class="qbtn" data-q="5">MP3 320</button>
-          <button class="qbtn" data-q="6">CD 16/44.1</button>
-          <button class="qbtn active" data-q="7">HI-RES 24/96</button>
-          <button class="qbtn" data-q="27">HI-RES 24/192</button>
+    <div class="nav-actions">
+      <!-- Country Picker -->
+      <select id="countrySelect" class="form-control" style="width: auto; padding: 6px 12px; font-size: 13px;">
+        <option value="US">🇺🇸 United States</option>
+        <option value="GB">🇬🇧 United Kingdom</option>
+        <option value="FR">🇫🇷 France</option>
+        <option value="DE">🇩🇪 Germany</option>
+        <option value="JP">🇯🇵 Japan</option>
+        <option value="BR">🇧🇷 Brazil</option>
+      </select>
+
+      <button id="btnOpenSettings" class="btn btn-secondary" title="Configurações">
+        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+        <span>Configurações</span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- MAIN CONTAINER -->
+  <main class="container">
+
+    <!-- SEARCH HERO -->
+    <section class="search-hero">
+      <h1 class="search-title">Música Hi-Res sem Perdas</h1>
+      <p class="search-subtitle">Pesquise por faixa, álbum ou artista, ou cole qualquer link do Qobuz</p>
+
+      <div class="search-box-wrapper">
+        <svg class="search-icon-left" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        <input type="text" id="searchInput" class="search-input" placeholder="Pesquisar artistas, faixas ou colar URL do Qobuz..." autocomplete="off">
+        
+        <!-- AUTOCOMPLETE DROPDOWN -->
+        <div id="autocompleteDropdown" class="autocomplete-card"></div>
+      </div>
+    </section>
+
+    <!-- NEW RELEASES SECTION -->
+    <section>
+      <div class="section-header">
+        <h2 class="section-title">Lançamentos Recentes</h2>
+        <span id="releasesCount" style="font-size: 13px; color: var(--text-dim);">Carregando...</span>
+      </div>
+      <div id="releasesGrid" class="grid-cards">
+        <!-- Dynamic Cards -->
+      </div>
+    </section>
+
+  </main>
+
+  <!-- FLOATING PERSISTENT STATUS BAR -->
+  <div id="statusBar" class="status-bar" style="display: none;">
+    <div class="status-left">
+      <img id="statusThumb" src="/static/favicon.ico" class="status-thumb" alt="Thumb">
+      <div class="status-info">
+        <div id="statusTitle" class="status-title">Preparando download...</div>
+        <div class="status-sub">
+          <span id="statusArtist">-</span>
+          <span>•</span>
+          <span id="statusQuality" style="color: var(--accent);">FLAC Hi-Res</span>
         </div>
       </div>
-      <div class="settings-row">
-        <span class="settings-label" id="session-info">sessão ativa</span>
-        <button class="btn ghost small" id="logout-btn">Sair da sessão</button>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 16px;">
+      <div class="progress-bar-wrap">
+        <div id="progressBarFill" class="progress-bar-fill"></div>
       </div>
+      <div id="statusPercent" style="font-size: 12px; font-weight: 600; min-width: 38px;">0%</div>
+    </div>
+
+    <div class="status-right">
+      <button id="btnOpenQueue" class="btn btn-secondary" style="padding: 6px 12px; font-size: 12px;">
+        <span>Ver Fila (<span id="queueBadgeCount">0</span>)</span>
+      </button>
     </div>
   </div>
 
-  <div class="wrap">
-
-    <!-- LOGIN GATE ------------------------------------------------------- -->
-    <div class="card" id="login-card">
-      <h2>Sessão</h2>
-      <p class="hint">Cole o <b>user_auth_token</b> extraído do DevTools (F12 → Application/Storage → localStorage → play.qobuz.com). Fica salvo só neste navegador.</p>
-
-      <div id="token-fields">
-        <div class="field">
-          <label for="token-input">Auth token</label>
-          <input type="password" id="token-input" placeholder="ey... / token do Qobuz" autocomplete="off" />
-        </div>
+  <!-- MODAL: ALBUM DETAIL -->
+  <div id="albumModal" class="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title">Detalhes do Álbum</div>
+        <button id="btnCloseAlbumModal" class="modal-close">&times;</button>
       </div>
-
-      <div id="pwd-fields" style="display:none;">
-        <div class="row">
-          <div class="field">
-            <label for="email-input">Email</label>
-            <input type="text" id="email-input" autocomplete="off" />
-          </div>
-          <div class="field">
-            <label for="pwd-input">Senha</label>
-            <input type="password" id="pwd-input" autocomplete="off" />
-          </div>
-        </div>
-      </div>
-
-      <div class="row" style="align-items:flex-end;">
-        <button class="btn" id="login-btn" style="flex:1;">Entrar</button>
-      </div>
-      <button class="toggle-link" id="toggle-auth-mode">usar email e senha em vez de token</button>
-      <div class="error-msg" id="login-error" style="display:none;"></div>
-    </div>
-
-    <!-- APP -------------------------------------------------------------->
-    <div id="app">
-
-      <nav class="tabbar">
-        <button class="tab active" data-tab="link">Link</button>
-        <button class="tab" data-tab="search">Buscar</button>
-        <button class="tab" data-tab="queue">Fila <span class="tab-count" id="queue-count" style="display:none;">0</span></button>
-      </nav>
-
-      <!-- TAB: LINK -->
-      <section class="panel active" id="panel-link">
-        <div class="link-input-row">
-          <input type="text" id="link-url" placeholder="cole o link do Qobuz — ou digite pra buscar" autocomplete="off" />
-          <button class="btn" id="link-go">Ver</button>
-        </div>
-        <button class="toggle-link" id="toggle-batch">colar vários links de uma vez (modo lote, sem preview)</button>
-        <div id="batch-box" style="display:none;">
-          <textarea id="batch-input" placeholder="um link por linha"></textarea>
-          <button class="btn ghost small" id="batch-go">Enfileirar todos</button>
-        </div>
-        <div class="error-msg" id="link-error" style="display:none;"></div>
-
-        <div id="preview-area"></div>
-      </section>
-
-      <!-- TAB: BUSCAR -->
-      <section class="panel" id="panel-search">
-        <div class="search-row">
-          <input type="text" id="search-q" placeholder="buscar álbuns, faixas, artistas, playlists..." autocomplete="off" />
-          <button class="btn" id="search-go">Buscar</button>
-        </div>
-        <div class="type-select" id="search-type">
-          <button class="qbtn active" data-t="album">Álbuns</button>
-          <button class="qbtn" data-t="track">Faixas</button>
-          <button class="qbtn" data-t="artist">Artistas</button>
-          <button class="qbtn" data-t="playlist">Playlists</button>
-        </div>
-        <div class="error-msg" id="search-error" style="display:none;"></div>
-        <div class="search-grid" id="search-results"></div>
-      </section>
-
-      <!-- TAB: FILA -->
-      <section class="panel" id="panel-queue">
-        <div class="queue-head">
-          <span class="jobs-title">Fila de downloads</span>
-          <button class="toggle-link" id="clear-done">limpar concluídos</button>
-        </div>
-        <div class="jobs" id="jobs-list"></div>
-        <div class="empty-note" id="queue-empty">nada na fila ainda — cole um link ou busque algo pra baixar</div>
-      </section>
-
-    </div>
-
-  </div>
-
-  <footer>qobuz-dl master edition · sessão local ao navegador · nada é salvo no servidor além da duração do download</footer>
-
-  <div id="toast-container"></div>
-
-<script>
-(() => {
-  const API = ""; // mesma origem
-  const WS_PROTO = location.protocol === "https:" ? "wss:" : "ws:";
-  const $ = (sel, root = document) => root.querySelector(sel);
-
-  const glyph = $("#glyph");
-  const statusText = $("#status-text");
-  const settingsBtn = $("#settings-btn");
-  const settingsPanel = $("#settings-panel");
-  const logoutBtn = $("#logout-btn");
-  const sessionInfo = $("#session-info");
-
-  const loginCard = $("#login-card");
-  const app = $("#app");
-  const loginBtn = $("#login-btn");
-  const loginError = $("#login-error");
-  const tokenInput = $("#token-input");
-  const emailInput = $("#email-input");
-  const pwdInput = $("#pwd-input");
-  const tokenFields = $("#token-fields");
-  const pwdFields = $("#pwd-fields");
-  const toggleAuthMode = $("#toggle-auth-mode");
-  const qualitySelect = $("#quality-select");
-
-  const tabs = [...document.querySelectorAll(".tab")];
-  const panels = { link: $("#panel-link"), search: $("#panel-search"), queue: $("#panel-queue") };
-
-  const linkUrl = $("#link-url");
-  const linkGo = $("#link-go");
-  const linkError = $("#link-error");
-  const toggleBatch = $("#toggle-batch");
-  const batchBox = $("#batch-box");
-  const batchInput = $("#batch-input");
-  const batchGo = $("#batch-go");
-  const previewArea = $("#preview-area");
-
-  const searchQ = $("#search-q");
-  const searchGo = $("#search-go");
-  const searchType = $("#search-type");
-  const searchError = $("#search-error");
-  const searchResults = $("#search-results");
-
-  const jobsList = $("#jobs-list");
-  const queueEmpty = $("#queue-empty");
-  const queueCount = $("#queue-count");
-  const clearDoneBtn = $("#clear-done");
-  const toastContainer = $("#toast-container");
-
-  let quality = Number(localStorage.getItem("qbdl_quality") || 7);
-  let usingToken = true;
-  let currentSearchType = "album";
-  let previewStack = [];
-
-  // ------------------------------------------------------------- helpers
-  function escapeHtml(s) {
-    return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-  }
-  function fmtBytes(n) {
-    if (!n) return "0 B";
-    const u = ["B", "KB", "MB", "GB"]; let i = 0;
-    while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
-    return `${n.toFixed(i === 0 ? 0 : 1)} ${u[i]}`;
-  }
-  function fmtDuration(sec) {
-    sec = Math.round(sec || 0);
-    const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
-    if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-    return `${m}:${String(s).padStart(2, "0")}`;
-  }
-  function coverHtml(url, sizeClass = "") {
-    if (!url) return `<div class="cover-wrap ${sizeClass}"><div class="cover-fallback">○</div></div>`;
-    return `<div class="cover-wrap ${sizeClass}"><img src="${escapeHtml(url)}" loading="lazy" onerror="this.parentElement.innerHTML='<div class=&quot;cover-fallback&quot;>○</div>'" /></div>`;
-  }
-  function typeLabel(t) {
-    return { album: "Álbum", track: "Faixa", playlist: "Playlist", artist: "Artista", label: "Label" }[t] || t || "";
-  }
-  function qobuzUrlFor(type, id) {
-    return `https://open.qobuz.com/${type}/${id}`;
-  }
-  function setGlyph(state) {
-    glyph.className = "glyph " + state;
-    statusText.textContent = { online: "online", busy: "baixando", error: "erro", offline: "offline" }[state] || state;
-  }
-  function toast(msg, isError = false) {
-    const el = document.createElement("div");
-    el.className = "toast" + (isError ? " error" : "");
-    el.innerHTML = `<span class="toast-dot"></span><span>${escapeHtml(msg)}</span>`;
-    toastContainer.appendChild(el);
-    setTimeout(() => { el.classList.add("leaving"); setTimeout(() => el.remove(), 220); }, 3400);
-  }
-
-  // ------------------------------------------------------------- tabs
-  function setTab(name) {
-    tabs.forEach((t) => t.classList.toggle("active", t.dataset.tab === name));
-    Object.entries(panels).forEach(([k, el]) => {
-      if (k === name) {
-        el.classList.add("active");
-        el.classList.remove("enter");
-        void el.offsetWidth; // força reflow pra reiniciar a animação
-        el.classList.add("enter");
-      } else {
-        el.classList.remove("active");
-      }
-    });
-  }
-  tabs.forEach((t) => t.addEventListener("click", () => setTab(t.dataset.tab)));
-
-  // ------------------------------------------------------------- settings
-  settingsBtn.addEventListener("click", () => settingsPanel.classList.toggle("open"));
-  logoutBtn.addEventListener("click", () => {
-    localStorage.removeItem("qbdl_token");
-    settingsPanel.classList.remove("open");
-    settingsBtn.style.display = "none";
-    app.classList.remove("visible");
-    loginCard.classList.remove("hidden");
-    setGlyph("offline");
-  });
-
-  // ------------------------------------------------------------- login
-  toggleAuthMode.addEventListener("click", () => {
-    usingToken = !usingToken;
-    tokenFields.style.display = usingToken ? "" : "none";
-    pwdFields.style.display = usingToken ? "none" : "";
-    toggleAuthMode.textContent = usingToken ? "usar email e senha em vez de token" : "usar auth token em vez de email/senha";
-  });
-
-  qualitySelect.addEventListener("click", (e) => {
-    const b = e.target.closest(".qbtn");
-    if (!b) return;
-    quality = Number(b.dataset.q);
-    localStorage.setItem("qbdl_quality", quality);
-    [...qualitySelect.children].forEach((c) => c.classList.toggle("active", c === b));
-  });
-
-  async function doLogin(silent = false) {
-    loginError.style.display = "none";
-    const body = { quality };
-    if (usingToken) {
-      const t = tokenInput.value.trim() || localStorage.getItem("qbdl_token") || "";
-      if (!t) { if (!silent) { loginError.textContent = "cole o token primeiro"; loginError.style.display = "block"; } return false; }
-      body.user_auth_token = t;
-    } else {
-      body.email = emailInput.value.trim();
-      body.password = pwdInput.value;
-      if (!body.email || !body.password) { if (!silent) { loginError.textContent = "preencha email e senha"; loginError.style.display = "block"; } return false; }
-    }
-    loginBtn.disabled = true;
-    loginBtn.textContent = "Entrando...";
-    try {
-      const r = await fetch(`${API}/api/login`, {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
-      });
-      const data = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(data.detail || `falha no login (${r.status})`);
-      if (usingToken) localStorage.setItem("qbdl_token", body.user_auth_token);
-      setGlyph("online");
-      loginCard.classList.add("hidden");
-      app.classList.add("visible");
-      settingsBtn.style.display = "";
-      sessionInfo.textContent = usingToken ? "sessão ativa · token" : "sessão ativa · email/senha";
-      hydrateJobs();
-      return true;
-    } catch (err) {
-      setGlyph("error");
-      if (!silent) { loginError.textContent = err.message; loginError.style.display = "block"; }
-      return false;
-    } finally {
-      loginBtn.disabled = false;
-      loginBtn.textContent = "Entrar";
-    }
-  }
-  loginBtn.addEventListener("click", () => doLogin(false));
-  tokenInput.addEventListener("keydown", (e) => { if (e.key === "Enter") doLogin(false); });
-
-  // ------------------------------------------------------------- preview
-  function showPreviewLoading() {
-    previewArea.innerHTML = `
-      <div class="skeleton">
-        <div class="skel-box" style="width:132px;height:132px;"></div>
-        <div style="flex:1;display:flex;flex-direction:column;gap:10px;padding-top:4px;">
-          <div class="skel-box" style="width:60%;height:16px;"></div>
-          <div class="skel-box" style="width:40%;height:12px;"></div>
-          <div class="skel-box" style="width:90%;height:12px;"></div>
-        </div>
-      </div>`;
-  }
-  function showPreviewError(msg) {
-    previewArea.innerHTML = "";
-    linkError.textContent = msg;
-    linkError.style.display = "block";
-  }
-
-  function renderPreview(data) {
-    linkError.style.display = "none";
-    const badges = [];
-    if (data.hires) badges.push(`<span class="badge-pill hires">HI-RES</span>`);
-    if (data.bit_depth && data.sampling_rate) badges.push(`<span class="badge-pill">${data.bit_depth}bit / ${data.sampling_rate}kHz</span>`);
-    if (data.year) badges.push(`<span class="badge-pill">${escapeHtml(data.year)}</span>`);
-    if (data.genre) badges.push(`<span class="badge-pill">${escapeHtml(data.genre)}</span>`);
-    if (data.tracks_count) badges.push(`<span class="badge-pill">${data.tracks_count} faixa${data.tracks_count > 1 ? "s" : ""}</span>`);
-    if (data.albums_count) badges.push(`<span class="badge-pill">${data.albums_count} álbuns</span>`);
-    if (data.duration_seconds) badges.push(`<span class="badge-pill">${fmtDuration(data.duration_seconds)}</span>`);
-
-    const sub = data.type === "playlist" ? `por ${escapeHtml(data.owner || "desconhecido")}`
-      : (data.type === "track" || data.type === "album") ? escapeHtml(data.artist || "")
-      : "";
-
-    const breadcrumb = previewStack.length > 1 ? `
-      <div class="breadcrumb">
-        <button data-action="back">‹ voltar</button>
-        <span>${previewStack.map((p) => escapeHtml(p.title)).join(" / ")}</span>
-      </div>` : "";
-
-    let body = "";
-    if (Array.isArray(data.tracks) && data.tracks.length) {
-      body = `<div class="tracklist">${data.tracks.map((t, i) => `
-        <div class="track-row" style="animation-delay:${Math.min(i * 18, 300)}ms">
-          <span class="track-num">${t.number ?? ""}</span>
-          <span class="track-title"><span class="t-main">${escapeHtml(t.title)}</span>${t.version ? ` <span class="t-version">(${escapeHtml(t.version)})</span>` : ""}</span>
-          ${data.type === "playlist" ? `<span class="track-artist">${escapeHtml(t.artist || "")}</span>` : ""}
-          ${t.hires ? `<span class="track-hires">HI-RES</span>` : ""}
-          <span class="track-dur">${t.duration_seconds ? fmtDuration(t.duration_seconds) : ""}</span>
-        </div>`).join("")}</div>`;
-    } else if (Array.isArray(data.albums) && data.albums.length) {
-      body = `<div class="album-grid">${data.albums.map((al, i) => `
-        <div class="album-card" data-action="open-album" data-id="${escapeHtml(al.id)}" style="animation-delay:${Math.min(i * 25, 300)}ms">
-          ${coverHtml(al.cover_url)}
-          <div class="ac-title">${escapeHtml(al.title)}</div>
-          <div class="ac-sub">${escapeHtml(al.year || "")}${al.hires ? " · HI-RES" : ""}</div>
-        </div>`).join("")}</div>`;
-    }
-
-    previewArea.innerHTML = `
-      <div class="preview-card">
-        ${breadcrumb}
-        <div class="preview-head">
-          ${coverHtml(data.cover_url)}
-          <div class="preview-meta">
-            <span class="type-pill">${typeLabel(data.type)}</span>
-            <h3 class="preview-title">${escapeHtml(data.title)}</h3>
-            ${sub ? `<p class="preview-sub">${sub}</p>` : ""}
-            <div class="badges">${badges.join("")}</div>
-            <div class="preview-actions">
-              <button class="btn small" data-action="download">Baixar</button>
-              ${data.source_url ? `<a href="${escapeHtml(data.source_url)}" target="_blank" rel="noopener">abrir no Qobuz</a>` : ""}
+      <div class="modal-body">
+        <div class="album-hero">
+          <img id="modalAlbumCover" src="" class="album-cover-lg" alt="Cover">
+          <div class="album-details">
+            <h2 id="modalAlbumTitle">Título do Álbum</h2>
+            <div id="modalAlbumArtist" style="font-size: 15px; color: var(--text-muted);">Artista</div>
+            <div id="modalAlbumMeta" style="font-size: 12px; color: var(--text-dim); margin-top: 4px;">2024 • 12 faixas • FLAC 24-Bit / 96 kHz</div>
+            <div style="margin-top: 14px;">
+              <button id="btnDownloadFullAlbum" class="btn btn-primary">
+                <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                <span>Baixar Álbum Completo</span>
+              </button>
             </div>
           </div>
         </div>
-        ${body}
-      </div>`;
 
-    previewArea.querySelector('[data-action="download"]')?.addEventListener("click", (e) => {
-      const url = data.source_url || qobuzUrlFor(data.type, data.id);
-      queueDownload(url, data);
-      e.target.textContent = "Enfileirado ✓";
-      e.target.disabled = true;
-    });
-    previewArea.querySelector('[data-action="back"]')?.addEventListener("click", () => {
-      previewStack.pop();
-      renderPreview(previewStack[previewStack.length - 1]);
-    });
-    previewArea.querySelectorAll('[data-action="open-album"]').forEach((el) => {
-      el.addEventListener("click", () => loadPreviewById("album", el.dataset.id));
-    });
-  }
+        <h3 style="font-size: 15px; font-weight: 600; margin-bottom: 12px;">Faixas</h3>
+        <table class="tracklist-table">
+          <thead>
+            <tr>
+              <th style="width: 40px;">#</th>
+              <th>Título</th>
+              <th>Duração</th>
+              <th>Qualidade</th>
+              <th style="text-align: right;">Ação</th>
+            </tr>
+          </thead>
+          <tbody id="modalTracklistBody">
+            <!-- Dynamic tracks -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
 
-  async function resolveUrl(url) {
-    showPreviewLoading();
-    try {
-      const r = await fetch(`${API}/api/resolve?url=${encodeURIComponent(url)}`);
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.detail || `não reconheci esse link (${r.status})`);
-      previewStack = [data];
-      renderPreview(data);
-    } catch (err) {
-      showPreviewError(err.message);
-    }
-  }
-
-  async function loadPreviewById(type, id) {
-    showPreviewLoading();
-    setTab("link");
-    try {
-      const r = await fetch(`${API}/api/preview/${type}/${id}`);
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.detail || `erro ao carregar (${r.status})`);
-      previewStack.push(data);
-      renderPreview(data);
-    } catch (err) {
-      showPreviewError(err.message);
-    }
-  }
-
-  function handleLinkSubmit() {
-    const v = linkUrl.value.trim();
-    if (!v) return;
-    clearTimeout(resolveTimer);
-    if (/^https?:\/\//i.test(v)) {
-      resolveUrl(v);
-    } else {
-      // não parece link -- trata como busca, pra aceitar "o que for" na caixa
-      searchQ.value = v;
-      setTab("search");
-      runSearch();
-    }
-  }
-
-  let resolveTimer = null;
-  linkUrl.addEventListener("input", () => {
-    clearTimeout(resolveTimer);
-    const v = linkUrl.value.trim();
-    if (!/^https?:\/\//i.test(v)) return;
-    resolveTimer = setTimeout(() => resolveUrl(v), 550);
-  });
-  linkGo.addEventListener("click", handleLinkSubmit);
-  linkUrl.addEventListener("keydown", (e) => { if (e.key === "Enter") handleLinkSubmit(); });
-
-  toggleBatch.addEventListener("click", () => {
-    const open = batchBox.style.display !== "none";
-    batchBox.style.display = open ? "none" : "block";
-  });
-  batchGo.addEventListener("click", () => {
-    const urls = batchInput.value.split("\n").map((s) => s.trim()).filter(Boolean);
-    if (!urls.length) return;
-    urls.forEach((u) => queueDownload(u));
-    toast(`${urls.length} item${urls.length > 1 ? "s" : ""} enfileirado${urls.length > 1 ? "s" : ""}`);
-    batchInput.value = "";
-    setTab("queue");
-  });
-
-  // ------------------------------------------------------------- search
-  searchType.addEventListener("click", (e) => {
-    const b = e.target.closest(".qbtn");
-    if (!b) return;
-    currentSearchType = b.dataset.t;
-    [...searchType.children].forEach((c) => c.classList.toggle("active", c === b));
-    if (searchQ.value.trim()) runSearch();
-  });
-  searchGo.addEventListener("click", runSearch);
-  searchQ.addEventListener("keydown", (e) => { if (e.key === "Enter") runSearch(); });
-
-  async function runSearch() {
-    const q = searchQ.value.trim();
-    searchError.style.display = "none";
-    if (!q) return;
-    searchResults.innerHTML = `<div class="empty-note">buscando…</div>`;
-    try {
-      const r = await fetch(`${API}/api/search?q=${encodeURIComponent(q)}&type=${currentSearchType}&limit=24`);
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.detail || `falha na busca (${r.status})`);
-      renderSearchResults(data.items || []);
-    } catch (err) {
-      searchResults.innerHTML = "";
-      searchError.textContent = err.message;
-      searchError.style.display = "block";
-    }
-  }
-
-  function renderSearchResults(items) {
-    if (!items.length) { searchResults.innerHTML = `<div class="empty-note">nada encontrado</div>`; return; }
-    searchResults.innerHTML = items.map((it, i) => `
-      <div class="search-card" data-action="preview" data-type="${escapeHtml(it.type)}" data-id="${escapeHtml(it.id)}" style="animation-delay:${Math.min(i * 25, 300)}ms">
-        ${coverHtml(it.cover_url)}
-        <button class="sc-quick" data-action="quick-dl" data-type="${escapeHtml(it.type)}" data-id="${escapeHtml(it.id)}" title="baixar direto">⬇</button>
-        <div class="sc-body">
-          <div class="sc-title">${escapeHtml(it.title)}</div>
-          <div class="sc-sub">${escapeHtml(it.artist || it.owner || "")}${it.hires ? " · HI-RES" : ""}</div>
+  <!-- MODAL: QUEUE -->
+  <div id="queueModal" class="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title">Fila de Downloads</div>
+        <button id="btnCloseQueueModal" class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+          <button id="btnPauseQueue" class="btn btn-secondary" style="font-size: 12px; padding: 6px 12px;">Pausar Todos</button>
+          <button id="btnResumeQueue" class="btn btn-secondary" style="font-size: 12px; padding: 6px 12px;">Retomar</button>
+          <button id="btnClearQueue" class="btn btn-secondary" style="font-size: 12px; padding: 6px 12px; margin-left: auto;">Limpar Concluídos</button>
         </div>
-      </div>`).join("");
-
-    searchResults.querySelectorAll('[data-action="preview"]').forEach((el) => {
-      el.addEventListener("click", (e) => {
-        if (e.target.closest('[data-action="quick-dl"]')) return;
-        loadPreviewById(el.dataset.type, el.dataset.id);
-      });
-    });
-    searchResults.querySelectorAll('[data-action="quick-dl"]').forEach((el) => {
-      el.addEventListener("click", (e) => {
-        e.stopPropagation();
-        const url = qobuzUrlFor(el.dataset.type, el.dataset.id);
-        const card = el.closest(".search-card");
-        const preview = {
-          title: card.querySelector(".sc-title").textContent,
-          cover_url: card.querySelector("img")?.src || null,
-          type: el.dataset.type,
-        };
-        queueDownload(url, preview);
-        el.textContent = "✓";
-        setTab("queue");
-      });
-    });
-  }
-
-  // ------------------------------------------------------------- queue
-  const jobEls = new Map();
-  const lastSnapshot = new Map();
-
-  function updateQueueBadge() {
-    const vals = [...lastSnapshot.values()];
-    const active = vals.filter((j) => j.status === "queued" || j.status === "running").length;
-    queueCount.textContent = active;
-    queueCount.style.display = active > 0 ? "" : "none";
-    queueEmpty.style.display = jobEls.size > 0 ? "none" : "block";
-    if (active === 0) {
-      const anyErr = vals.some((j) => j.status === "error");
-      setGlyph(anyErr ? "error" : "online");
-    }
-  }
-
-  function renderJob(job) {
-    let rec = jobEls.get(job.job_id);
-    if (!rec) {
-      const el = document.createElement("div");
-      el.className = "job";
-      jobsList.prepend(el);
-      rec = { el };
-      jobEls.set(job.job_id, rec);
-    }
-    const el = rec.el;
-    el.classList.toggle("status-running", job.status === "running");
-    const badgeClass = job.status || "queued";
-    const badgeLabel = { queued: "na fila", running: "baixando", done: "pronto", error: "erro", cancelled: "cancelado" }[job.status] || job.status;
-    const sub = [job.content_type ? typeLabel(job.content_type) : null, job.artist, job.content_tracks_count ? `${job.content_tracks_count} faixas` : null].filter(Boolean).join(" · ");
-
-    el.innerHTML = `
-      ${coverHtml(job.cover_url)}
-      <div class="job-body">
-        <div class="job-top">
-          <div>
-            <div class="job-name">${escapeHtml(job.content_name || "resolvendo…")}</div>
-            ${sub ? `<div class="job-sub">${escapeHtml(sub)}</div>` : ""}
-          </div>
-          <span class="badge ${badgeClass}">${badgeLabel}</span>
+        <div id="queueListContainer" style="display: flex; flex-direction: column; gap: 10px;">
+          <!-- Queue items -->
         </div>
-        ${job.status === "queued" && job.queue_position ? `<div class="job-sub" style="margin-top:9px;">aguardando · posição ${job.queue_position}</div>` : ""}
-        ${job.status === "running" ? `
-          <div class="track-line">
-            <span>${escapeHtml(job.track_name || "")}</span>
-            <span>${job.bytes_total ? fmtBytes(job.bytes_done) + " / " + fmtBytes(job.bytes_total) : ""}</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: SETTINGS -->
+  <div id="settingsModal" class="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title">Configurações do Sistema</div>
+        <button id="btnCloseSettingsModal" class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="settings-tabs">
+          <button class="tab-btn active" data-tab="tab-general">Geral & Áudio</button>
+          <button class="tab-btn" data-tab="tab-paths">Pastas & Nomes</button>
+          <button class="tab-btn" data-tab="tab-auth">Conta & Tokens</button>
+        </div>
+
+        <!-- TAB: GENERAL -->
+        <div id="tab-general" class="tab-pane">
+          <div class="form-group">
+            <label class="form-label">Qualidade Máxima de Áudio</label>
+            <select id="cfgFormatId" class="form-control">
+              <option value="27">24-Bit / até 192 kHz (Studio Master FLAC)</option>
+              <option value="7">24-Bit / até 96 kHz (Hi-Res FLAC)</option>
+              <option value="6">16-Bit / 44.1 kHz (CD Quality FLAC)</option>
+              <option value="5">320 kbps (MP3)</option>
+            </select>
           </div>
-          <div class="bar-track"><div class="bar-fill running" style="width:${job.track_progress_pct || 0}%"></div></div>
-        ` : ""}
-        ${job.status === "error" ? `<div class="job-error-text">ERRO: ${escapeHtml(job.error || "desconhecido")}</div>` : ""}
-        ${job.status === "done" && job.file_ready ? `
-          <div class="job-actions">
-            <button class="btn small" data-action="download" data-mode="auto">Baixar</button>
-            <button class="btn ghost small" data-action="download" data-mode="zip">Forçar .zip</button>
-          </div>` : ""}
-        ${job.status === "done" && !job.file_ready ? `<div class="job-sub" style="margin-top:9px;">já entregue e removido do servidor</div>` : ""}
-        ${job.cancellable ? `<div class="job-actions"><button class="btn ghost small" data-action="cancel">Cancelar</button></div>` : ""}
-      </div>`;
+          <div class="form-group">
+            <label class="form-label">Resolução da Capa Embutida</label>
+            <select id="cfgArtRes" class="form-control">
+              <option value="original">Resolução Máxima Original</option>
+              <option value="1400">1400 x 1400 px</option>
+              <option value="600">600 x 600 px</option>
+            </select>
+          </div>
+          <div class="form-group" style="display: flex; align-items: center; gap: 10px;">
+            <input type="checkbox" id="cfgSaveLrc" checked>
+            <label for="cfgSaveLrc" style="font-size: 13px; font-weight: 500; cursor: pointer;">Baixar e salvar arquivo de letras sincronizadas (.LRC)</label>
+          </div>
+        </div>
 
-    el.querySelectorAll('[data-action="download"]').forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const qs = btn.dataset.mode === "zip" ? "?as_zip=true" : "";
-        const a = document.createElement("a");
-        a.href = `${API}/api/download/${job.job_id}/file${qs}`;
-        a.rel = "noopener";
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        el.querySelectorAll(".job-actions")[0].innerHTML = '<span class="job-sub">enviado pro navegador — removido do servidor em seguida</span>';
-      });
-    });
-    el.querySelector('[data-action="cancel"]')?.addEventListener("click", async (e) => {
-      e.target.disabled = true;
-      e.target.textContent = "Cancelando...";
-      try {
-        const r = await fetch(`${API}/api/jobs/${job.job_id}`, { method: "DELETE" });
-        if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.detail || "não consegui cancelar"); }
-      } catch (err) {
-        toast(err.message, true);
-        e.target.disabled = false;
-        e.target.textContent = "Cancelar";
-      }
-    });
+        <!-- TAB: PATHS -->
+        <div id="tab-paths" class="tab-pane" style="display: none;">
+          <div class="form-group">
+            <label class="form-label">Diretório de Downloads</label>
+            <input type="text" id="cfgDownloadDir" class="form-control" value="./downloads">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Template de Pasta do Álbum</label>
+            <input type="text" id="cfgFolderTemplate" class="form-control" value="{artist}/{album} ({year}) [{quality}]">
+            <div class="form-help">Tags disponíveis: {artist}, {album}, {year}, {quality}</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Template do Nome da Faixa</label>
+            <input type="text" id="cfgTrackTemplate" class="form-control" value="{track_number:02d} - {title}">
+            <div class="form-help">Tags disponíveis: {track_number:02d}, {title}, {artist}, {disc_number}</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Pré-visualização do Caminho em Tempo Real</label>
+            <div id="pathPreviewBox" class="path-preview-box">./downloads/...</div>
+          </div>
+        </div>
 
-    updateQueueBadge();
-  }
+        <!-- TAB: AUTH -->
+        <div id="tab-auth" class="tab-pane" style="display: none;">
+          <div class="form-group">
+            <label class="form-label">Qobuz User Auth Token</label>
+            <input type="password" id="cfgAuthToken" class="form-control" placeholder="Cole seu token de autenticação...">
+            <div class="form-help">Encontrado no localStorage da sua conta em play.qobuz.com</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">App ID Oficial</label>
+            <input type="text" id="cfgAppId" class="form-control" value="712108709">
+          </div>
+          <div style="margin-top: 12px;">
+            <button id="btnFetchDynamicTokens" class="btn btn-secondary" style="font-size: 12px;">Atualizar Chaves Dinamicamente do Web Player</button>
+          </div>
+        </div>
 
-  function applyJobUpdate(job_id, job) {
-    job.job_id = job_id;
-    const prev = lastSnapshot.get(job_id);
-    lastSnapshot.set(job_id, job);
-    renderJob(job);
-    updateQueueBadge();
-    if (prev && prev.status !== job.status) {
-      if (job.status === "done") toast(`pronto — ${job.content_name || "download"}`);
-      else if (job.status === "error") toast(`erro em ${job.content_name || "download"}${job.error ? ": " + job.error : ""}`, true);
-      else if (job.status === "cancelled") toast(`cancelado — ${job.content_name || "download"}`);
-    }
-    if (job.status === "running" || job.status === "queued") setGlyph("busy");
-    else if (job.status === "error") setGlyph("error");
-  }
+        <div style="margin-top: 24px; display: flex; justify-content: flex-end; gap: 10px;">
+          <button id="btnSaveSettings" class="btn btn-primary">Salvar Alterações</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
-  function trackJob(job_id, seedPreview) {
-    const seed = { status: "queued", content_name: seedPreview?.title, cover_url: seedPreview?.cover_url, content_type: seedPreview?.type };
-    applyJobUpdate(job_id, seed);
-    connectWs(job_id);
-  }
-
-  function connectWs(job_id) {
-    let ws;
-    try { ws = new WebSocket(`${WS_PROTO}//${location.host}/ws/jobs/${job_id}`); }
-    catch { return pollJob(job_id); }
-    let gotAny = false;
-    ws.onmessage = (ev) => { gotAny = true; applyJobUpdate(job_id, JSON.parse(ev.data)); };
-    ws.onclose = () => {
-      const snap = lastSnapshot.get(job_id);
-      if (!snap || !["done", "error", "cancelled"].includes(snap.status)) pollJob(job_id);
-    };
-    ws.onerror = () => { if (!gotAny) pollJob(job_id); };
-  }
-
-  async function pollJob(job_id) {
-    const tick = async () => {
-      try {
-        const r = await fetch(`${API}/api/jobs/${job_id}`);
-        if (!r.ok) return;
-        const job = await r.json();
-        applyJobUpdate(job_id, job);
-        if (["done", "error", "cancelled"].includes(job.status)) return;
-      } catch {}
-      setTimeout(tick, 2000);
-    };
-    tick();
-  }
-
-  async function hydrateJobs() {
-    try {
-      const r = await fetch(`${API}/api/jobs`);
-      if (!r.ok) return;
-      const data = await r.json();
-      (data.jobs || []).forEach((job) => {
-        applyJobUpdate(job.job_id, job);
-        if (job.status === "queued" || job.status === "running") connectWs(job.job_id);
-      });
-    } catch {}
-  }
-
-  async function queueDownload(url, seedPreview) {
-    try {
-      const r = await fetch(`${API}/api/download`, {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url }),
-      });
-      const data = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(data.detail || `falha ao iniciar (${r.status})`);
-      trackJob(data.job_id, seedPreview);
-      toast(`enfileirado — ${seedPreview?.title || url}`);
-    } catch (err) {
-      linkError.textContent = err.message;
-      linkError.style.display = "block";
-      toast(err.message, true);
-    }
-  }
-
-  clearDoneBtn.addEventListener("click", () => {
-    [...jobEls.entries()].forEach(([id, rec]) => {
-      const snap = lastSnapshot.get(id);
-      if (snap && ["done", "error", "cancelled"].includes(snap.status)) {
-        rec.el.remove();
-        jobEls.delete(id);
-        lastSnapshot.delete(id);
-      }
-    });
-    updateQueueBadge();
-  });
-
-  // ------------------------------------------------------------- boot
-  (async function boot() {
-    const savedToken = localStorage.getItem("qbdl_token");
-    [...qualitySelect.children].forEach((c) => c.classList.toggle("active", Number(c.dataset.q) === quality));
-    if (savedToken) {
-      tokenInput.value = savedToken;
-      const ok = await doLogin(true);
-      if (!ok) { loginCard.classList.remove("hidden"); app.classList.remove("visible"); }
-    } else {
-      setGlyph("offline");
-    }
-  })();
-})();
-</script>
+  <script src="/static/js/app.js"></script>
 </body>
 </html>

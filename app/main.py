@@ -1,218 +1,258 @@
-from pathlib import Path
-
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+import os
+import json
+import asyncio
+from typing import List, Optional, Dict, Any
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPException, Body, Query
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from starlette.background import BackgroundTask
 
-from . import progress
-from .progress import jobs
-from .qobuz_service import session, cleanup_stale_job_dirs
-from .utils_delivery import collect_files, build_zip, build_download_filename, cleanup_job
+from app.config_manager import config_manager, AppSettings, dump_model
+from app.progress import progress_manager
+from app.queue_manager import queue_manager
+from app.qobuz_service import qobuz_service
+from qobuz_dl.constants import COUNTRY_NAMES, FORMAT_IDS
 
-app = FastAPI(title="QBDL backend")
-
-# em produção, troque "*" pela origem real do frontend (ex.: https://qbdl.seudominio.com)
-app.add_middleware(
-    CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
+app = FastAPI(
+    title="Qobuz-DL Web Client",
+    description="Full-Featured High-Res Lossless Audio Downloader & Organizer for Qobuz",
+    version="3.0.0-ultimate"
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+static_dir = os.path.join(os.path.dirname(__file__), "static")
+os.makedirs(static_dir, exist_ok=True)
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 @app.on_event("startup")
-async def _startup():
-    progress.install()  # ativa a ponte de progresso tqdm -> WebSocket (ver progress.py)
-    cleanup_stale_job_dirs()  # limpa pastas de jobs de uma execução anterior do server
-    jobs.start_workers(session.run_download_job)  # sobe os workers da fila (2 downloads simultâneos)
+async def startup_event():
+    progress_manager.log("SYSTEM", "Qobuz-DL Web Client Inicializado", "BOOT")
+    queue_manager.ensure_workers()
+    if config_manager.config.auth.auto_login:
+        asyncio.create_task(qobuz_service.authenticate())
 
+# Models
+class LoginRequest(BaseModel):
+    email: Optional[str] = ""
+    password: Optional[str] = ""
+    token: Optional[str] = ""
+    app_id: Optional[str] = ""
 
-# --------------------------------------------------------------------- auth
-class LoginBody(BaseModel):
-    user_auth_token: str | None = None   # preferido -- cole o token extraído do DevTools (F12) do play.qobuz.com
-    email: str | None = None             # fallback, só se não quiser usar token
-    password: str | None = None
-    quality: int = 7          # 5=MP3 320 · 6=CD 16/44.1 · 7=Hi-Res 24/96 · 27=Hi-Res 24/192
-    download_dir: str = "FLAC"
+class AddToQueueRequest(BaseModel):
+    urls: List[str]
+    quality_override: Optional[int] = None
 
+class PreviewPathRequest(BaseModel):
+    artist: Optional[str] = "Daft Punk"
+    album: Optional[str] = "Discovery"
+    year: Optional[str] = "2001"
+    quality: Optional[str] = "24B-96kHz"
+    track_number: Optional[int] = 1
+    title: Optional[str] = "One More Time"
 
-@app.post("/api/login")
-async def login(body: LoginBody):
-    try:
-        await session.login(
-            download_dir=body.download_dir, quality=body.quality,
-            user_auth_token=body.user_auth_token, email=body.email, password=body.password,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(status_code=401, detail=f"Falha no login: {exc}") from exc
-    return {"ok": True}
+# HTML Root
+@app.get("/", response_class=HTMLResponse)
+async def get_index():
+    index_path = os.path.join(static_dir, "index.html")
+    if os.path.exists(index_path):
+        with open(index_path, "r", encoding="utf-8") as f:
+            return f.read()
+    return "<h1>Qobuz-DL Web: index.html not found</h1>"
 
-
-@app.get("/api/session")
-async def get_session():
-    return {"logged_in": session.logged_in}
-
-
-# ------------------------------------------------------------------- busca
+# Catalog & Discovery Endpoints
 @app.get("/api/search")
-async def search(q: str, type: str = "album", limit: int = 20):
-    try:
-        return {"items": await session.search_json(q, type, limit)}
-    except RuntimeError as exc:
-        raise HTTPException(status_code=401, detail=str(exc)) from exc
+async def api_search(q: str = Query(..., min_length=1), limit: int = 15):
+    res = await qobuz_service.search(query=q, limit=limit)
+    return res
 
+@app.get("/api/get-releases")
+async def api_get_releases(limit: int = 24):
+    res = await qobuz_service.get_releases(limit=limit)
+    return res
 
-@app.get("/api/album/{album_id}/tracks")
-async def album_tracks(album_id: str):
-    try:
-        return {"tracks": await session.get_album_tracks(album_id)}
-    except RuntimeError as exc:
-        raise HTTPException(status_code=401, detail=str(exc)) from exc
+@app.get("/api/get-album")
+async def api_get_album(id: str = Query(...)):
+    res = await qobuz_service.get_album(album_id=id)
+    return res
 
+@app.get("/api/get-artist")
+async def api_get_artist(id: str = Query(...)):
+    res = await qobuz_service.get_artist(artist_id=id)
+    return res
 
-# ------------------------------------------------------------- preview/link
-@app.get("/api/resolve")
-async def resolve(url: str):
-    """Reconhece um link do Qobuz (álbum/faixa/playlist/artista/label) e
-    devolve a ficha completa: capa, metadados e lista de faixas -- usado
-    pela tela de 'colar link' pra mostrar ao vivo o que o link é, antes de
-    baixar."""
-    if not session.logged_in:
-        raise HTTPException(status_code=401, detail="Faça login antes.")
-    try:
-        return await session.resolve_url(url)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Não consegui reconhecer esse link: {exc}") from exc
+@app.get("/api/get-countries")
+async def api_get_countries():
+    return [{"code": code, "name": name} for code, name in COUNTRY_NAMES.items()]
 
+# Auth Endpoints
+@app.get("/api/auth/me")
+async def get_auth_me():
+    return {
+        "authenticated": qobuz_service.session_valid,
+        "tier": qobuz_service.user_tier,
+        "user_data": qobuz_service.user_data,
+        "email": config_manager.config.auth.email or "Nenhuma conta conectada",
+        "app_id": config_manager.config.auth.app_id
+    }
 
-@app.get("/api/preview/{item_type}/{item_id}")
-async def preview(item_type: str, item_id: str):
-    """Mesma ficha completa do /api/resolve, mas por id+tipo -- usado ao
-    clicar num resultado de busca ou num álbum dentro da página de um
-    artista, sem precisar reconstruir uma URL."""
-    if not session.logged_in:
-        raise HTTPException(status_code=401, detail="Faça login antes.")
-    try:
-        return await session.preview_by_id(item_type, item_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Não consegui carregar: {exc}") from exc
+@app.post("/api/auth/login")
+async def api_login(req: LoginRequest):
+    return await qobuz_service.authenticate(email=req.email, password=req.password, token=req.token, app_id=req.app_id)
 
+@app.post("/api/auth/logout")
+async def api_logout():
+    return await qobuz_service.logout()
 
-# ---------------------------------------------------------------- download
-class DownloadBody(BaseModel):
-    url: str   # link de álbum, faixa, playlist ou artista do Qobuz
+@app.post("/api/auth/fetch-tokens")
+async def api_fetch_tokens():
+    return await qobuz_service.fetch_dynamic_tokens()
 
+# Queue & Downloads
+@app.get("/api/queue")
+async def get_queue():
+    return {
+        "active": [dump_model(item) for item in progress_manager.active_items.values()],
+        "completed": [dump_model(item) for item in progress_manager.completed_items],
+        "failed": [dump_model(item) for item in progress_manager.failed_items],
+        "is_paused": queue_manager.is_paused
+    }
 
-@app.post("/api/download")
-async def start_download(body: DownloadBody):
-    if not session.logged_in:
-        raise HTTPException(status_code=401, detail="Faça login antes de baixar.")
-    job = jobs.create(body.url)
-    await jobs.enqueue(job)  # fila real -- ver JobManager em progress.py
-    return {"job_id": job.id, "queue_position": job.position}
+@app.post("/api/queue/add")
+async def add_queue(req: AddToQueueRequest):
+    if not req.urls:
+        raise HTTPException(status_code=400, detail="Nenhuma URL fornecida")
+    added = queue_manager.add_to_queue(req.urls, req.quality_override)
+    return {"success": True, "added": added}
 
+@app.post("/api/queue/pause")
+async def pause_queue():
+    queue_manager.pause_queue()
+    return {"success": True, "is_paused": True}
 
-@app.delete("/api/jobs/{job_id}")
-async def cancel_job(job_id: str):
-    """Cancela um job -- se ainda estiver na fila, só o remove; se já
-    estiver baixando, interrompe de verdade (Task.cancel()) e limpa a
-    pasta temporária dele."""
-    job = jobs.get(job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="job não encontrado")
-    ok = await jobs.cancel(job_id)
-    if not ok:
-        raise HTTPException(status_code=409, detail=f"job não pode ser cancelado (status={job.status})")
-    return {"ok": True}
+@app.post("/api/queue/resume")
+async def resume_queue():
+    queue_manager.resume_queue()
+    return {"success": True, "is_paused": False}
 
+@app.post("/api/queue/clear")
+async def clear_queue():
+    queue_manager.clear_completed()
+    return {"success": True}
 
-@app.get("/api/download/{job_id}/file")
-async def download_file(job_id: str, as_zip: bool | None = None):
-    """Entrega o resultado do job pro navegador e apaga do servidor em seguida.
+@app.post("/api/queue/cancel/{task_id}")
+async def cancel_task(task_id: str):
+    success = queue_manager.cancel_task(task_id)
+    return {"success": success}
 
-    - as_zip=None (padrão): 1 arquivo só -> entrega direto; 2+ arquivos -> zip.
-    - as_zip=true: força zip mesmo com 1 arquivo só.
-    - as_zip=false: só funciona se o job baixou exatamente 1 arquivo
-      (pra playlist/álbum/artista isso normalmente não faz sentido).
-    """
-    job = jobs.get(job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="job não encontrado")
-    if job.status != "done":
-        raise HTTPException(status_code=409, detail=f"job ainda não terminou (status={job.status})")
-    if not job.job_dir:
-        raise HTTPException(status_code=410, detail="arquivos já foram entregues e removidos do servidor")
+# Config & Settings
+@app.get("/api/config")
+async def get_config():
+    return dump_model(config_manager.config)
 
-    job_dir = Path(job.job_dir)
-    files = collect_files(job_dir)
-    if not files:
-        raise HTTPException(status_code=404, detail="nenhum arquivo encontrado pra esse job")
+@app.post("/api/config")
+async def update_config(data: Dict[str, Any] = Body(...)):
+    updated = config_manager.update_dict(data)
+    progress_manager.log("SUCCESS", "Configurações atualizadas.", "CONFIG")
+    return {"success": True, "config": dump_model(updated)}
 
-    zip_stem = build_download_filename(job)
-    want_zip = as_zip if as_zip is not None else (len(files) > 1)
-
-    if want_zip:
-        zip_path = build_zip(job_dir, zip_stem, files)
-        return FileResponse(
-            path=str(zip_path),
-            filename=f"{zip_path.stem}.zip",
-            media_type="application/zip",
-            background=BackgroundTask(cleanup_job, job, zip_path),
-        )
-
-    if len(files) != 1:
-        raise HTTPException(status_code=400, detail="as_zip=false só é válido quando o job tem 1 único arquivo")
-
-    only_file = files[0]
-    return FileResponse(
-        path=str(only_file),
-        filename=only_file.name,
-        background=BackgroundTask(cleanup_job, job, None),
+@app.post("/api/config/preview-path")
+async def preview_path(req: PreviewPathRequest):
+    return config_manager.preview_path(
+        artist=req.artist or "Daft Punk",
+        album=req.album or "Discovery",
+        year=req.year or "2001",
+        quality=req.quality or "24B-96kHz",
+        track_num=req.track_number or 1,
+        title=req.title or "One More Time"
     )
 
+@app.post("/api/config/reset")
+async def reset_config():
+    defaults = config_manager.reset_to_defaults()
+    return {"success": True, "config": dump_model(defaults)}
 
-@app.get("/api/jobs")
-async def list_jobs():
-    """Todos os jobs desta sessão do servidor -- usado pelo frontend pra
-    repopular a fila quando a página é recarregada."""
-    return {"jobs": [j.snapshot() for j in jobs.list()]}
+@app.get("/api/history")
+async def get_history():
+    return qobuz_service.db.get_download_history(limit=100)
 
+@app.get("/api/status")
+async def get_status():
+    stats = progress_manager.get_system_stats()
+    return {
+        "status": "online",
+        "version": "3.0.0-ultimate",
+        "auth": {
+            "authenticated": qobuz_service.session_valid,
+            "tier": qobuz_service.user_tier,
+            "email": config_manager.config.auth.email or "Nenhuma conta vinculada"
+        },
+        "stats": dump_model(stats),
+        "active_items": [dump_model(item) for item in progress_manager.active_items.values()],
+        "queue_is_paused": queue_manager.is_paused
+    }
 
-@app.get("/api/jobs/{job_id}")
-async def job_status(job_id: str):
-    job = jobs.get(job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="job não encontrado")
-    return job.snapshot()
-
-
-@app.websocket("/ws/jobs/{job_id}")
-async def job_ws(websocket: WebSocket, job_id: str):
-    job = jobs.get(job_id)
-    if not job:
-        await websocket.close(code=4404)
-        return
+# WebSockets
+@app.websocket("/ws/live")
+async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
-    await websocket.send_json(job.snapshot())  # estado atual assim que conecta
+    q = progress_manager.subscribe()
+    stats = progress_manager.get_system_stats()
+    init_msg = {
+        "type": "init",
+        "data": {
+            "auth": {
+                "authenticated": qobuz_service.session_valid,
+                "tier": qobuz_service.user_tier,
+                "email": config_manager.config.auth.email or "Nenhuma conta vinculada"
+            },
+            "stats": dump_model(stats),
+            "active_items": [dump_model(item) for item in progress_manager.active_items.values()],
+            "logs": [dump_model(log) for log in progress_manager.logs[-30:]]
+        }
+    }
+    await websocket.send_text(json.dumps(init_msg))
+
+    async def periodic_pulse():
+        try:
+            while True:
+                await asyncio.sleep(0.1)
+                sys_stats = progress_manager.get_system_stats()
+                msg = {
+                    "type": "tick",
+                    "data": {
+                        "stats": dump_model(sys_stats),
+                        "active_items": [dump_model(item) for item in progress_manager.active_items.values()]
+                    }
+                }
+                await websocket.send_text(json.dumps(msg))
+        except Exception:
+            pass
+
+    pulse_task = asyncio.create_task(periodic_pulse())
     try:
         while True:
-            update = await job.queue.get()
-            await websocket.send_json(update)
-            if update["status"] in ("done", "error"):
-                break
+            try:
+                event = await asyncio.wait_for(q.get(), timeout=0.1)
+                await websocket.send_text(json.dumps(event))
+            except asyncio.TimeoutError:
+                pass
+            try:
+                data = await asyncio.wait_for(websocket.receive_text(), timeout=0.01)
+                cmd = json.loads(data)
+                if cmd.get("action") == "ping":
+                    await websocket.send_text(json.dumps({"type": "pong"}))
+            except (asyncio.TimeoutError, json.JSONDecodeError):
+                pass
     except WebSocketDisconnect:
         pass
-
-
-# ------------------------------------------------------------ frontend
-# Serve o app estático (app/static/index.html) na raiz. Precisa vir DEPOIS
-# de todas as rotas /api e /ws acima -- FastAPI casa rotas na ordem em que
-# foram declaradas, então elas continuam tendo prioridade sobre o mount.
-_static_dir = Path(__file__).parent / "static"
-app.mount("/", StaticFiles(directory=str(_static_dir), html=True), name="frontend")
+    finally:
+        pulse_task.cancel()
+        progress_manager.unsubscribe(q)

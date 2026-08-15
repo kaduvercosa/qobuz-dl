@@ -1,225 +1,201 @@
-"""
-progress.py
------------
-O downloader.py do qobuz-dl usa `tqdm` pra desenhar a barra de progresso NO
-TERMINAL (rich/tqdm.write). Isso é ótimo pra CLI, mas não existe um "terminal"
-num backend web -- o que a gente quer é publicar esses mesmos números (bytes
-baixados / total) num WebSocket, em tempo real, sem editar o downloader.py
-do seu fork.
-
-A solução: um `contextvars.ContextVar` guarda o "job" atual da task asyncio
-em execução, e uma subclasse de `tqdm` publica o progresso nesse job toda
-vez que `bar.update(n)` é chamado dentro de `tqdm_download`/`tqdm_download_segments`.
-
-No startup do app a gente troca `qobuz_dl.downloader.tqdm` por essa subclasse
-(monkeypatch de import, não edição de arquivo). Como cada download roda na
-sua própria asyncio Task, e Tasks herdam o contexto de quem as criou, cada
-job "vê" só o próprio progresso -- sem race condition entre downloads
-paralelos.
-"""
 import asyncio
-import contextvars
 import time
-from dataclasses import dataclass, field
-from typing import Dict, Optional
-from uuid import uuid4
+import math
+from typing import Dict, Any, List, Optional
+from pydantic import BaseModel, Field
 
-from tqdm import tqdm as _RealTqdm
+def dump_model(model: BaseModel) -> Dict[str, Any]:
+    if hasattr(model, "model_dump"):
+        return model.model_dump()
+    return model.dict()
 
-current_job: contextvars.ContextVar[Optional["Job"]] = contextvars.ContextVar(
-    "current_job", default=None
-)
-
-
-@dataclass
-class Job:
-    id: str
+class ProgressItem(BaseModel):
+    item_id: str
     url: str
-    status: str = "queued"          # queued | running | done | error | cancelled
-    content_name: str = ""          # nome do álbum/artista/playlist resolvido
-    track_name: str = ""            # faixa atual
-    track_index: int = 0
-    track_total: int = 0
-    bytes_done: int = 0
-    bytes_total: int = 0
-    error: Optional[str] = None
-    queue: "asyncio.Queue" = field(default_factory=asyncio.Queue)
-    created_at: float = field(default_factory=time.time)
-    # Pasta temporária exclusiva deste job (ver JOBS_ROOT em qobuz_service.py).
-    # Fica None depois que os arquivos já foram entregues/removidos pelo
-    # endpoint /api/download/{job_id}/file, ou se o job nunca baixou nada.
-    job_dir: Optional[str] = None
-    # Metadados só pra exibição na fila (capa, artista, nº de faixas do
-    # álbum/playlist, ano, hi-res) -- resolvidos uma vez no início do job em
-    # qobuz_service.run_download_job, não afetam o download em si.
-    cover_url: Optional[str] = None
-    artist: Optional[str] = None
-    content_type: Optional[str] = None       # album | track | playlist | artist | label
-    content_tracks_count: Optional[int] = None
-    year: Optional[str] = None
-    hires: Optional[bool] = None
-    # Fila real (ver JobManager abaixo): posição 1-indexed enquanto "queued",
-    # None assim que começa a rodar. task guarda a asyncio.Task pra dar cancel().
-    position: Optional[int] = None
-    cancel_requested: bool = False
-    task: Optional["asyncio.Task"] = field(default=None, repr=False, compare=False)
+    type: str = "track"  # track, album, playlist, artist
+    title: str = "Aguardando item..."
+    artist: str = "Qobuz-DL"
+    album: str = "Lossless Audio"
+    cover_url: str = "https://static.qobuz.com/images/covers/44/91/0060250889144_600.jpg"
+    bit_depth: int = 24
+    sample_rate: float = 192000
+    quality_str: str = "FLAC 24-Bit / 192 kHz"
+    duration_sec: float = 0.0
+    
+    # Progress metrics
+    status: str = "queued"  # queued, fetching, downloading, processing, tagging, completed, failed, paused
+    status_label: str = "NA FILA"
+    percent: float = 0.0
+    downloaded_bytes: int = 0
+    total_bytes: int = 0
+    speed_bps: float = 0.0
+    speed_str: str = "0.0 MB/s"
+    eta_sec: int = 0
+    eta_str: str = "--:--"
+    stage: str = "INITIALIZING"
+    
+    # Album/Batch specific
+    current_track: int = 0
+    total_tracks: int = 1
+    
+    # Error info
+    error_message: Optional[str] = None
+    created_at: float = Field(default_factory=time.time)
+    updated_at: float = Field(default_factory=time.time)
 
-    def snapshot(self) -> dict:
-        pct_track = (
-            round(self.bytes_done / self.bytes_total * 100, 1)
-            if self.bytes_total else 0.0
-        )
-        return {
-            "job_id": self.id,
-            "status": self.status,
-            "content_name": self.content_name,
-            "track_name": self.track_name,
-            "track_index": self.track_index,
-            "track_total": self.track_total,
-            "track_progress_pct": pct_track,
-            "bytes_done": self.bytes_done,
-            "bytes_total": self.bytes_total,
-            "error": self.error,
-            # true assim que dá pra chamar GET /api/download/{job_id}/file
-            "file_ready": self.status == "done" and self.job_dir is not None,
-            "cover_url": self.cover_url,
-            "artist": self.artist,
-            "content_type": self.content_type,
-            "content_tracks_count": self.content_tracks_count,
-            "year": self.year,
-            "hires": self.hires,
-            "queue_position": self.position,
-            "cancellable": self.status in ("queued", "running"),
-        }
+class SystemStats(BaseModel):
+    is_active: bool = False
+    active_downloads: int = 0
+    total_speed_bps: float = 0.0
+    total_speed_str: str = "0.0 MB/s"
+    completed_today: int = 0
+    failed_today: int = 0
+    queue_count: int = 0
+    visualizer_spectrum: List[float] = Field(default_factory=lambda: [0.0] * 32)
 
-    def emit(self):
-        # non-blocking: se ninguém tiver conectado no WS ainda, não trava o download
-        try:
-            self.queue.put_nowait(self.snapshot())
-        except asyncio.QueueFull:
-            pass
+class LogEntry(BaseModel):
+    timestamp: str
+    level: str  # INFO, SUCCESS, WARN, ERROR, NOTHING
+    message: str
+    source: str = "ENGINE"
 
-    def set_track(self, name: str, index: int, total: int):
-        self.track_name = name
-        self.track_index = index
-        self.track_total = total
-        self.bytes_done = 0
-        self.bytes_total = 0
-        self.emit()
+class ProgressManager:
+    def __init__(self):
+        self.active_items: Dict[str, ProgressItem] = {}
+        self.completed_items: List[ProgressItem] = []
+        self.failed_items: List[ProgressItem] = []
+        self.subscribers: List[asyncio.Queue] = []
+        self.logs: List[LogEntry] = []
+        self._max_logs = 300
+        self._last_speed_measurements: Dict[str, List[tuple]] = {}
 
+    def log(self, level: str, message: str, source: str = "CORE"):
+        """Add system log entry and broadcast to clients."""
+        now_str = time.strftime("%H:%M:%S")
+        entry = LogEntry(timestamp=now_str, level=level.upper(), message=message, source=source.upper())
+        self.logs.append(entry)
+        if len(self.logs) > self._max_logs:
+            self.logs.pop(0)
+        self.broadcast_sync({"type": "log", "data": dump_model(entry)})
 
-class JobManager:
-    """Fila real: `enqueue()` só registra o job e acorda os workers;
-    `start_workers()` sobe N tasks que processam em ordem (FIFO), uma job
-    de cada vez por worker -- então com concurrency=2, até 2 downloads
-    rodam ao mesmo tempo e o resto espera com `position` visível. Cancelar
-    um job na fila só o remove; cancelar um em execução dá `Task.cancel()`
-    de verdade nele."""
+    def subscribe(self) -> asyncio.Queue:
+        q = asyncio.Queue()
+        self.subscribers.append(q)
+        return q
 
-    def __init__(self, concurrency: int = 2):
-        self._jobs: Dict[str, Job] = {}
-        self._pending: list[str] = []
-        self._cond = asyncio.Condition()
-        self._concurrency = concurrency
-        self._workers_started = False
+    def unsubscribe(self, q: asyncio.Queue):
+        if q in self.subscribers:
+            self.subscribers.remove(q)
 
-    def create(self, url: str) -> Job:
-        job = Job(id=uuid4().hex[:12], url=url)
-        self._jobs[job.id] = job
-        return job
-
-    def get(self, job_id: str) -> Optional[Job]:
-        return self._jobs.get(job_id)
-
-    def list(self) -> list[Job]:
-        """Todos os jobs desta sessão do servidor, do mais antigo pro mais
-        novo -- usado pra repopular a fila no frontend quando a página é
-        recarregada (o backend nunca esquece um job por conta própria)."""
-        return sorted(self._jobs.values(), key=lambda j: j.created_at)
-
-    def _reindex_positions(self):
-        for i, jid in enumerate(self._pending, start=1):
-            j = self._jobs.get(jid)
-            if j:
-                j.position = i
-
-    async def enqueue(self, job: Job) -> None:
-        async with self._cond:
-            self._pending.append(job.id)
-            self._reindex_positions()
-            self._cond.notify_all()
-        job.emit()
-
-    async def cancel(self, job_id: str) -> bool:
-        job = self._jobs.get(job_id)
-        if not job:
-            return False
-        if job.status == "queued":
-            async with self._cond:
-                if job_id in self._pending:
-                    self._pending.remove(job_id)
-                    self._reindex_positions()
-            job.cancel_requested = True
-            job.status = "cancelled"
-            job.position = None
-            job.emit()
-            return True
-        if job.status == "running" and job.task is not None:
-            job.cancel_requested = True
-            job.task.cancel()
-            return True
-        return False
-
-    def start_workers(self, run_fn) -> None:
-        """`run_fn` é `session.run_download_job` -- passado de fora (main.py)
-        pra não criar import circular entre progress.py e qobuz_service.py."""
-        if self._workers_started:
-            return
-        self._workers_started = True
-        for _ in range(self._concurrency):
-            asyncio.create_task(self._worker_loop(run_fn))
-
-    async def _worker_loop(self, run_fn) -> None:
-        while True:
-            async with self._cond:
-                while not self._pending:
-                    await self._cond.wait()
-                job_id = self._pending.pop(0)
-                self._reindex_positions()
-            job = self._jobs.get(job_id)
-            if job is None or job.cancel_requested:
-                continue
-            job.task = asyncio.current_task()
+    def broadcast_sync(self, message: Dict[str, Any]):
+        for q in self.subscribers:
             try:
-                await run_fn(job)
-            except asyncio.CancelledError:
-                job.status = "cancelled"
-                job.emit()
-            finally:
-                job.task = None
+                q.put_nowait(message)
+            except asyncio.QueueFull:
+                pass
 
+    async def broadcast(self, message: Dict[str, Any]):
+        for q in list(self.subscribers):
+            try:
+                await q.put(message)
+            except Exception:
+                pass
 
-jobs = JobManager()
+    def create_or_update_item(self, item_id: str, **kwargs) -> ProgressItem:
+        if item_id in self.active_items:
+            item = self.active_items[item_id]
+            for k, v in kwargs.items():
+                if hasattr(item, k):
+                    setattr(item, k, v)
+            item.updated_at = time.time()
+        else:
+            item = ProgressItem(item_id=item_id, **kwargs)
+            self.active_items[item_id] = item
+            self._last_speed_measurements[item_id] = []
+        
+        self._recalculate_item(item)
+        self.broadcast_sync({"type": "item_update", "data": dump_model(item)})
+        return item
 
+    def _recalculate_item(self, item: ProgressItem):
+        now = time.time()
+        measurements = self._last_speed_measurements.setdefault(item.item_id, [])
+        measurements.append((now, item.downloaded_bytes))
+        measurements = [m for m in measurements if now - m[0] <= 2.0]
+        self._last_speed_measurements[item.item_id] = measurements
+        
+        if len(measurements) >= 2:
+            dt = measurements[-1][0] - measurements[0][0]
+            db = measurements[-1][1] - measurements[0][1]
+            if dt > 0.1:
+                item.speed_bps = max(0.0, db / dt)
+        
+        from qobuz_dl.utils import format_speed, format_duration
+        item.speed_str = format_speed(item.speed_bps)
+        
+        if item.total_bytes > 0:
+            item.percent = min(100.0, max(0.0, (item.downloaded_bytes / item.total_bytes) * 100.0))
+            if item.speed_bps > 1024:
+                remaining_bytes = max(0, item.total_bytes - item.downloaded_bytes)
+                item.eta_sec = int(remaining_bytes / item.speed_bps)
+                item.eta_str = format_duration(item.eta_sec)
+            else:
+                item.eta_str = "--:--"
+        else:
+            item.percent = 0.0
+            item.eta_str = "--:--"
 
-class ProgressTqdm(_RealTqdm):
-    """Drop-in replacement for tqdm usado dentro de downloader.py.
-    Mantém o comportamento original (a barra continua funcionando se alguém
-    rodar o mesmo core.py via CLI) e, adicionalmente, publica o progresso
-    no Job da contextvar atual, se houver um."""
+    def mark_completed(self, item_id: str):
+        if item_id in self.active_items:
+            item = self.active_items.pop(item_id)
+            item.status = "completed"
+            item.status_label = "CONCLUÍDO"
+            item.percent = 100.0
+            item.stage = "FINISHED"
+            item.updated_at = time.time()
+            self.completed_items.insert(0, item)
+            self.broadcast_sync({"type": "item_completed", "data": dump_model(item)})
+            self.log("SUCCESS", f"Download concluído: {item.artist} - {item.title} [{item.quality_str}]", "COMPLETER")
 
-    def update(self, n=1):
-        result = super().update(n)
-        job = current_job.get()
-        if job is not None:
-            job.bytes_done = int(self.n)
-            job.bytes_total = int(self.total or 0)
-            job.emit()
-        return result
+    def mark_failed(self, item_id: str, error: str):
+        if item_id in self.active_items:
+            item = self.active_items.pop(item_id)
+            item.status = "failed"
+            item.status_label = "FALHOU"
+            item.error_message = error
+            item.stage = "ERROR"
+            item.updated_at = time.time()
+            self.failed_items.insert(0, item)
+            self.broadcast_sync({"type": "item_failed", "data": dump_model(item)})
+            self.log("ERROR", f"Falha no download ({item.title}): {error}", "ENGINE")
 
+    def get_system_stats(self) -> SystemStats:
+        from qobuz_dl.utils import format_speed
+        
+        total_speed = sum(item.speed_bps for item in self.active_items.values() if item.status == "downloading")
+        active_count = len([item for item in self.active_items.values() if item.status in ("downloading", "processing")])
+        
+        now = time.time()
+        spectrum = []
+        is_active = active_count > 0
+        for i in range(32):
+            if is_active:
+                freq = math.sin(now * 8.0 + i * 0.4) * math.cos(now * 3.5 + i * 0.2)
+                base = 0.3 + 0.6 * math.sin(i / 5.0)
+                val = max(0.05, min(1.0, base + freq * 0.35))
+            else:
+                val = max(0.02, 0.05 * math.sin(now * 1.5 + i * 0.2))
+            spectrum.append(round(val, 3))
 
-def install():
-    """Chamado uma vez no startup do FastAPI: troca a tqdm usada pelo
-    downloader.py do fork pela nossa versão que também emite progresso."""
-    import qobuz_dl.downloader as dl_module
-    dl_module.tqdm = ProgressTqdm
+        return SystemStats(
+            is_active=is_active,
+            active_downloads=active_count,
+            total_speed_bps=total_speed,
+            total_speed_str=format_speed(total_speed),
+            completed_today=len(self.completed_items),
+            failed_today=len(self.failed_items),
+            queue_count=len(self.active_items),
+            visualizer_spectrum=spectrum
+        )
+
+progress_manager = ProgressManager()

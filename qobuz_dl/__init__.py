@@ -1,3 +1,5 @@
-__version__ = "2.3.5.3"
-from .qopy import Client
-from .cli import main
+"""
+Qobuz-DL Nothing Edition - High-Res FLAC Downloader Core
+"""
+__version__ = "2.4.0-nothing"
+__author__ = "Eduardo Verçosa"

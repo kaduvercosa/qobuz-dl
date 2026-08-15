@@ -1,62 +1,29 @@
-import asyncio
-from typing import Dict, List
-from .provider_base import MusicProvider
-from qobuz_dl.utils import get_url_info
-from qobuz_dl.color import Tema
+from typing import Dict, Any, Optional
+from core.provider_base import ProviderBase
+from qobuz_dl.core import QobuzDL
 
-class QobuzProvider(MusicProvider):
-    def __init__(self, qobuz_instance):
-        self.qobuz_core = qobuz_instance
+class QobuzProvider(ProviderBase):
+    def __init__(self, email: str = "", password: str = "", token: str = "", app_id: str = ""):
+        self.qobuz = QobuzDL(email=email, password=password, token=token, app_id=app_id)
 
-    @property
-    def provider_name(self) -> str:
-        return "Qobuz"
+    def authenticate(self, email: str = "", password: str = "", token: str = "", app_id: str = "") -> Dict[str, Any]:
+        return self.qobuz.initialize_client(email=email, password=password, token=token, app_id=app_id)
 
-    @property
-    def supported_domains(self) -> List[str]:
-        return ["play.qobuz.com", "open.qobuz.com"]
+    def fetch_dynamic_tokens(self):
+        return self.qobuz.get_tokens()
 
-    async def authenticate(self, credentials: Dict[str, str]) -> bool:
-        try:
-            await self.qobuz_core.initialize_client(
-                email=credentials.get("email", ""),
-                pwd=credentials.get("password", ""),
-                app_id=credentials.get("app_id", ""),
-                secrets=credentials.get("secrets", [])
-            )
-            return True
-        except Exception as e:
-            # Silenciado, mantendo o print apenas se a autenticação falhar
-            print(f"[{self.provider_name}] Erro de autenticação: {e}")
-            return False
+    def resolve(self, url: str) -> Dict[str, Any]:
+        from qobuz_dl.constants import QOBUZ_URL_REGEX
+        match = QOBUZ_URL_REGEX.search(url.strip())
+        if match:
+            return {"valid": True, "type": match.group("type"), "id": match.group("id")}
+        return {"valid": False, "error": "Invalid Qobuz URL"}
 
-    def is_single_track(self, url: str) -> bool:
-        """
-        Diz ao Maestro se essa URL é uma faixa avulsa (track) ou não (álbum,
-        playlist, artista, label). Usado na pré-varredura do process_batch
-        pra decidir automaticamente entre o badge "SINGLE" e "LOTE DE SINGLES".
-        """
-        try:
-            normalized = url.replace("open.qobuz.com", "play.qobuz.com")
-            url_type, _ = get_url_info(normalized)
-            return url_type == "track"
-        except Exception:
-            return False
+    def get_track_metadata(self, track_id: str) -> Dict[str, Any]:
+        return self.qobuz.get_track_info(track_id)
 
-    async def process_url(self, url: str, is_single_batch: bool = False, single_batch_index: int = 1, single_batch_total: int = 1) -> None:
-        """
-        Chama a lógica de download de forma totalmente silenciosa. Quando o
-        Maestro identifica 2+ faixas avulsas no lote, repassa is_single_batch/
-        single_batch_index/single_batch_total pro handle_url, que por sua vez
-        aciona o badge "🎵 LOTE DE SINGLES" (em vez de "🎵 SINGLE") no downloader.
-        """
-        await self.qobuz_core.handle_url(
-            url,
-            is_single_batch=is_single_batch,
-            single_batch_index=single_batch_index,
-            single_batch_total=single_batch_total,
-        )
+    def get_album_metadata(self, album_id: str) -> Dict[str, Any]:
+        return self.qobuz.get_album_info(album_id)
 
-    async def shutdown(self):
-        if hasattr(self.qobuz_core, 'client') and self.qobuz_core.client:
-            await self.qobuz_core.client.close()
+    def get_download_url(self, track_id: str, quality: int = 27) -> Dict[str, Any]:
+        return self.qobuz.client.get_file_url(track_id, format_id=quality)

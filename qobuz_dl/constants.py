@@ -1,44 +1,69 @@
-"""
-Constantes globais e formatações padrão para o projeto qobuz-dl.
-"""
+import re
 
-from typing import Final
-from pathlib import Path
-import os
-import sys
-import platform
+FORMAT_IDS = {
+    5: "MP3 320 kbps",
+    6: "FLAC 16-Bit / 44.1 kHz (CD Quality)",
+    7: "FLAC 24-Bit / <= 96 kHz (Hi-Res)",
+    27: "FLAC 24-Bit / 192 kHz (Hi-Res Extreme)",
+}
 
-# Formatação padrão para nomes de pastas e ficheiros de áudio
-DEFAULT_FOLDER: Final[str] = "{release_type}/{album_artist} - {album_title} ({year}) [{format} {bit_depth}]"
-DEFAULT_TRACK: Final[str] = "{track_number} - {track_title_base}"
-DEFAULT_MULTIPLE_DISC_TRACK: Final[str] = "{disc_number}.{track_number} - {track_title_base}"
+DEFAULT_FOLDER_FORMAT = "{artist}/{year} - {album} [{quality}]"
+DEFAULT_TRACK_FORMAT = "{track_number} - {title}"
 
-# Limite de segurança para o tamanho máximo do caminho do ficheiro.
-OK_MAX_CHARACTER_LENGTH: Final[int] = 180
+QOBUZ_URL_REGEX = re.compile(
+    r"https?://(?:www\.|open\.|play\.)?qobuz\.com/(?:[a-zA-Z]{2}-[a-zA-Z]{2}/)?(?P<type>album|track|playlist|artist|label)/(?:[^/]+/)?(?P<id>[a-zA-Z0-9_-]+)"
+)
 
-# --- Detecção de iOS (a-Shell, Pythonista, iSH, etc.) ---
-def _detect_ios() -> bool:
-    if sys.platform == "ios":
-        return True
-    if sys.platform == "darwin":
-        if platform.machine().startswith(("iPhone", "iPad", "iPod")):
-            return True
-        if "PYTHONISTA_ROOT" in os.environ:
-            return True
-        if "/var/mobile/" in str(Path.home()):
-            return True
-    return False
-
-IS_IOS: Final[bool] = _detect_ios()
-
-# --- Caminhos base dependentes da plataforma ---
-if IS_IOS:
-    # No iOS tudo fica em ~/Documents para ser acessível no Files
-    _BASE = Path.home() / "Documents"
-else:
-    _BASE = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
-
-CONFIG_PATH: Final[Path] = _BASE / "qobuz-dl"
-
-# Pasta padrão de downloads
-DEFAULT_DOWNLOAD_DIR: Final[str] = str(_BASE / "Qobuz Downloads") if IS_IOS else "Qobuz Downloads"
+DEFAULT_CONFIG = {
+    "auth": {
+        "email": "",
+        "password": "",
+        "user_id": "",
+        "user_auth_token": "",
+        "app_id": "712108709",
+        "app_secret": ""
+    },
+    "quality": {
+        "format_id": 27,
+        "fallback_quality": True,
+        "max_sample_rate": 192000,
+        "max_bit_depth": 24,
+        "embed_art": True,
+        "art_resolution": "max",
+        "save_cover_file": True,
+        "cover_filename": "cover.jpg",
+        "embed_lyrics": True,
+        "save_lrc_file": True,
+        "calculate_replaygain": False
+    },
+    "paths": {
+        "download_dir": "./downloads",
+        "folder_format": "{artist}/{year} - {album} [{quality}]",
+        "track_format": "{track_number} - {title}",
+        "sanitize_fat32": True,
+        "overwrite_policy": "skip"
+    },
+    "engine": {
+        "max_workers": 4,
+        "chunk_size_kb": 1024,
+        "max_retries": 3,
+        "retry_delay_sec": 2,
+        "bandwidth_limit_mbps": 0,
+        "keep_cache": False
+    },
+    "integrations": {
+        "telegram_enabled": False,
+        "telegram_bot_token": "",
+        "telegram_chat_id": "",
+        "discord_webhook_url": "",
+        "desktop_notifications": True,
+        "sound_alerts": True
+    },
+    "ui": {
+        "theme": "nothing_dark",
+        "glyph_effects": True,
+        "dot_matrix_font": True,
+        "live_visualizer": True,
+        "red_accent": "#D71921"
+    }
+}
