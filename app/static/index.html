@@ -1,0 +1,510 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>QOBUZ · DL</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Doto:wght@400..900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#070707;
+    --bg-elevated:#121212;
+    --bg-card:#0f0f0f;
+    --border:#242424;
+    --border-soft:#1a1a1a;
+    --fg:#f2f1ec;
+    --fg-dim:#8c8c86;
+    --fg-faint:#4d4d49;
+    --accent:#ff1e1e;
+    --accent-dim:#5c0f0f;
+    --radius:0px;
+    --mono:'JetBrains Mono', ui-monospace, monospace;
+    --dot:'Doto', var(--mono);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:
+      radial-gradient(circle, #151515 1px, transparent 1px) 0 0/22px 22px,
+      var(--bg);
+    color:var(--fg);
+    font-family:var(--mono);
+    min-height:100dvh;
+    -webkit-font-smoothing:antialiased;
+  }
+  ::selection{background:var(--accent);color:#0a0a0a;}
+  a{color:inherit;}
+  button, input, select{font-family:inherit;}
+
+  .wrap{max-width:720px;margin:0 auto;padding:0 20px 80px;}
+
+  /* header ---------------------------------------------------------- */
+  header{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:22px 20px 18px;max-width:720px;margin:0 auto;
+    border-bottom:1px solid var(--border-soft);
+  }
+  .wordmark{
+    font-family:var(--dot);font-weight:700;font-size:22px;letter-spacing:1px;
+    display:flex;align-items:center;gap:10px;
+  }
+  .wordmark .sep{color:var(--accent);}
+  .glyph{
+    width:9px;height:9px;border-radius:50%;
+    background:var(--fg-faint);
+    box-shadow:0 0 0 3px rgba(255,255,255,0.03);
+    flex:none;
+  }
+  .glyph.online{background:var(--accent);animation:pulse 2.2s ease-in-out infinite;}
+  .glyph.busy{background:var(--accent);animation:pulse 0.7s ease-in-out infinite;}
+  .glyph.error{background:var(--accent);animation:blink 0.5s steps(2,jump-none) infinite;}
+  @keyframes pulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(255,30,30,.35)}50%{opacity:.35;box-shadow:0 0 0 6px rgba(255,30,30,0)}}
+  @keyframes blink{50%{opacity:.15}}
+  .status-line{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--fg-dim);text-transform:uppercase;letter-spacing:.06em;}
+
+  /* login card ------------------------------------------------------- */
+  .card{
+    background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);
+    padding:22px;margin-top:24px;
+  }
+  .card h2{
+    font-family:var(--dot);font-size:14px;letter-spacing:.08em;text-transform:uppercase;
+    margin:0 0 4px;color:var(--fg-dim);font-weight:600;
+  }
+  .card p.hint{font-size:12px;color:var(--fg-dim);margin:0 0 18px;line-height:1.5;}
+  label{display:block;font-size:11px;color:var(--fg-dim);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;}
+  input[type=text], input[type=password], input[type=url]{
+    width:100%;background:var(--bg-elevated);border:1px solid var(--border);color:var(--fg);
+    padding:12px 13px;border-radius:var(--radius);font-size:14px;outline:none;
+  }
+  input:focus{border-color:var(--accent);}
+  .field{margin-bottom:14px;}
+  .row{display:flex;gap:10px;}
+  .row .field{flex:1;}
+  .toggle-link{
+    background:none;border:none;color:var(--fg-dim);font-size:11px;text-decoration:underline;
+    cursor:pointer;padding:0;margin-top:2px;text-underline-offset:3px;
+  }
+  .toggle-link:hover{color:var(--accent);}
+
+  .btn{
+    appearance:none;border:1px solid var(--accent);background:var(--accent);color:#0a0a0a;
+    font-family:var(--mono);font-weight:700;font-size:12.5px;letter-spacing:.06em;text-transform:uppercase;
+    padding:12px 18px;border-radius:var(--radius);cursor:pointer;
+  }
+  .btn:hover{background:#ff3b3b;}
+  .btn:disabled{background:var(--fg-faint);border-color:var(--fg-faint);color:#0a0a0a;cursor:not-allowed;opacity:.6;}
+  .btn.ghost{background:transparent;color:var(--fg);border-color:var(--border);}
+  .btn.ghost:hover{border-color:var(--accent);color:var(--accent);}
+  .btn.small{padding:8px 12px;font-size:11px;}
+  .btn.full{width:100%;}
+
+  .error-msg{color:var(--accent);font-size:12px;margin-top:10px;}
+
+  /* main app ---------------------------------------------------------- */
+  #app{display:none;}
+  #app.visible{display:block;}
+  #login-card.hidden{display:none;}
+
+  .hero{margin-top:28px;}
+  .hero h1{
+    font-family:var(--dot);font-size:15px;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--fg-dim);margin:0 0 10px;font-weight:600;
+  }
+  .paste-box{
+    background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);
+    padding:16px;
+  }
+  textarea{
+    width:100%;min-height:64px;resize:vertical;background:transparent;border:none;color:var(--fg);
+    font-family:var(--mono);font-size:14px;outline:none;line-height:1.5;
+  }
+  textarea::placeholder{color:var(--fg-faint);}
+  .paste-box-footer{
+    display:flex;align-items:center;justify-content:space-between;margin-top:10px;
+    padding-top:10px;border-top:1px solid var(--border-soft);
+  }
+  .hint-small{font-size:11px;color:var(--fg-faint);}
+
+  .quality-select{display:flex;gap:6px;margin-top:14px;flex-wrap:wrap;}
+  .qbtn{
+    border:1px solid var(--border);background:var(--bg-elevated);color:var(--fg-dim);
+    padding:8px 10px;font-size:11px;letter-spacing:.03em;cursor:pointer;border-radius:var(--radius);
+  }
+  .qbtn.active{border-color:var(--accent);color:var(--accent);background:rgba(255,30,30,.07);}
+
+  /* jobs --------------------------------------------------------------*/
+  .jobs{margin-top:30px;display:flex;flex-direction:column;gap:12px;}
+  .jobs-title{font-family:var(--dot);font-size:12px;letter-spacing:.08em;color:var(--fg-faint);text-transform:uppercase;margin-bottom:2px;}
+  .job{
+    background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;
+  }
+  .job-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;}
+  .job-name{font-size:13.5px;font-weight:600;word-break:break-word;}
+  .job-url{font-size:11px;color:var(--fg-faint);word-break:break-all;margin-top:2px;}
+  .badge{
+    font-size:10px;letter-spacing:.06em;text-transform:uppercase;padding:3px 7px;border-radius:var(--radius);
+    border:1px solid var(--border);color:var(--fg-dim);white-space:nowrap;flex:none;
+  }
+  .badge.running{color:var(--accent);border-color:var(--accent-dim);}
+  .badge.done{color:var(--fg);border-color:var(--fg-dim);}
+  .badge.error{color:var(--accent);border-color:var(--accent);}
+  .badge.queued{color:var(--fg-faint);}
+
+  .track-line{font-size:12px;color:var(--fg-dim);margin-top:10px;display:flex;justify-content:space-between;}
+  .bar-track{
+    height:8px;margin-top:8px;background:var(--bg-elevated);border:1px solid var(--border-soft);
+    position:relative;overflow:hidden;
+  }
+  .bar-fill{
+    height:100%;width:0%;
+    background-image:repeating-linear-gradient(90deg, var(--accent) 0 5px, transparent 5px 8px);
+    transition:width .25s linear;
+  }
+  .job-error-text{color:var(--accent);font-size:12px;margin-top:10px;}
+  .job-actions{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;}
+
+  footer{max-width:720px;margin:40px auto 0;padding:0 20px;font-size:11px;color:var(--fg-faint);}
+
+  @media (max-width:480px){
+    .wordmark{font-size:18px;}
+    .card,.paste-box,.job{padding:15px;}
+  }
+</style>
+</head>
+<body>
+
+  <header>
+    <div class="wordmark">QOBUZ<span class="sep">○</span>DL</div>
+    <div class="status-line"><span class="glyph" id="glyph"></span><span id="status-text">offline</span></div>
+  </header>
+
+  <div class="wrap">
+
+    <!-- LOGIN ---------------------------------------------------------- -->
+    <div class="card" id="login-card">
+      <h2>Sessão</h2>
+      <p class="hint">Cole o <b>user_auth_token</b> extraído do DevTools (F12 → Application/Storage → localStorage → play.qobuz.com). Fica salvo só neste navegador.</p>
+
+      <div id="token-fields">
+        <div class="field">
+          <label for="token-input">Auth token</label>
+          <input type="password" id="token-input" placeholder="ey... / token do Qobuz" autocomplete="off" />
+        </div>
+      </div>
+
+      <div id="pwd-fields" style="display:none;">
+        <div class="row">
+          <div class="field">
+            <label for="email-input">Email</label>
+            <input type="text" id="email-input" autocomplete="off" />
+          </div>
+          <div class="field">
+            <label for="pwd-input">Senha</label>
+            <input type="password" id="pwd-input" autocomplete="off" />
+          </div>
+        </div>
+      </div>
+
+      <div class="row" style="align-items:flex-end;">
+        <button class="btn" id="login-btn" style="flex:1;">Entrar</button>
+      </div>
+      <button class="toggle-link" id="toggle-auth-mode">usar email e senha em vez de token</button>
+      <div class="error-msg" id="login-error" style="display:none;"></div>
+    </div>
+
+    <!-- APP -------------------------------------------------------------->
+    <div id="app">
+      <div class="hero">
+        <h1>Colar link</h1>
+        <div class="paste-box">
+          <textarea id="url-input" placeholder="https://open.qobuz.com/album/...&#10;(um link por linha p/ baixar vários de uma vez)"></textarea>
+          <div class="paste-box-footer">
+            <span class="hint-small">álbum · faixa · playlist · artista · label</span>
+            <button class="btn" id="submit-btn">Baixar</button>
+          </div>
+        </div>
+
+        <div class="quality-select" id="quality-select">
+          <button class="qbtn" data-q="5">MP3 320</button>
+          <button class="qbtn" data-q="6">CD 16/44.1</button>
+          <button class="qbtn active" data-q="7">HI-RES 24/96</button>
+          <button class="qbtn" data-q="27">HI-RES 24/192</button>
+        </div>
+        <div class="error-msg" id="submit-error" style="display:none;"></div>
+      </div>
+
+      <div class="jobs" id="jobs-section" style="display:none;">
+        <div class="jobs-title">Fila</div>
+        <div id="jobs-list"></div>
+      </div>
+    </div>
+
+  </div>
+
+  <footer>qobuz-dl master edition · sessão local ao navegador · nada é salvo no servidor além da duração do download</footer>
+
+<script>
+(() => {
+  const API = ""; // mesma origem
+  const WS_PROTO = location.protocol === "https:" ? "wss:" : "ws:";
+  const $ = (sel) => document.querySelector(sel);
+
+  const glyph = $("#glyph");
+  const statusText = $("#status-text");
+  const loginCard = $("#login-card");
+  const app = $("#app");
+  const loginBtn = $("#login-btn");
+  const loginError = $("#login-error");
+  const tokenInput = $("#token-input");
+  const emailInput = $("#email-input");
+  const pwdInput = $("#pwd-input");
+  const tokenFields = $("#token-fields");
+  const pwdFields = $("#pwd-fields");
+  const toggleAuthMode = $("#toggle-auth-mode");
+  const urlInput = $("#url-input");
+  const submitBtn = $("#submit-btn");
+  const submitError = $("#submit-error");
+  const jobsSection = $("#jobs-section");
+  const jobsList = $("#jobs-list");
+  const qualitySelect = $("#quality-select");
+
+  let quality = Number(localStorage.getItem("qbdl_quality") || 7);
+  let usingToken = true;
+  let anyRunning = false;
+
+  function setGlyph(state) {
+    glyph.className = "glyph " + state;
+    statusText.textContent = { online: "online", busy: "baixando", error: "erro", offline: "offline" }[state] || state;
+  }
+
+  // ---------------------------------------------------------------- login
+  toggleAuthMode.addEventListener("click", () => {
+    usingToken = !usingToken;
+    tokenFields.style.display = usingToken ? "" : "none";
+    pwdFields.style.display = usingToken ? "none" : "";
+    toggleAuthMode.textContent = usingToken ? "usar email e senha em vez de token" : "usar auth token em vez de email/senha";
+  });
+
+  qualitySelect.addEventListener("click", (e) => {
+    const b = e.target.closest(".qbtn");
+    if (!b) return;
+    quality = Number(b.dataset.q);
+    localStorage.setItem("qbdl_quality", quality);
+    [...qualitySelect.children].forEach((c) => c.classList.toggle("active", c === b));
+  });
+
+  async function doLogin(silent = false) {
+    loginError.style.display = "none";
+    const body = { quality };
+    if (usingToken) {
+      const t = tokenInput.value.trim() || localStorage.getItem("qbdl_token") || "";
+      if (!t) { if (!silent) { loginError.textContent = "cole o token primeiro"; loginError.style.display = "block"; } return false; }
+      body.user_auth_token = t;
+    } else {
+      body.email = emailInput.value.trim();
+      body.password = pwdInput.value;
+      if (!body.email || !body.password) { if (!silent) { loginError.textContent = "preencha email e senha"; loginError.style.display = "block"; } return false; }
+    }
+    loginBtn.disabled = true;
+    loginBtn.textContent = "Entrando...";
+    try {
+      const r = await fetch(`${API}/api/login`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.detail || `falha no login (${r.status})`);
+      if (usingToken) localStorage.setItem("qbdl_token", body.user_auth_token);
+      setGlyph("online");
+      loginCard.classList.add("hidden");
+      app.classList.add("visible");
+      return true;
+    } catch (err) {
+      setGlyph("error");
+      if (!silent) { loginError.textContent = err.message; loginError.style.display = "block"; }
+      return false;
+    } finally {
+      loginBtn.disabled = false;
+      loginBtn.textContent = "Entrar";
+    }
+  }
+
+  loginBtn.addEventListener("click", () => doLogin(false));
+  tokenInput.addEventListener("keydown", (e) => { if (e.key === "Enter") doLogin(false); });
+
+  // ---------------------------------------------------------------- jobs
+  const jobEls = new Map(); // job_id -> {el, ws, pollTimer}
+
+  function fmtBytes(n) {
+    if (!n) return "0 B";
+    const u = ["B", "KB", "MB", "GB"]; let i = 0;
+    while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+    return `${n.toFixed(i === 0 ? 0 : 1)} ${u[i]}`;
+  }
+
+  function renderJob(job) {
+    let rec = jobEls.get(job.job_id);
+    if (!rec) {
+      const el = document.createElement("div");
+      el.className = "job";
+      jobsList.prepend(el);
+      rec = { el };
+      jobEls.set(job.job_id, rec);
+    }
+    const el = rec.el;
+    const badgeClass = job.status || "queued";
+    const badgeLabel = { queued: "na fila", running: "baixando", done: "pronto", error: "erro" }[job.status] || job.status;
+
+    el.innerHTML = `
+      <div class="job-top">
+        <div>
+          <div class="job-name">${escapeHtml(job.content_name || "resolvendo…")}</div>
+          <div class="job-url">${escapeHtml(job.url || "")}</div>
+        </div>
+        <span class="badge ${badgeClass}">${badgeLabel}</span>
+      </div>
+      ${job.status === "running" || job.status === "done" ? `
+        <div class="track-line">
+          <span>${escapeHtml(job.track_name || "")} ${job.track_total ? `(${job.track_index}/${job.track_total})` : ""}</span>
+          <span>${job.bytes_total ? fmtBytes(job.bytes_done) + " / " + fmtBytes(job.bytes_total) : ""}</span>
+        </div>
+        <div class="bar-track"><div class="bar-fill" style="width:${job.track_progress_pct || 0}%"></div></div>
+      ` : ""}
+      ${job.status === "error" ? `<div class="job-error-text">ERRO: ${escapeHtml(job.error || "desconhecido")}</div>` : ""}
+      ${job.status === "done" && job.file_ready ? `
+        <div class="job-actions">
+          <button class="btn small" data-action="download" data-mode="auto">Baixar</button>
+          <button class="btn ghost small" data-action="download" data-mode="zip">Forçar .zip</button>
+        </div>
+      ` : ""}
+      ${job.status === "done" && !job.file_ready ? `<div class="hint-small" style="margin-top:10px;">já entregue e removido do servidor</div>` : ""}
+    `;
+
+    el.querySelectorAll('[data-action="download"]').forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const mode = btn.dataset.mode;
+        const qs = mode === "zip" ? "?as_zip=true" : "";
+        const a = document.createElement("a");
+        a.href = `${API}/api/download/${job.job_id}/file${qs}`;
+        a.rel = "noopener";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        btn.closest(".job-actions").innerHTML = '<span class="hint-small">enviado pro navegador — arquivos removidos do servidor em seguida</span>';
+      });
+    });
+
+    updateAnyRunning();
+  }
+
+  function updateAnyRunning() {
+    anyRunning = [...jobEls.keys()].some((id) => {
+      const cached = lastSnapshot.get(id);
+      return cached && (cached.status === "queued" || cached.status === "running");
+    });
+    if (!anyRunning) setGlyph("online");
+  }
+
+  const lastSnapshot = new Map();
+
+  function trackJob(job_id, url) {
+    lastSnapshot.set(job_id, { status: "queued", url });
+    renderJob({ job_id, url, status: "queued" });
+    connectWs(job_id);
+  }
+
+  function connectWs(job_id) {
+    let ws;
+    try {
+      ws = new WebSocket(`${WS_PROTO}//${location.host}/ws/jobs/${job_id}`);
+    } catch {
+      return pollJob(job_id);
+    }
+    let gotAny = false;
+    ws.onmessage = (ev) => {
+      gotAny = true;
+      const job = JSON.parse(ev.data);
+      job.job_id = job.job_id || job_id;
+      lastSnapshot.set(job_id, job);
+      renderJob(job);
+      setGlyph(job.status === "running" ? "busy" : job.status === "error" ? "error" : "online");
+    };
+    ws.onclose = () => {
+      const snap = lastSnapshot.get(job_id);
+      if (!snap || (snap.status !== "done" && snap.status !== "error")) pollJob(job_id);
+    };
+    ws.onerror = () => { if (!gotAny) pollJob(job_id); };
+  }
+
+  async function pollJob(job_id) {
+    const tick = async () => {
+      try {
+        const r = await fetch(`${API}/api/jobs/${job_id}`);
+        if (!r.ok) return;
+        const job = await r.json();
+        job.job_id = job_id;
+        job.url = (lastSnapshot.get(job_id) || {}).url;
+        lastSnapshot.set(job_id, job);
+        renderJob(job);
+        if (job.status === "done" || job.status === "error") return;
+      } catch {}
+      setTimeout(tick, 2000);
+    };
+    tick();
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
+  // ------------------------------------------------------------- submit
+  submitBtn.addEventListener("click", async () => {
+    submitError.style.display = "none";
+    const urls = urlInput.value.split("\n").map((s) => s.trim()).filter(Boolean);
+    if (!urls.length) { submitError.textContent = "cole ao menos um link"; submitError.style.display = "block"; return; }
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Enviando...";
+    try {
+      for (const url of urls) {
+        const r = await fetch(`${API}/api/download`, {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url }),
+        });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(data.detail || `falha ao iniciar (${r.status})`);
+        jobsSection.style.display = "";
+        trackJob(data.job_id, url);
+        setGlyph("busy");
+      }
+      urlInput.value = "";
+    } catch (err) {
+      submitError.textContent = err.message;
+      submitError.style.display = "block";
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = "Baixar";
+    }
+  });
+
+  urlInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submitBtn.click();
+  });
+
+  // ------------------------------------------------------------- boot
+  (async function boot() {
+    const savedToken = localStorage.getItem("qbdl_token");
+    [...qualitySelect.children].forEach((c) => c.classList.toggle("active", Number(c.dataset.q) === quality));
+    if (savedToken) {
+      tokenInput.value = savedToken;
+      const ok = await doLogin(true);
+      if (!ok) { loginCard.classList.remove("hidden"); app.classList.remove("visible"); }
+    } else {
+      setGlyph("offline");
+    }
+  })();
+})();
+</script>
+</body>
+</html>

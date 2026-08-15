@@ -4,6 +4,7 @@ from pathlib import Path
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from starlette.background import BackgroundTask
 
@@ -154,3 +155,11 @@ async def job_ws(websocket: WebSocket, job_id: str):
                 break
     except WebSocketDisconnect:
         pass
+
+
+# ------------------------------------------------------------ frontend
+# Serve o app estático (app/static/index.html) na raiz. Precisa vir DEPOIS
+# de todas as rotas /api e /ws acima -- FastAPI casa rotas na ordem em que
+# foram declaradas, então elas continuam tendo prioridade sobre o mount.
+_static_dir = Path(__file__).parent / "static"
+app.mount("/", StaticFiles(directory=str(_static_dir), html=True), name="frontend")
