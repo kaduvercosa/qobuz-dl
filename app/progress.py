@@ -49,6 +49,13 @@ class Job:
     # Fica None depois que os arquivos já foram entregues/removidos pelo
     # endpoint /api/download/{job_id}/file, ou se o job nunca baixou nada.
     job_dir: Optional[str] = None
+    # Metadados só pra exibição na fila (capa, artista, nº de faixas do
+    # álbum/playlist) -- resolvidos uma vez no início do job em
+    # qobuz_service.run_download_job, não afetam o download em si.
+    cover_url: Optional[str] = None
+    artist: Optional[str] = None
+    content_type: Optional[str] = None       # album | track | playlist | artist | label
+    content_tracks_count: Optional[int] = None
 
     def snapshot(self) -> dict:
         pct_track = (
@@ -68,6 +75,10 @@ class Job:
             "error": self.error,
             # true assim que dá pra chamar GET /api/download/{job_id}/file
             "file_ready": self.status == "done" and self.job_dir is not None,
+            "cover_url": self.cover_url,
+            "artist": self.artist,
+            "content_type": self.content_type,
+            "content_tracks_count": self.content_tracks_count,
         }
 
     def emit(self):

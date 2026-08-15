@@ -137,6 +137,141 @@ class QobuzSession:
             "hires": bool(t.get("hires_streamable")),
         } for t in items]
 
+    # --------------------------------------------------------- preview/link
+    # "Preview" = mesma ideia do search_json, só que devolvendo o
+    # item INTEIRO (capa grande, lista completa de faixas com duração/hi-res
+    # de cada uma, etc.) -- é o que alimenta a tela de "colar link" e o
+    # clique num resultado de busca no frontend.
+
+    @staticmethod
+    def _fmt_track(t: dict) -> dict:
+        return {
+            "id": str(t.get("id")),
+            "number": t.get("track_number"),
+            "title": t.get("title") or t.get("name") or "Unknown",
+            "version": t.get("version"),
+            "artist": (t.get("performer") or {}).get("name") or (t.get("artist") or {}).get("name"),
+            "duration_seconds": t.get("duration"),
+            "hires": bool(t.get("hires_streamable")),
+            "bit_depth": t.get("maximum_bit_depth"),
+            "sampling_rate": t.get("maximum_sampling_rate"),
+        }
+
+    def _normalize_track(self, t: dict) -> dict:
+        album = t.get("album") or {}
+        return {
+            "type": "track",
+            "id": str(t.get("id")),
+            "title": t.get("title") or "Unknown",
+            "version": t.get("version"),
+            "artist": (t.get("performer") or {}).get("name") or (album.get("artist") or {}).get("name", "Unknown"),
+            "album_title": album.get("title"),
+            "cover_url": (album.get("image") or {}).get("large"),
+            "year": str(album.get("release_date_original") or "")[:4],
+            "genre": (album.get("genre") or {}).get("name"),
+            "duration_seconds": t.get("duration"),
+            "tracks_count": 1,
+            "hires": bool(t.get("hires_streamable")),
+            "bit_depth": t.get("maximum_bit_depth"),
+            "sampling_rate": t.get("maximum_sampling_rate"),
+            "tracks": [self._fmt_track(t)],
+        }
+
+    def _normalize_album(self, meta: dict) -> dict:
+        tracks = meta.get("tracks", {}).get("items", [])
+        return {
+            "type": "album",
+            "id": str(meta.get("id")),
+            "title": meta.get("title") or "Unknown",
+            "version": meta.get("version"),
+            "artist": (meta.get("artist") or {}).get("name", "Unknown"),
+            "cover_url": (meta.get("image") or {}).get("large"),
+            "year": str(meta.get("release_date_original") or meta.get("release_date") or "")[:4],
+            "genre": (meta.get("genre") or {}).get("name"),
+            "label": (meta.get("label") or {}).get("name"),
+            "duration_seconds": meta.get("duration"),
+            "tracks_count": meta.get("tracks_count", len(tracks)),
+            "hires": bool(meta.get("hires_streamable")),
+            "bit_depth": meta.get("maximum_bit_depth"),
+            "sampling_rate": meta.get("maximum_sampling_rate"),
+            "tracks": [self._fmt_track(t) for t in tracks],
+        }
+
+    @staticmethod
+    def _pick_cover(item_type: str, head: dict, items: list) -> Optional[str]:
+        if item_type == "artist":
+            return (head.get("image") or {}).get("large")
+        if item_type == "playlist":
+            imgs = head.get("images300") or head.get("images") or []
+            if isinstance(imgs, list) and imgs:
+                return imgs[0]
+            if items:
+                return ((items[0].get("album") or {}).get("image") or {}).get("large")
+            return None
+        if item_type == "label" and items:
+            return (items[0].get("image") or {}).get("large")
+        return None
+
+    def _normalize_playlist(self, head: dict, items: list) -> dict:
+        total_dur = sum(it.get("duration") or 0 for it in items)
+        return {
+            "type": "playlist",
+            "id": str(head.get("id")),
+            "title": head.get("name") or "Unknown",
+            "owner": (head.get("owner") or {}).get("name"),
+            "cover_url": self._pick_cover("playlist", head, items),
+            "duration_seconds": total_dur,
+            "tracks_count": head.get("tracks_count", len(items)),
+            "hires": any(bool(it.get("hires_streamable")) for it in items),
+            "tracks": [self._fmt_track(it) for it in items],
+        }
+
+    def _normalize_artist_or_label(self, item_type: str, head: dict, items: list) -> dict:
+        return {
+            "type": item_type,
+            "id": str(head.get("id")),
+            "title": head.get("name") or "Unknown",
+            "cover_url": self._pick_cover(item_type, head, items),
+            "albums_count": head.get("albums_count", len(items)),
+            "albums": [{
+                "id": str(al.get("id")),
+                "title": al.get("title") or "Unknown",
+                "version": al.get("version"),
+                "cover_url": (al.get("image") or {}).get("large"),
+                "year": str(al.get("release_date_original") or "")[:4],
+                "tracks_count": al.get("tracks_count"),
+                "hires": bool(al.get("hires_streamable")),
+            } for al in items],
+        }
+
+    async def preview_by_id(self, item_type: str, item_id: str) -> dict:
+        qdl = self._require_client()
+        client = qdl.client
+        if item_type == "track":
+            return self._normalize_track(await client.get_track_meta(item_id))
+        if item_type == "album":
+            return self._normalize_album(await client.get_album_meta(item_id))
+        if item_type in ("playlist", "artist", "label"):
+            fetch_map = {
+                "playlist": client.get_plist_meta,
+                "artist": client.get_artist_meta,
+                "label": client.get_label_meta,
+            }
+            iterable_key = "tracks" if item_type == "playlist" else "albums"
+            chunks = [c async for c in fetch_map[item_type](item_id)]
+            head = chunks[0] if chunks else {}
+            items = [it for c in chunks for it in c.get(iterable_key, {}).get("items", [])]
+            if item_type == "playlist":
+                return self._normalize_playlist(head, items)
+            return self._normalize_artist_or_label(item_type, head, items)
+        raise ValueError(f"item_type inválido: {item_type}")
+
+    async def resolve_url(self, url: str) -> dict:
+        url_type, item_id = get_url_info(url)
+        result = await self.preview_by_id(url_type, item_id)
+        result["source_url"] = url
+        return result
+
     # ------------------------------------------------------------ download
     async def run_download_job(self, job: Job) -> None:
         """Reimplementa o roteamento de QobuzDL.handle_url, mas chamando
@@ -156,7 +291,16 @@ class QobuzSession:
             url_type, item_id = get_url_info(job.url)
 
             if url_type in ("album", "track"):
+                job.content_type = url_type
                 job.content_name = f"{url_type.title()} {item_id}"
+                try:
+                    preview = await self.preview_by_id(url_type, item_id)
+                    job.content_name = preview.get("title") or job.content_name
+                    job.artist = preview.get("artist")
+                    job.cover_url = preview.get("cover_url")
+                    job.content_tracks_count = preview.get("tracks_count")
+                except Exception:
+                    pass  # não é crítico -- se falhar, o download segue normalmente
                 job.set_track(job.content_name, 1, 1)
                 await qdl.download_from_id(item_id, album=(url_type == "album"), alt_path=str(job_dir))
 
@@ -170,9 +314,12 @@ class QobuzSession:
                 content = [chunk async for chunk in func(item_id)]
                 content_name = content[0]["name"]
                 job.content_name = content_name
+                job.content_type = url_type
+                job.cover_url = self._pick_cover(url_type, content[0] if content else {}, [])
 
                 items = [it for chunk in content for it in chunk.get(iterable_key, {}).get("items", [])]
                 job.track_total = len(items)
+                job.content_tracks_count = len(items)
 
                 is_playlist = url_type == "playlist"
                 # bug corrigido: a função certa é clean_filename (sanitize_filename

@@ -36,21 +36,22 @@
   }
   ::selection{background:var(--accent);color:#0a0a0a;}
   a{color:inherit;}
-  button, input, select{font-family:inherit;}
+  button, input, select, textarea{font-family:inherit;}
+  img{display:block;}
 
-  .wrap{max-width:720px;margin:0 auto;padding:0 20px 80px;}
+  .wrap{max-width:820px;margin:0 auto;padding:0 20px 90px;}
 
   /* header ---------------------------------------------------------- */
   header{
     display:flex;align-items:center;justify-content:space-between;
-    padding:22px 20px 18px;max-width:720px;margin:0 auto;
-    border-bottom:1px solid var(--border-soft);
+    padding:20px 20px 16px;max-width:820px;margin:0 auto;
   }
   .wordmark{
-    font-family:var(--dot);font-weight:700;font-size:22px;letter-spacing:1px;
+    font-family:var(--dot);font-weight:700;font-size:21px;letter-spacing:1px;
     display:flex;align-items:center;gap:10px;
   }
   .wordmark .sep{color:var(--accent);}
+  .header-right{display:flex;align-items:center;gap:14px;}
   .glyph{
     width:9px;height:9px;border-radius:50%;
     background:var(--fg-faint);
@@ -63,8 +64,22 @@
   @keyframes pulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(255,30,30,.35)}50%{opacity:.35;box-shadow:0 0 0 6px rgba(255,30,30,0)}}
   @keyframes blink{50%{opacity:.15}}
   .status-line{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--fg-dim);text-transform:uppercase;letter-spacing:.06em;}
+  .icon-btn{
+    background:none;border:1px solid var(--border);color:var(--fg-dim);width:30px;height:30px;
+    display:flex;align-items:center;justify-content:center;cursor:pointer;border-radius:var(--radius);font-size:14px;
+  }
+  .icon-btn:hover{border-color:var(--accent);color:var(--accent);}
 
-  /* login card ------------------------------------------------------- */
+  /* settings panel ---------------------------------------------------*/
+  #settings-panel{
+    display:none;max-width:820px;margin:0 auto;padding:16px 20px;border-top:1px solid var(--border-soft);
+    border-bottom:1px solid var(--border-soft);background:var(--bg-card);
+  }
+  #settings-panel.open{display:block;}
+  .settings-row{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;}
+  .settings-label{font-size:11px;color:var(--fg-dim);text-transform:uppercase;letter-spacing:.06em;}
+
+  /* login gate -------------------------------------------------------- */
   .card{
     background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);
     padding:22px;margin-top:24px;
@@ -92,7 +107,7 @@
   .btn{
     appearance:none;border:1px solid var(--accent);background:var(--accent);color:#0a0a0a;
     font-family:var(--mono);font-weight:700;font-size:12.5px;letter-spacing:.06em;text-transform:uppercase;
-    padding:12px 18px;border-radius:var(--radius);cursor:pointer;
+    padding:12px 18px;border-radius:var(--radius);cursor:pointer;white-space:nowrap;
   }
   .btn:hover{background:#ff3b3b;}
   .btn:disabled{background:var(--fg-faint);border-color:var(--fg-faint);color:#0a0a0a;cursor:not-allowed;opacity:.6;}
@@ -103,47 +118,132 @@
 
   .error-msg{color:var(--accent);font-size:12px;margin-top:10px;}
 
-  /* main app ---------------------------------------------------------- */
+  #login-card.hidden{display:none;}
   #app{display:none;}
   #app.visible{display:block;}
-  #login-card.hidden{display:none;}
 
-  .hero{margin-top:28px;}
-  .hero h1{
-    font-family:var(--dot);font-size:15px;letter-spacing:.08em;text-transform:uppercase;
-    color:var(--fg-dim);margin:0 0 10px;font-weight:600;
+  /* tabs ----------------------------------------------------------- */
+  .tabbar{
+    display:flex;gap:0;border-bottom:1px solid var(--border);margin-top:22px;
   }
-  .paste-box{
-    background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);
-    padding:16px;
+  .tab{
+    background:none;border:none;color:var(--fg-dim);font-family:var(--mono);font-weight:600;
+    font-size:12px;letter-spacing:.06em;text-transform:uppercase;padding:12px 4px;margin-right:26px;
+    cursor:pointer;border-bottom:2px solid transparent;display:flex;align-items:center;gap:7px;
   }
-  textarea{
-    width:100%;min-height:64px;resize:vertical;background:transparent;border:none;color:var(--fg);
-    font-family:var(--mono);font-size:14px;outline:none;line-height:1.5;
+  .tab.active{color:var(--accent);border-bottom-color:var(--accent);}
+  .tab-count{
+    background:var(--accent);color:#0a0a0a;font-size:10px;font-weight:700;padding:1px 6px;border-radius:var(--radius);
   }
-  textarea::placeholder{color:var(--fg-faint);}
-  .paste-box-footer{
-    display:flex;align-items:center;justify-content:space-between;margin-top:10px;
-    padding-top:10px;border-top:1px solid var(--border-soft);
-  }
-  .hint-small{font-size:11px;color:var(--fg-faint);}
+  .panel{display:none;padding-top:22px;}
+  .panel.active{display:block;}
 
-  .quality-select{display:flex;gap:6px;margin-top:14px;flex-wrap:wrap;}
+  /* link panel ------------------------------------------------------- */
+  .link-input-row{display:flex;gap:8px;}
+  .link-input-row input{flex:1;}
+  #batch-box{margin-top:12px;background:var(--bg-card);border:1px solid var(--border);padding:14px;}
+  #batch-box textarea{
+    width:100%;min-height:70px;resize:vertical;background:transparent;border:none;color:var(--fg);
+    font-family:var(--mono);font-size:13px;outline:none;line-height:1.5;margin-bottom:10px;
+  }
+
+  .skeleton{
+    margin-top:20px;border:1px solid var(--border);background:var(--bg-card);padding:20px;
+    display:flex;gap:16px;
+  }
+  .skel-box{background:var(--bg-elevated);animation:sk 1.3s ease-in-out infinite;}
+  @keyframes sk{0%,100%{opacity:.5}50%{opacity:1}}
+
+  .preview-card{margin-top:20px;border:1px solid var(--border);background:var(--bg-card);}
+  .breadcrumb{
+    display:flex;align-items:center;gap:8px;padding:10px 18px;border-bottom:1px solid var(--border-soft);
+    font-size:11px;color:var(--fg-dim);
+  }
+  .breadcrumb button{background:none;border:none;color:var(--accent);cursor:pointer;font-family:var(--mono);font-size:11px;padding:0;}
+
+  .preview-head{display:flex;gap:18px;padding:20px;flex-wrap:wrap;}
+  .cover-wrap{
+    width:132px;height:132px;flex:none;background:var(--bg-elevated);border:1px solid var(--border-soft);
+    position:relative;overflow:hidden;
+  }
+  .cover-wrap img{width:100%;height:100%;object-fit:cover;}
+  .cover-fallback{
+    width:100%;height:100%;display:flex;align-items:center;justify-content:center;
+    color:var(--fg-faint);font-size:34px;font-family:var(--dot);
+  }
+  .preview-meta{flex:1;min-width:200px;}
+  .type-pill{
+    display:inline-block;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);
+    border:1px solid var(--accent-dim);padding:3px 8px;margin-bottom:8px;
+  }
+  .preview-title{font-family:var(--dot);font-size:19px;font-weight:700;line-height:1.25;margin:0 0 2px;word-break:break-word;}
+  .preview-sub{font-size:13px;color:var(--fg-dim);margin:0 0 12px;}
+  .badges{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;}
+  .badge-pill{
+    font-size:10.5px;color:var(--fg-dim);border:1px solid var(--border);padding:4px 8px;letter-spacing:.03em;
+  }
+  .badge-pill.hires{color:var(--accent);border-color:var(--accent-dim);}
+  .preview-actions{display:flex;gap:8px;flex-wrap:wrap;}
+  .preview-actions a{font-size:11px;color:var(--fg-dim);text-decoration:underline;text-underline-offset:3px;align-self:center;}
+  .preview-actions a:hover{color:var(--accent);}
+
+  .tracklist{border-top:1px solid var(--border-soft);}
+  .track-row{
+    display:flex;align-items:center;gap:12px;padding:10px 20px;border-bottom:1px solid var(--border-soft);
+    font-size:12.5px;
+  }
+  .track-row:last-child{border-bottom:none;}
+  .track-num{color:var(--fg-faint);width:26px;flex:none;text-align:right;font-size:11px;}
+  .track-title{flex:1;min-width:0;}
+  .track-title .t-main{color:var(--fg);word-break:break-word;}
+  .track-title .t-version{color:var(--fg-faint);font-size:11px;}
+  .track-artist{color:var(--fg-faint);font-size:11px;flex:none;max-width:130px;text-overflow:ellipsis;overflow:hidden;white-space:nowrap;}
+  .track-hires{color:var(--accent);font-size:9px;border:1px solid var(--accent-dim);padding:1px 4px;flex:none;}
+  .track-dur{color:var(--fg-dim);font-size:11px;flex:none;width:42px;text-align:right;}
+
+  .album-grid{
+    display:grid;grid-template-columns:repeat(auto-fill, minmax(130px,1fr));gap:14px;padding:20px;
+    border-top:1px solid var(--border-soft);
+  }
+  .album-card{cursor:pointer;}
+  .album-card .cover-wrap{width:100%;height:auto;aspect-ratio:1/1;}
+  .album-card .ac-title{font-size:12px;margin-top:8px;color:var(--fg);word-break:break-word;line-height:1.3;}
+  .album-card .ac-sub{font-size:10.5px;color:var(--fg-faint);margin-top:2px;}
+
+  /* search panel ------------------------------------------------------*/
+  .search-row{display:flex;gap:8px;}
+  .search-row input{flex:1;}
+  .type-select{display:flex;gap:6px;margin-top:12px;flex-wrap:wrap;}
   .qbtn{
     border:1px solid var(--border);background:var(--bg-elevated);color:var(--fg-dim);
     padding:8px 10px;font-size:11px;letter-spacing:.03em;cursor:pointer;border-radius:var(--radius);
   }
   .qbtn.active{border-color:var(--accent);color:var(--accent);background:rgba(255,30,30,.07);}
 
-  /* jobs --------------------------------------------------------------*/
-  .jobs{margin-top:30px;display:flex;flex-direction:column;gap:12px;}
-  .jobs-title{font-family:var(--dot);font-size:12px;letter-spacing:.08em;color:var(--fg-faint);text-transform:uppercase;margin-bottom:2px;}
-  .job{
-    background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;
+  .search-grid{
+    display:grid;grid-template-columns:repeat(auto-fill, minmax(140px,1fr));gap:14px;margin-top:20px;
   }
+  .search-card{background:var(--bg-card);border:1px solid var(--border);cursor:pointer;position:relative;}
+  .search-card .cover-wrap{width:100%;height:auto;aspect-ratio:1/1;border:none;border-bottom:1px solid var(--border-soft);}
+  .search-card .sc-body{padding:10px;}
+  .sc-title{font-size:12px;color:var(--fg);line-height:1.3;word-break:break-word;}
+  .sc-sub{font-size:10.5px;color:var(--fg-faint);margin-top:3px;}
+  .sc-quick{
+    position:absolute;top:6px;right:6px;width:26px;height:26px;background:rgba(7,7,7,.8);
+    border:1px solid var(--border);color:var(--fg);display:flex;align-items:center;justify-content:center;
+    cursor:pointer;font-size:13px;
+  }
+  .sc-quick:hover{border-color:var(--accent);color:var(--accent);}
+  .empty-note{font-size:12px;color:var(--fg-faint);margin-top:20px;text-align:center;padding:30px 0;}
+
+  /* queue/jobs ----------------------------------------------------------*/
+  .jobs{margin-top:4px;display:flex;flex-direction:column;gap:12px;}
+  .job{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:14px;display:flex;gap:14px;}
+  .job .cover-wrap{width:56px;height:56px;flex:none;}
+  .job-body{flex:1;min-width:0;}
   .job-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;}
   .job-name{font-size:13.5px;font-weight:600;word-break:break-word;}
-  .job-url{font-size:11px;color:var(--fg-faint);word-break:break-all;margin-top:2px;}
+  .job-sub{font-size:11px;color:var(--fg-faint);margin-top:1px;}
   .badge{
     font-size:10px;letter-spacing:.06em;text-transform:uppercase;padding:3px 7px;border-radius:var(--radius);
     border:1px solid var(--border);color:var(--fg-dim);white-space:nowrap;flex:none;
@@ -153,9 +253,9 @@
   .badge.error{color:var(--accent);border-color:var(--accent);}
   .badge.queued{color:var(--fg-faint);}
 
-  .track-line{font-size:12px;color:var(--fg-dim);margin-top:10px;display:flex;justify-content:space-between;}
+  .track-line{font-size:11.5px;color:var(--fg-dim);margin-top:9px;display:flex;justify-content:space-between;gap:8px;}
   .bar-track{
-    height:8px;margin-top:8px;background:var(--bg-elevated);border:1px solid var(--border-soft);
+    height:7px;margin-top:7px;background:var(--bg-elevated);border:1px solid var(--border-soft);
     position:relative;overflow:hidden;
   }
   .bar-fill{
@@ -163,14 +263,17 @@
     background-image:repeating-linear-gradient(90deg, var(--accent) 0 5px, transparent 5px 8px);
     transition:width .25s linear;
   }
-  .job-error-text{color:var(--accent);font-size:12px;margin-top:10px;}
-  .job-actions{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;}
+  .job-error-text{color:var(--accent);font-size:12px;margin-top:9px;}
+  .job-actions{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;}
 
-  footer{max-width:720px;margin:40px auto 0;padding:0 20px;font-size:11px;color:var(--fg-faint);}
+  footer{max-width:820px;margin:40px auto 0;padding:0 20px;font-size:11px;color:var(--fg-faint);}
 
   @media (max-width:480px){
     .wordmark{font-size:18px;}
-    .card,.paste-box,.job{padding:15px;}
+    .card,.job{padding:15px;}
+    .preview-head{padding:16px;}
+    .cover-wrap{width:96px;height:96px;}
+    .track-artist{display:none;}
   }
 </style>
 </head>
@@ -178,12 +281,33 @@
 
   <header>
     <div class="wordmark">QOBUZ<span class="sep">○</span>DL</div>
-    <div class="status-line"><span class="glyph" id="glyph"></span><span id="status-text">offline</span></div>
+    <div class="header-right">
+      <div class="status-line"><span class="glyph" id="glyph"></span><span id="status-text">offline</span></div>
+      <button class="icon-btn" id="settings-btn" title="sessão" style="display:none;">⚙</button>
+    </div>
   </header>
+
+  <div id="settings-panel">
+    <div class="wrap" style="padding:0;">
+      <div class="settings-row" style="margin-bottom:14px;">
+        <span class="settings-label">Qualidade</span>
+        <div class="quality-select" id="quality-select" style="display:flex;gap:6px;flex-wrap:wrap;">
+          <button class="qbtn" data-q="5">MP3 320</button>
+          <button class="qbtn" data-q="6">CD 16/44.1</button>
+          <button class="qbtn active" data-q="7">HI-RES 24/96</button>
+          <button class="qbtn" data-q="27">HI-RES 24/192</button>
+        </div>
+      </div>
+      <div class="settings-row">
+        <span class="settings-label" id="session-info">sessão ativa</span>
+        <button class="btn ghost small" id="logout-btn">Sair da sessão</button>
+      </div>
+    </div>
+  </div>
 
   <div class="wrap">
 
-    <!-- LOGIN ---------------------------------------------------------- -->
+    <!-- LOGIN GATE ------------------------------------------------------- -->
     <div class="card" id="login-card">
       <h2>Sessão</h2>
       <p class="hint">Cole o <b>user_auth_token</b> extraído do DevTools (F12 → Application/Storage → localStorage → play.qobuz.com). Fica salvo só neste navegador.</p>
@@ -217,29 +341,51 @@
 
     <!-- APP -------------------------------------------------------------->
     <div id="app">
-      <div class="hero">
-        <h1>Colar link</h1>
-        <div class="paste-box">
-          <textarea id="url-input" placeholder="https://open.qobuz.com/album/...&#10;(um link por linha p/ baixar vários de uma vez)"></textarea>
-          <div class="paste-box-footer">
-            <span class="hint-small">álbum · faixa · playlist · artista · label</span>
-            <button class="btn" id="submit-btn">Baixar</button>
-          </div>
-        </div>
 
-        <div class="quality-select" id="quality-select">
-          <button class="qbtn" data-q="5">MP3 320</button>
-          <button class="qbtn" data-q="6">CD 16/44.1</button>
-          <button class="qbtn active" data-q="7">HI-RES 24/96</button>
-          <button class="qbtn" data-q="27">HI-RES 24/192</button>
-        </div>
-        <div class="error-msg" id="submit-error" style="display:none;"></div>
-      </div>
+      <nav class="tabbar">
+        <button class="tab active" data-tab="link">Link</button>
+        <button class="tab" data-tab="search">Buscar</button>
+        <button class="tab" data-tab="queue">Fila <span class="tab-count" id="queue-count" style="display:none;">0</span></button>
+      </nav>
 
-      <div class="jobs" id="jobs-section" style="display:none;">
-        <div class="jobs-title">Fila</div>
-        <div id="jobs-list"></div>
-      </div>
+      <!-- TAB: LINK -->
+      <section class="panel active" id="panel-link">
+        <div class="link-input-row">
+          <input type="url" id="link-url" placeholder="cole o link do Qobuz — álbum, faixa, playlist, artista..." autocomplete="off" />
+          <button class="btn" id="link-go">Ver</button>
+        </div>
+        <button class="toggle-link" id="toggle-batch">colar vários links de uma vez (modo lote, sem preview)</button>
+        <div id="batch-box" style="display:none;">
+          <textarea id="batch-input" placeholder="um link por linha"></textarea>
+          <button class="btn ghost small" id="batch-go">Enfileirar todos</button>
+        </div>
+        <div class="error-msg" id="link-error" style="display:none;"></div>
+
+        <div id="preview-area"></div>
+      </section>
+
+      <!-- TAB: BUSCAR -->
+      <section class="panel" id="panel-search">
+        <div class="search-row">
+          <input type="text" id="search-q" placeholder="buscar álbuns, faixas, artistas, playlists..." autocomplete="off" />
+          <button class="btn" id="search-go">Buscar</button>
+        </div>
+        <div class="type-select" id="search-type">
+          <button class="qbtn active" data-t="album">Álbuns</button>
+          <button class="qbtn" data-t="track">Faixas</button>
+          <button class="qbtn" data-t="artist">Artistas</button>
+          <button class="qbtn" data-t="playlist">Playlists</button>
+        </div>
+        <div class="error-msg" id="search-error" style="display:none;"></div>
+        <div class="search-grid" id="search-results"></div>
+      </section>
+
+      <!-- TAB: FILA -->
+      <section class="panel" id="panel-queue">
+        <div class="jobs" id="jobs-list"></div>
+        <div class="empty-note" id="queue-empty">nada na fila ainda — cole um link ou busque algo pra baixar</div>
+      </section>
+
     </div>
 
   </div>
@@ -250,10 +396,15 @@
 (() => {
   const API = ""; // mesma origem
   const WS_PROTO = location.protocol === "https:" ? "wss:" : "ws:";
-  const $ = (sel) => document.querySelector(sel);
+  const $ = (sel, root = document) => root.querySelector(sel);
 
   const glyph = $("#glyph");
   const statusText = $("#status-text");
+  const settingsBtn = $("#settings-btn");
+  const settingsPanel = $("#settings-panel");
+  const logoutBtn = $("#logout-btn");
+  const sessionInfo = $("#session-info");
+
   const loginCard = $("#login-card");
   const app = $("#app");
   const loginBtn = $("#login-btn");
@@ -264,23 +415,86 @@
   const tokenFields = $("#token-fields");
   const pwdFields = $("#pwd-fields");
   const toggleAuthMode = $("#toggle-auth-mode");
-  const urlInput = $("#url-input");
-  const submitBtn = $("#submit-btn");
-  const submitError = $("#submit-error");
-  const jobsSection = $("#jobs-section");
-  const jobsList = $("#jobs-list");
   const qualitySelect = $("#quality-select");
+
+  const tabs = [...document.querySelectorAll(".tab")];
+  const panels = { link: $("#panel-link"), search: $("#panel-search"), queue: $("#panel-queue") };
+
+  const linkUrl = $("#link-url");
+  const linkGo = $("#link-go");
+  const linkError = $("#link-error");
+  const toggleBatch = $("#toggle-batch");
+  const batchBox = $("#batch-box");
+  const batchInput = $("#batch-input");
+  const batchGo = $("#batch-go");
+  const previewArea = $("#preview-area");
+
+  const searchQ = $("#search-q");
+  const searchGo = $("#search-go");
+  const searchType = $("#search-type");
+  const searchError = $("#search-error");
+  const searchResults = $("#search-results");
+
+  const jobsList = $("#jobs-list");
+  const queueEmpty = $("#queue-empty");
+  const queueCount = $("#queue-count");
 
   let quality = Number(localStorage.getItem("qbdl_quality") || 7);
   let usingToken = true;
-  let anyRunning = false;
+  let currentSearchType = "album";
+  let previewStack = [];
+
+  // ------------------------------------------------------------- helpers
+  function escapeHtml(s) {
+    return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+  function fmtBytes(n) {
+    if (!n) return "0 B";
+    const u = ["B", "KB", "MB", "GB"]; let i = 0;
+    while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+    return `${n.toFixed(i === 0 ? 0 : 1)} ${u[i]}`;
+  }
+  function fmtDuration(sec) {
+    sec = Math.round(sec || 0);
+    const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+    if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+    return `${m}:${String(s).padStart(2, "0")}`;
+  }
+  function coverHtml(url, sizeClass = "") {
+    if (!url) return `<div class="cover-wrap ${sizeClass}"><div class="cover-fallback">○</div></div>`;
+    return `<div class="cover-wrap ${sizeClass}"><img src="${escapeHtml(url)}" loading="lazy" onerror="this.parentElement.innerHTML='<div class=&quot;cover-fallback&quot;>○</div>'" /></div>`;
+  }
+  function typeLabel(t) {
+    return { album: "Álbum", track: "Faixa", playlist: "Playlist", artist: "Artista", label: "Label" }[t] || t;
+  }
+  function qobuzUrlFor(type, id) {
+    return `https://open.qobuz.com/${type}/${id}`;
+  }
 
   function setGlyph(state) {
     glyph.className = "glyph " + state;
     statusText.textContent = { online: "online", busy: "baixando", error: "erro", offline: "offline" }[state] || state;
   }
 
-  // ---------------------------------------------------------------- login
+  // ------------------------------------------------------------- tabs
+  function setTab(name) {
+    tabs.forEach((t) => t.classList.toggle("active", t.dataset.tab === name));
+    Object.entries(panels).forEach(([k, el]) => el.classList.toggle("active", k === name));
+  }
+  tabs.forEach((t) => t.addEventListener("click", () => setTab(t.dataset.tab)));
+
+  // ------------------------------------------------------------- settings
+  settingsBtn.addEventListener("click", () => settingsPanel.classList.toggle("open"));
+  logoutBtn.addEventListener("click", () => {
+    localStorage.removeItem("qbdl_token");
+    settingsPanel.classList.remove("open");
+    settingsBtn.style.display = "none";
+    app.classList.remove("visible");
+    loginCard.classList.remove("hidden");
+    setGlyph("offline");
+  });
+
+  // ------------------------------------------------------------- login
   toggleAuthMode.addEventListener("click", () => {
     usingToken = !usingToken;
     tokenFields.style.display = usingToken ? "" : "none";
@@ -320,6 +534,8 @@
       setGlyph("online");
       loginCard.classList.add("hidden");
       app.classList.add("visible");
+      settingsBtn.style.display = "";
+      sessionInfo.textContent = usingToken ? "sessão ativa · token" : "sessão ativa · email/senha";
       return true;
     } catch (err) {
       setGlyph("error");
@@ -330,18 +546,224 @@
       loginBtn.textContent = "Entrar";
     }
   }
-
   loginBtn.addEventListener("click", () => doLogin(false));
   tokenInput.addEventListener("keydown", (e) => { if (e.key === "Enter") doLogin(false); });
 
-  // ---------------------------------------------------------------- jobs
-  const jobEls = new Map(); // job_id -> {el, ws, pollTimer}
+  // ------------------------------------------------------------- preview
+  function showPreviewLoading() {
+    previewArea.innerHTML = `
+      <div class="skeleton">
+        <div class="skel-box" style="width:132px;height:132px;"></div>
+        <div style="flex:1;display:flex;flex-direction:column;gap:10px;padding-top:4px;">
+          <div class="skel-box" style="width:60%;height:16px;"></div>
+          <div class="skel-box" style="width:40%;height:12px;"></div>
+          <div class="skel-box" style="width:90%;height:12px;"></div>
+        </div>
+      </div>`;
+  }
+  function showPreviewError(msg) {
+    previewArea.innerHTML = "";
+    linkError.textContent = msg;
+    linkError.style.display = "block";
+  }
 
-  function fmtBytes(n) {
-    if (!n) return "0 B";
-    const u = ["B", "KB", "MB", "GB"]; let i = 0;
-    while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
-    return `${n.toFixed(i === 0 ? 0 : 1)} ${u[i]}`;
+  function renderPreview(data) {
+    linkError.style.display = "none";
+    const badges = [];
+    if (data.hires) badges.push(`<span class="badge-pill hires">HI-RES</span>`);
+    if (data.bit_depth && data.sampling_rate) badges.push(`<span class="badge-pill">${data.bit_depth}bit / ${data.sampling_rate}kHz</span>`);
+    if (data.year) badges.push(`<span class="badge-pill">${escapeHtml(data.year)}</span>`);
+    if (data.genre) badges.push(`<span class="badge-pill">${escapeHtml(data.genre)}</span>`);
+    if (data.tracks_count) badges.push(`<span class="badge-pill">${data.tracks_count} faixa${data.tracks_count > 1 ? "s" : ""}</span>`);
+    if (data.albums_count) badges.push(`<span class="badge-pill">${data.albums_count} álbun${data.albums_count > 1 ? "s" : "s"}</span>`);
+    if (data.duration_seconds) badges.push(`<span class="badge-pill">${fmtDuration(data.duration_seconds)}</span>`);
+
+    const sub = data.type === "playlist" ? `por ${escapeHtml(data.owner || "desconhecido")}`
+      : data.type === "track" ? escapeHtml(data.artist || "")
+      : data.type === "album" ? escapeHtml(data.artist || "")
+      : "";
+
+    const breadcrumb = previewStack.length > 1 ? `
+      <div class="breadcrumb">
+        <button data-action="back">‹ voltar</button>
+        <span>${previewStack.map((p) => escapeHtml(p.title)).join(" / ")}</span>
+      </div>` : "";
+
+    let body = "";
+    if (Array.isArray(data.tracks) && data.tracks.length) {
+      body = `<div class="tracklist">${data.tracks.map((t) => `
+        <div class="track-row">
+          <span class="track-num">${t.number ?? ""}</span>
+          <span class="track-title"><span class="t-main">${escapeHtml(t.title)}</span>${t.version ? ` <span class="t-version">(${escapeHtml(t.version)})</span>` : ""}</span>
+          ${data.type === "playlist" ? `<span class="track-artist">${escapeHtml(t.artist || "")}</span>` : ""}
+          ${t.hires ? `<span class="track-hires">HI-RES</span>` : ""}
+          <span class="track-dur">${t.duration_seconds ? fmtDuration(t.duration_seconds) : ""}</span>
+        </div>`).join("")}</div>`;
+    } else if (Array.isArray(data.albums) && data.albums.length) {
+      body = `<div class="album-grid">${data.albums.map((al) => `
+        <div class="album-card" data-action="open-album" data-id="${escapeHtml(al.id)}">
+          ${coverHtml(al.cover_url)}
+          <div class="ac-title">${escapeHtml(al.title)}</div>
+          <div class="ac-sub">${escapeHtml(al.year || "")}${al.hires ? " · HI-RES" : ""}</div>
+        </div>`).join("")}</div>`;
+    }
+
+    previewArea.innerHTML = `
+      <div class="preview-card">
+        ${breadcrumb}
+        <div class="preview-head">
+          ${coverHtml(data.cover_url)}
+          <div class="preview-meta">
+            <span class="type-pill">${typeLabel(data.type)}</span>
+            <h3 class="preview-title">${escapeHtml(data.title)}</h3>
+            ${sub ? `<p class="preview-sub">${sub}</p>` : ""}
+            <div class="badges">${badges.join("")}</div>
+            <div class="preview-actions">
+              <button class="btn small" data-action="download">Baixar</button>
+              ${data.source_url ? `<a href="${escapeHtml(data.source_url)}" target="_blank" rel="noopener">abrir no Qobuz</a>` : ""}
+            </div>
+          </div>
+        </div>
+        ${body}
+      </div>`;
+
+    previewArea.querySelector('[data-action="download"]')?.addEventListener("click", (e) => {
+      const url = data.source_url || qobuzUrlFor(data.type, data.id);
+      queueDownload(url, data);
+      e.target.textContent = "Enfileirado ✓";
+      e.target.disabled = true;
+    });
+    previewArea.querySelector('[data-action="back"]')?.addEventListener("click", () => {
+      previewStack.pop();
+      renderPreview(previewStack[previewStack.length - 1]);
+    });
+    previewArea.querySelectorAll('[data-action="open-album"]').forEach((el) => {
+      el.addEventListener("click", () => loadPreviewById("album", el.dataset.id));
+    });
+  }
+
+  async function resolveUrl(url) {
+    showPreviewLoading();
+    try {
+      const r = await fetch(`${API}/api/resolve?url=${encodeURIComponent(url)}`);
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || `não reconheci esse link (${r.status})`);
+      previewStack = [data];
+      renderPreview(data);
+    } catch (err) {
+      showPreviewError(err.message);
+    }
+  }
+
+  async function loadPreviewById(type, id) {
+    showPreviewLoading();
+    setTab("link");
+    try {
+      const r = await fetch(`${API}/api/preview/${type}/${id}`);
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || `erro ao carregar (${r.status})`);
+      previewStack.push(data);
+      renderPreview(data);
+    } catch (err) {
+      showPreviewError(err.message);
+    }
+  }
+
+  let resolveTimer = null;
+  linkUrl.addEventListener("input", () => {
+    clearTimeout(resolveTimer);
+    const v = linkUrl.value.trim();
+    if (!v.startsWith("http")) return;
+    resolveTimer = setTimeout(() => resolveUrl(v), 550);
+  });
+  linkGo.addEventListener("click", () => { const v = linkUrl.value.trim(); if (v) resolveUrl(v); });
+  linkUrl.addEventListener("keydown", (e) => { if (e.key === "Enter") { clearTimeout(resolveTimer); const v = linkUrl.value.trim(); if (v) resolveUrl(v); } });
+
+  toggleBatch.addEventListener("click", () => {
+    const open = batchBox.style.display !== "none";
+    batchBox.style.display = open ? "none" : "block";
+  });
+  batchGo.addEventListener("click", () => {
+    const urls = batchInput.value.split("\n").map((s) => s.trim()).filter(Boolean);
+    if (!urls.length) return;
+    urls.forEach((u) => queueDownload(u));
+    batchInput.value = "";
+    setTab("queue");
+  });
+
+  // ------------------------------------------------------------- search
+  searchType.addEventListener("click", (e) => {
+    const b = e.target.closest(".qbtn");
+    if (!b) return;
+    currentSearchType = b.dataset.t;
+    [...searchType.children].forEach((c) => c.classList.toggle("active", c === b));
+    if (searchQ.value.trim()) runSearch();
+  });
+  searchGo.addEventListener("click", runSearch);
+  searchQ.addEventListener("keydown", (e) => { if (e.key === "Enter") runSearch(); });
+
+  async function runSearch() {
+    const q = searchQ.value.trim();
+    searchError.style.display = "none";
+    if (!q) return;
+    searchResults.innerHTML = `<div class="empty-note">buscando…</div>`;
+    try {
+      const r = await fetch(`${API}/api/search?q=${encodeURIComponent(q)}&type=${currentSearchType}&limit=24`);
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || `falha na busca (${r.status})`);
+      renderSearchResults(data.items || []);
+    } catch (err) {
+      searchResults.innerHTML = "";
+      searchError.textContent = err.message;
+      searchError.style.display = "block";
+    }
+  }
+
+  function renderSearchResults(items) {
+    if (!items.length) { searchResults.innerHTML = `<div class="empty-note">nada encontrado</div>`; return; }
+    searchResults.innerHTML = items.map((it) => `
+      <div class="search-card" data-action="preview" data-type="${escapeHtml(it.type)}" data-id="${escapeHtml(it.id)}">
+        ${coverHtml(it.cover_url)}
+        <button class="sc-quick" data-action="quick-dl" data-type="${escapeHtml(it.type)}" data-id="${escapeHtml(it.id)}" title="baixar direto">⬇</button>
+        <div class="sc-body">
+          <div class="sc-title">${escapeHtml(it.title)}</div>
+          <div class="sc-sub">${escapeHtml(it.artist || it.owner || "")}${it.hires ? " · HI-RES" : ""}</div>
+        </div>
+      </div>`).join("");
+
+    searchResults.querySelectorAll('[data-action="preview"]').forEach((el) => {
+      el.addEventListener("click", (e) => {
+        if (e.target.closest('[data-action="quick-dl"]')) return;
+        loadPreviewById(el.dataset.type, el.dataset.id);
+      });
+    });
+    searchResults.querySelectorAll('[data-action="quick-dl"]').forEach((el) => {
+      el.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const url = qobuzUrlFor(el.dataset.type, el.dataset.id);
+        const card = el.closest(".search-card");
+        const preview = {
+          title: card.querySelector(".sc-title").textContent,
+          cover_url: card.querySelector("img")?.src || null,
+          type: el.dataset.type,
+        };
+        queueDownload(url, preview);
+        el.textContent = "✓";
+        setTab("queue");
+      });
+    });
+  }
+
+  // ------------------------------------------------------------- queue
+  const jobEls = new Map();
+  const lastSnapshot = new Map();
+
+  function updateQueueBadge() {
+    const active = [...lastSnapshot.values()].filter((j) => j.status === "queued" || j.status === "running").length;
+    queueCount.textContent = active;
+    queueCount.style.display = active > 0 ? "" : "none";
+    queueEmpty.style.display = jobEls.size > 0 ? "none" : "block";
+    if (active === 0) { const anyErr = [...lastSnapshot.values()].some((j) => j.status === "error"); setGlyph(anyErr ? "error" : "online"); }
   }
 
   function renderJob(job) {
@@ -356,72 +778,61 @@
     const el = rec.el;
     const badgeClass = job.status || "queued";
     const badgeLabel = { queued: "na fila", running: "baixando", done: "pronto", error: "erro" }[job.status] || job.status;
+    const sub = [job.content_type ? typeLabel(job.content_type) : null, job.artist, job.content_tracks_count ? `${job.content_tracks_count} faixas` : null].filter(Boolean).join(" · ");
 
     el.innerHTML = `
-      <div class="job-top">
-        <div>
-          <div class="job-name">${escapeHtml(job.content_name || "resolvendo…")}</div>
-          <div class="job-url">${escapeHtml(job.url || "")}</div>
+      ${coverHtml(job.cover_url)}
+      <div class="job-body">
+        <div class="job-top">
+          <div>
+            <div class="job-name">${escapeHtml(job.content_name || job.title || "resolvendo…")}</div>
+            ${sub ? `<div class="job-sub">${escapeHtml(sub)}</div>` : ""}
+          </div>
+          <span class="badge ${badgeClass}">${badgeLabel}</span>
         </div>
-        <span class="badge ${badgeClass}">${badgeLabel}</span>
-      </div>
-      ${job.status === "running" || job.status === "done" ? `
-        <div class="track-line">
-          <span>${escapeHtml(job.track_name || "")} ${job.track_total ? `(${job.track_index}/${job.track_total})` : ""}</span>
-          <span>${job.bytes_total ? fmtBytes(job.bytes_done) + " / " + fmtBytes(job.bytes_total) : ""}</span>
-        </div>
-        <div class="bar-track"><div class="bar-fill" style="width:${job.track_progress_pct || 0}%"></div></div>
-      ` : ""}
-      ${job.status === "error" ? `<div class="job-error-text">ERRO: ${escapeHtml(job.error || "desconhecido")}</div>` : ""}
-      ${job.status === "done" && job.file_ready ? `
-        <div class="job-actions">
-          <button class="btn small" data-action="download" data-mode="auto">Baixar</button>
-          <button class="btn ghost small" data-action="download" data-mode="zip">Forçar .zip</button>
-        </div>
-      ` : ""}
-      ${job.status === "done" && !job.file_ready ? `<div class="hint-small" style="margin-top:10px;">já entregue e removido do servidor</div>` : ""}
-    `;
+        ${job.status === "running" || (job.status === "done" && job.bytes_total) ? `
+          <div class="track-line">
+            <span>${escapeHtml(job.track_name || "")}</span>
+            <span>${job.bytes_total ? fmtBytes(job.bytes_done) + " / " + fmtBytes(job.bytes_total) : ""}</span>
+          </div>
+          <div class="bar-track"><div class="bar-fill" style="width:${job.track_progress_pct || 0}%"></div></div>
+        ` : ""}
+        ${job.status === "error" ? `<div class="job-error-text">ERRO: ${escapeHtml(job.error || "desconhecido")}</div>` : ""}
+        ${job.status === "done" && job.file_ready ? `
+          <div class="job-actions">
+            <button class="btn small" data-action="download" data-mode="auto">Baixar</button>
+            <button class="btn ghost small" data-action="download" data-mode="zip">Forçar .zip</button>
+          </div>` : ""}
+        ${job.status === "done" && !job.file_ready ? `<div class="job-sub" style="margin-top:9px;">já entregue e removido do servidor</div>` : ""}
+      </div>`;
 
     el.querySelectorAll('[data-action="download"]').forEach((btn) => {
       btn.addEventListener("click", () => {
-        const mode = btn.dataset.mode;
-        const qs = mode === "zip" ? "?as_zip=true" : "";
+        const qs = btn.dataset.mode === "zip" ? "?as_zip=true" : "";
         const a = document.createElement("a");
         a.href = `${API}/api/download/${job.job_id}/file${qs}`;
         a.rel = "noopener";
         document.body.appendChild(a);
         a.click();
         a.remove();
-        btn.closest(".job-actions").innerHTML = '<span class="hint-small">enviado pro navegador — arquivos removidos do servidor em seguida</span>';
+        el.querySelector(".job-actions").innerHTML = '<span class="job-sub">enviado pro navegador — removido do servidor em seguida</span>';
       });
     });
 
-    updateAnyRunning();
+    updateQueueBadge();
   }
 
-  function updateAnyRunning() {
-    anyRunning = [...jobEls.keys()].some((id) => {
-      const cached = lastSnapshot.get(id);
-      return cached && (cached.status === "queued" || cached.status === "running");
-    });
-    if (!anyRunning) setGlyph("online");
-  }
-
-  const lastSnapshot = new Map();
-
-  function trackJob(job_id, url) {
-    lastSnapshot.set(job_id, { status: "queued", url });
-    renderJob({ job_id, url, status: "queued" });
+  function trackJob(job_id, url, seedPreview) {
+    const seed = { status: "queued", url, content_name: seedPreview?.title, cover_url: seedPreview?.cover_url, content_type: seedPreview?.type };
+    lastSnapshot.set(job_id, seed);
+    renderJob({ job_id, ...seed });
     connectWs(job_id);
   }
 
   function connectWs(job_id) {
     let ws;
-    try {
-      ws = new WebSocket(`${WS_PROTO}//${location.host}/ws/jobs/${job_id}`);
-    } catch {
-      return pollJob(job_id);
-    }
+    try { ws = new WebSocket(`${WS_PROTO}//${location.host}/ws/jobs/${job_id}`); }
+    catch { return pollJob(job_id); }
     let gotAny = false;
     ws.onmessage = (ev) => {
       gotAny = true;
@@ -430,6 +841,7 @@
       lastSnapshot.set(job_id, job);
       renderJob(job);
       setGlyph(job.status === "running" ? "busy" : job.status === "error" ? "error" : "online");
+      updateQueueBadge();
     };
     ws.onclose = () => {
       const snap = lastSnapshot.get(job_id);
@@ -445,9 +857,13 @@
         if (!r.ok) return;
         const job = await r.json();
         job.job_id = job_id;
-        job.url = (lastSnapshot.get(job_id) || {}).url;
+        const prev = lastSnapshot.get(job_id) || {};
+        job.url = prev.url;
+        job.content_name = job.content_name || prev.content_name;
+        job.cover_url = job.cover_url || prev.cover_url;
         lastSnapshot.set(job_id, job);
         renderJob(job);
+        updateQueueBadge();
         if (job.status === "done" || job.status === "error") return;
       } catch {}
       setTimeout(tick, 2000);
@@ -455,42 +871,20 @@
     tick();
   }
 
-  function escapeHtml(s) {
-    return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-  }
-
-  // ------------------------------------------------------------- submit
-  submitBtn.addEventListener("click", async () => {
-    submitError.style.display = "none";
-    const urls = urlInput.value.split("\n").map((s) => s.trim()).filter(Boolean);
-    if (!urls.length) { submitError.textContent = "cole ao menos um link"; submitError.style.display = "block"; return; }
-
-    submitBtn.disabled = true;
-    submitBtn.textContent = "Enviando...";
+  async function queueDownload(url, seedPreview) {
     try {
-      for (const url of urls) {
-        const r = await fetch(`${API}/api/download`, {
-          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url }),
-        });
-        const data = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(data.detail || `falha ao iniciar (${r.status})`);
-        jobsSection.style.display = "";
-        trackJob(data.job_id, url);
-        setGlyph("busy");
-      }
-      urlInput.value = "";
+      const r = await fetch(`${API}/api/download`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.detail || `falha ao iniciar (${r.status})`);
+      trackJob(data.job_id, url, seedPreview);
+      setGlyph("busy");
     } catch (err) {
-      submitError.textContent = err.message;
-      submitError.style.display = "block";
-    } finally {
-      submitBtn.disabled = false;
-      submitBtn.textContent = "Baixar";
+      linkError.textContent = err.message;
+      linkError.style.display = "block";
     }
-  });
-
-  urlInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submitBtn.click();
-  });
+  }
 
   // ------------------------------------------------------------- boot
   (async function boot() {

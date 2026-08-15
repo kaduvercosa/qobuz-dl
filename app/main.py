@@ -72,6 +72,38 @@ async def album_tracks(album_id: str):
         raise HTTPException(status_code=401, detail=str(exc)) from exc
 
 
+# ------------------------------------------------------------- preview/link
+@app.get("/api/resolve")
+async def resolve(url: str):
+    """Reconhece um link do Qobuz (álbum/faixa/playlist/artista/label) e
+    devolve a ficha completa: capa, metadados e lista de faixas -- usado
+    pela tela de 'colar link' pra mostrar ao vivo o que o link é, antes de
+    baixar."""
+    if not session.logged_in:
+        raise HTTPException(status_code=401, detail="Faça login antes.")
+    try:
+        return await session.resolve_url(url)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Não consegui reconhecer esse link: {exc}") from exc
+
+
+@app.get("/api/preview/{item_type}/{item_id}")
+async def preview(item_type: str, item_id: str):
+    """Mesma ficha completa do /api/resolve, mas por id+tipo -- usado ao
+    clicar num resultado de busca ou num álbum dentro da página de um
+    artista, sem precisar reconstruir uma URL."""
+    if not session.logged_in:
+        raise HTTPException(status_code=401, detail="Faça login antes.")
+    try:
+        return await session.preview_by_id(item_type, item_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Não consegui carregar: {exc}") from exc
+
+
 # ---------------------------------------------------------------- download
 class DownloadBody(BaseModel):
     url: str   # link de álbum, faixa, playlist ou artista do Qobuz
