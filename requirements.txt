@@ -1,0 +1,17 @@
+pathvalidate
+aiohttp
+aiofiles
+ffmpeg-python
+mutagen
+tqdm
+pick
+beautifulsoup4
+colorama
+cryptography
+rich
+pyaes
+lyricsgenius
+langdetect
+requests
+deepl
+Pillow
