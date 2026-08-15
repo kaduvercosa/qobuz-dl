@@ -18,6 +18,10 @@ class GeoRestrictedError(QobuzDLException):
     """Track or album is geo-restricted or subscription does not permit access."""
     pass
 
+class GeoblockingError(QobuzDLException):
+    """Track or album is geo-restricted or subscription does not permit access."""
+    pass
+    
 class TaggingError(QobuzDLException):
     """Error tagging audio file with metadata or album art."""
     pass
