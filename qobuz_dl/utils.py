@@ -1,0 +1,501 @@
+import re
+import string
+import logging
+import time
+import unicodedata
+import aiohttp
+import difflib
+from pathlib import Path
+from typing import List, Tuple, Dict, Any, Optional, Union
+
+from mutagen.mp3 import EasyMP3
+from mutagen.flac import FLAC
+from mutagen.id3 import ID3
+from mutagen import File
+
+from qobuz_dl.color import Tema
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+EXTENSIONS = {".mp3", ".flac"}
+
+# ─── FUNÇÕES DE VALIDAÇÃO DE CAPA (FILTRO DE SANIDADE) ──────────────────────────
+
+def limpar_texto(texto: str) -> str:
+    """Remove acentos e deixa tudo minúsculo para uma comparação justa."""
+    if not texto: return ""
+    texto = unicodedata.normalize('NFKD', texto).encode('ASCII', 'ignore').decode('utf-8')
+    return texto.lower().strip()
+
+def validar_capa_apple(titulo_qobuz: str, titulo_apple: str, artista_qobuz: str, artista_apple: str) -> bool:
+    """Verifica se a Apple trouxe o álbum e o artista corretos comparando similaridade."""
+    q_titulo = limpar_texto(titulo_qobuz)
+    a_titulo = limpar_texto(titulo_apple)
+    
+    q_artista = limpar_texto(artista_qobuz)
+    a_artista = limpar_texto(artista_apple)
+
+    sim_titulo = difflib.SequenceMatcher(None, q_titulo, a_titulo).ratio()
+    sim_artista = difflib.SequenceMatcher(None, q_artista, a_artista).ratio()
+
+    # Se o título ou o artista tiverem menos de 75% de similaridade, bloqueia a capa
+    if sim_titulo < 0.75 or sim_artista < 0.75:
+        logger.debug(f"Capa da Apple rejeitada. Similaridade: Título={sim_titulo:.2f}, Artista={sim_artista:.2f}")
+        return False
+    return True
+
+# ────────────────────────────────────────────────────────────────────────────────
+
+class PartialFormatter(string.Formatter):
+    """
+    Formatador de strings que lida com chaves (keys) ausentes de forma elegante,
+    em vez de causar um KeyError.
+    """
+    def __init__(self, missing: str = "n/a", bad_fmt: str = "n/a"):
+        self.missing = missing
+        self.bad_fmt = bad_fmt
+
+    def get_field(self, field_name: str, args: Tuple[Any, ...], kwargs: Dict[str, Any]) -> Tuple[Any, str]:
+        try:
+            val = super().get_field(field_name, args, kwargs)
+        except (KeyError, AttributeError):
+            val = None, field_name
+        return val
+
+    def format_field(self, value: Any, spec: str) -> str:
+        if not value:
+            return self.missing
+        try:
+            return super().format_field(value, spec)
+        except ValueError:
+            if self.bad_fmt:
+                return self.bad_fmt
+            raise
+
+
+def make_m3u(pl_directory: Union[str, Path], remote_items: Optional[List[Dict[str, Any]]] = None) -> None:
+    """
+    Gera um ficheiro de playlist .m3u.
+    Se a ordem remota da API (remote_items) for fornecida, usa um algoritmo de
+    4 passos (ID -> ISRC -> Título -> Nome de Ficheiro) para preservar a ordem online exata.
+    """
+    pl_path = Path(pl_directory).resolve()
+    track_list = ["#EXTM3U"]
+    pl_full_path = pl_path / f"{pl_path.name}.m3u"
+
+    # 1. Analisa a pasta local e extrai as tags de áudio (Pathlib rglob em vez de os.walk)
+    local_files_info: List[Dict[str, Any]] = []
+    
+    for audio_path in pl_path.rglob('*'):
+        if not audio_path.is_file() or audio_path.suffix.lower() not in EXTENSIONS:
+            continue
+
+        info: Dict[str, Any] = {
+            'path': audio_path, 
+            'title': '', 
+            'artist': '', 
+            'isrc': '', 
+            'qobuz_id': '',
+            'duration': 0
+        }
+        
+        try:
+            audio_gen = File(audio_path)
+            if audio_gen and audio_gen.info:
+                info['duration'] = int(audio_gen.info.length)
+
+            if audio_path.suffix.lower() == '.flac':
+                audio = FLAC(audio_path)
+                info['qobuz_id'] = audio.get("QOBUZTRACKID", [None])[0]
+                info['isrc'] = audio.get("ISRC", [None])[0]
+                info['title'] = audio.get("TITLE", [""])[0]
+                info['artist'] = audio.get("ARTIST", [""])[0]
+            else:
+                audio = ID3(audio_path)
+                for frame in audio.getall("TXXX"):
+                    if frame.desc.upper() == "QOBUZTRACKID":
+                        info['qobuz_id'] = frame.text[0]
+                        break
+                isrc_frame = audio.get("TSRC")
+                info['isrc'] = isrc_frame.text[0] if isrc_frame else None
+                tit2 = audio.get("TIT2")
+                info['title'] = tit2.text[0] if tit2 else ""
+                tpe1 = audio.get("TPE1")
+                info['artist'] = tpe1.text[0] if tpe1 else ""
+                
+        except Exception as e:
+            logger.debug(f"Error reading tags for {audio_path.name}: {e}")
+            info['title'] = audio_path.stem 
+        
+        local_files_info.append(info)
+
+    ordered_files: List[Dict[str, Any]] = []
+
+    # 2. Corresponde com a ordem da API do Qobuz (Algoritmo de 4 Passos)
+    if remote_items:
+        by_tid = {str(f['qobuz_id']): f for f in local_files_info if f.get('qobuz_id')}
+        by_isrc = {str(f['isrc']): f for f in local_files_info if f.get('isrc')}
+        by_title = {str(f['title']).strip().lower(): f for f in local_files_info if f.get('title')}
+        
+        missing_count = 0
+        table_header = (
+            f"\n{Tema.RED}{'━'*80}\n"
+            f"{Tema.YELLOW}{'MISSING LOCAL TRACKS':^80}\n"
+            f"{Tema.RED}{'━'*80}{Tema.OFF}\n"
+            f"{Tema.CYAN}{'TITLE':<35} │ {'ARTIST':<25} │ {'ID':<12}{Tema.OFF}\n"
+            f"{'─'*80}"
+        )
+        
+        for item in remote_items:
+            tid = str(item.get("id", ""))
+            isrc = str(item.get("isrc", ""))
+            track_title = item.get("title", "Unknown Title")
+            album_artist = item.get("album", {}).get("artist", {}).get("name")
+            performer_name = item.get("performer", {}).get("name", "Unknown Artist")
+            final_artist = performer_name if album_artist in [None, "Various Artists"] else album_artist
+            
+            best_match = by_tid.get(tid) or by_isrc.get(isrc) or by_title.get(track_title.strip().lower())
+            
+            if not best_match and track_title != "Unknown Title":
+                for f_info in local_files_info:
+                    if track_title.lower() in f_info['path'].name.lower():
+                        best_match = f_info
+                        break
+            
+            if best_match:
+                ordered_files.append(best_match)
+            else:
+                if missing_count == 0:
+                    logger.warning(table_header)
+                row = f"{track_title[:35]:<35} │ {final_artist[:25]:<25} │ {tid:<12}"
+                logger.warning(f"{Tema.YELLOW}{row}{Tema.OFF}")
+                missing_count += 1
+                
+        if missing_count > 0:
+            logger.warning(f"{Tema.RED}{'━'*80}{Tema.OFF}\n")
+
+    # 3. Fallback: Ordenação Natural
+    if not remote_items or len(ordered_files) == 0:
+        def natural_sort_key(s: str) -> List[Any]:
+            return [int(text) if text.isdigit() else text.lower() for text in re.split(r'(\d+)', s)]
+        
+        ordered_files = sorted(local_files_info, key=lambda x: natural_sort_key(x['path'].name))
+
+    # 4. Gera o ficheiro M3U
+    for f_info in ordered_files:
+        audio_rel_path = f_info['path'].relative_to(pl_path).as_posix()
+        disp_title = f_info['title'] or "Unknown Title"
+        disp_artist = f_info['artist'] or "Unknown Artist"
+        length = f_info['duration']
+
+        index = f"#EXTINF:{length}, {disp_artist} - {disp_title}\n{audio_rel_path}"
+        track_list.append(index)
+
+    if len(track_list) > 1:
+        pl_full_path.write_text("\n".join(track_list), encoding="utf-8")
+
+
+def smart_discography_filter(contents: List[Dict[str, Any]], save_space: bool = False, skip_extras: bool = False) -> List[Dict[str, Any]]:
+    """
+    Filtra discografias grandes, removendo duplicados de qualidade inferior
+    ou versões extra (Deluxe, Live) consoante as configurações.
+    """
+    TYPE_REGEXES = {
+        "remaster": r"(?i)(re)?master(ed)?",
+        "extra": r"(?i)(anniversary|deluxe|live|collector|demo|expanded|extended)",
+    }
+
+    def is_type(album_t: str, album: Dict[str, Any]) -> bool:
+        version = album.get("version", "")
+        title = album.get("title", "")
+        regex = TYPE_REGEXES[album_t]
+        return re.search(regex, f"{title} {version}") is not None
+
+    def essence(album_title: str) -> str:
+        r = re.match(r"([^\(]+)(?:\s*[\(\[][^\)][\)\]])*", album_title)
+        return r.group(1).strip().lower() if r else album_title.strip().lower()
+
+    requested_artist = contents[0]["name"]
+    items = [item["albums"]["items"] for item in contents][0]
+
+    title_grouped: Dict[str, List[Dict[str, Any]]] = dict()
+    for item in items:
+        title_ = essence(item["title"])
+        if title_ not in title_grouped:
+            title_grouped[title_] = []
+        title_grouped[title_].append(item)
+
+    filtered_items: List[Dict[str, Any]] = []
+    for albums in title_grouped.values():
+        best_bit_depth = max(a["maximum_bit_depth"] for a in albums)
+        get_best = min if save_space else max
+        best_sampling_rate = get_best(
+            a["maximum_sampling_rate"] for a in albums if a["maximum_bit_depth"] == best_bit_depth
+        )
+        remaster_exists = any(is_type("remaster", a) for a in albums)
+
+        def is_valid(album: Dict[str, Any]) -> bool:
+            return (
+                album["maximum_bit_depth"] == best_bit_depth
+                and album["maximum_sampling_rate"] == best_sampling_rate
+                and album["artist"]["name"] == requested_artist
+                and not (
+                    (remaster_exists and not is_type("remaster", album))
+                    or (skip_extras and is_type("extra", album))
+                )
+            )
+
+        valid_albums = list(filter(is_valid, albums))
+        if valid_albums:
+            filtered_items.append(valid_albums[0])
+
+    return filtered_items
+
+
+def format_duration(duration: int) -> str:
+    """Formata segundos num formato legível HH:MM:SS."""
+    return time.strftime("%H:%M:%S", time.gmtime(duration))
+
+
+def create_and_return_dir(directory: Union[str, Path]) -> str:
+    """Cria uma pasta absoluta, se não existir, e devolve o seu caminho."""
+    fix = Path(directory).expanduser().resolve()
+    fix.mkdir(parents=True, exist_ok=True)
+    return str(fix)
+
+
+def get_url_info(url: str) -> Tuple[str, str]:
+    """Retorna o tipo de URL do Qobuz e o respetivo ID."""
+    r = re.search(
+        r"(?:https:\/\/(?:w{3}|open|play)\.qobuz\.com)?(?:\/[a-z]{2}-[a-z]{2})"
+        r"?\/(album|artist|track|playlist|label)(?:\/[-\w\d]+)?\/([\w\d]+)",
+        url,
+    )
+    if not r:
+        raise ValueError("Invalid Qobuz URL")
+    return r.group(1), r.group(2)
+
+
+def get_album_artist(qobuz_album: Dict[str, Any]) -> List[str]:
+    """
+    Extrai os artistas principais do álbum. Retorna uma lista de strings para
+    garantir o suporte nativo a 'Multi-Artist Tagging'.
+    """
+    try:
+        if not qobuz_album.get("artists"):
+            single_artist = qobuz_album.get("artist", {}).get("name", "")
+            return [single_artist] if single_artist else []
+
+        main_artists = [a["name"] for a in qobuz_album.get("artists", []) if "main-artist" in a.get("roles", [])]
+        
+        if main_artists:
+            return main_artists
+            
+        single_artist = qobuz_album.get("artist", {}).get("name", "")
+        return [single_artist] if single_artist else []
+            
+    except Exception as e:
+        logger.error(f"Error getting album artist: {str(e)}")
+        single_artist = qobuz_album.get("artist", {}).get("name", "")
+        return [single_artist] if single_artist else []
+
+
+def apply_legacy_charmap(filename: str) -> str:
+    """
+    Aplica substituições ASCII clássicas para contornar limitações do Windows,
+    em vez de utilizar carateres Unicode 'full-width'.
+    """
+    replacements = {
+        ':': '-', '?': '', '/': '-', '\\': '-', '*': '-',
+        '"': "'", '<': '[', '>': ']', '|': '-'
+    }
+    
+    for old, new in replacements.items():
+        filename = filename.replace(old, new)
+        
+    # Limpa duplos traços criados acidentalmente (ex: "A / B" -> "A - B")
+    return re.sub(r'\s*-\s*-+', ' -', filename)
+
+
+def clean_filename(filename: str, legacy_charmap: bool = False) -> str:
+    """
+    Limpa carateres especiais redundantes e normaliza o Unicode (NFC).
+    """
+    filename = unicodedata.normalize('NFC', filename)
+    
+    # Funde múltiplos separadores num só
+    filename = re.sub(r'(?:\s*([,\.\:\;\|/\\_])\s*){2,}', r'\1 ', filename)
+
+    patterns = [
+        (r'\(\s*\W*\s*\)', ''), (r'\[\s*\W*\s*\]', ''), (r'\{\s*\W*\s*\}', ''),
+        (r'<\s*\W*\s*>', ''), (r'《\s*\W*\s*》', ''), (r'〈\s*\W*\s*〉', ''),
+        (r'「\s*\W*\s*」', ''), (r'『\s*\W*\s*』', ''), (r'（\s*\W*\s*）', ''),
+        (r'［\s*\W*\s*］', ''), (r'【\s*\W*\s*】', ''),
+        (r'(?<=[\(\[\{<《〈「『（［【])(\s*[,\.\:\;\|/\\_]\s*)\b', ''),
+        (r'\b(\s*[,\.\:\;\|/\\_]\s*)(?=[】］）』」〉》>\}\]\)])', ''),
+    ]
+
+    for pattern, replacement in patterns:
+        filename = re.sub(pattern, replacement, filename)
+
+    filename = re.sub(r'\s+', ' ', filename).strip().strip(".").strip()
+    
+    if legacy_charmap:
+        return apply_legacy_charmap(filename)
+    return invalid_chars_to_fullwidth(filename)
+
+
+def invalid_chars_to_fullwidth(filename: str) -> str:
+    """Substitui carateres inválidos nos ficheiros pelos seus equivalentes Unicode (Full-width)."""
+    invalid_to_fullwidth = {
+        '/': '／', '\\': '＼', ':': '：', '*': '＊',
+        '?': '？', '"': '＂', '<': '＜', '>': '＞', '|': '｜',
+    }
+
+    for invalid_char, fullwidth_char in invalid_to_fullwidth.items():
+        filename = filename.replace(invalid_char, fullwidth_char)
+    return filename
+    
+def extrair_essencia(texto: str) -> str:
+    """Limpa o texto removendo acentos, pontuações e termos entre parênteses
+    para uma comparação 'larga' (acha candidatos: mesmo artista/álbum base,
+    ignorando qual edição é)."""
+    if not texto: return ""
+    import re, unicodedata
+    texto = unicodedata.normalize('NFKD', texto).encode('ASCII', 'ignore').decode('utf-8').lower()
+    texto = re.sub(r'[\(\[].*?[\)\]]', '', texto)
+    texto = re.sub(r'[^\w\s]', ' ', texto)
+    return " ".join(texto.split())
+
+
+def extrair_titulo_completo(texto: str) -> str:
+    """
+    Normaliza o texto SEM remover o conteúdo de parênteses/colchetes --
+    preserva a info de versão (Deluxe, Live, Remaster, Tour Edition, etc).
+
+    Isso substitui qualquer lista fixa de palavras-chave: comparando o
+    título COMPLETO por similaridade, qualquer edição diferente (conhecida
+    ou não) já derruba o score sozinha, sem precisar listar nada na mão.
+    """
+    if not texto: return ""
+    import re, unicodedata
+    texto = unicodedata.normalize('NFKD', texto).encode('ASCII', 'ignore').decode('utf-8').lower()
+    texto = texto.replace('[', '(').replace(']', ')')
+    texto = re.sub(r'[^\w\s\(\)]', ' ', texto)
+    return re.sub(r'\s+', ' ', texto).strip()
+
+
+async def get_apple_hq_cover(upc: Optional[str] = None, isrc: Optional[str] = None, artist: Optional[str] = None, album: Optional[str] = None, track_title: Optional[str] = None) -> Optional[str]:
+    import urllib.parse
+    import difflib
+    import aiohttp
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36"
+    }
+
+    q_artist_puro = extrair_essencia(artist)
+    q_album_puro = extrair_essencia(album)
+    q_track_puro = extrair_essencia(track_title) if track_title else ""
+
+    # Título completo (com a edição/versão preservada) -- usado como trava final
+    q_album_completo = extrair_titulo_completo(album)
+    q_track_completo = extrair_titulo_completo(track_title) if track_title else ""
+
+    # Limiares de similaridade para o título COMPLETO (com versão).
+    # Quanto mais alto, mais rígido contra misturar edições diferentes.
+    LIMIAR_VERSAO_ALBUM = 0.87
+    LIMIAR_VERSAO_TRACK = 0.85
+
+    def avaliar_resultados(data):
+        melhor_capa = None
+        maior_media = 0.0
+
+        for result in data.get("results", []):
+            a_artist = result.get("artistName", "")
+            a_album = result.get("collectionName", "")
+            a_track = result.get("trackName", "")
+
+            if not a_album: continue
+
+            # Filtro 1: Corta Lixo
+            palavras_lixo = ["karaoke", "tribute", "cover", "instrumental", "mixed", "remix"]
+            is_lixo = False
+            if album:
+                is_lixo = any(lixo in a_album.lower() and lixo not in album.lower() for lixo in palavras_lixo)
+            if track_title and not is_lixo:
+                is_lixo = any(lixo in a_track.lower() and lixo not in track_title.lower() for lixo in palavras_lixo)
+            if is_lixo: continue
+
+            # Filtro 1.5: TRAVA DE VERSÃO COMPLETA (genérica, sem whitelist) , Compara o título inteiro (com parênteses) -- qualquer edição diferente da Qobuz (Deluxe, Live, Tour Edition, seja o que for) derruba o score automaticamente, mesmo sem estar numa lista.
+            a_album_completo = extrair_titulo_completo(a_album)
+            score_versao_album = difflib.SequenceMatcher(None, q_album_completo, a_album_completo).ratio()
+            if score_versao_album < LIMIAR_VERSAO_ALBUM:
+                continue
+
+            if track_title and a_track:
+                a_track_completo = extrair_titulo_completo(a_track)
+                score_versao_track = difflib.SequenceMatcher(None, q_track_completo, a_track_completo).ratio()
+                if score_versao_track < LIMIAR_VERSAO_TRACK:
+                    continue
+
+            # Filtro 2: Avalia Artista e Álbum na essência pura (achar candidato certo)
+            a_artist_puro = extrair_essencia(a_artist)
+            a_album_puro = extrair_essencia(a_album)
+
+            score_artista = difflib.SequenceMatcher(None, q_artist_puro, a_artist_puro).ratio() if q_artist_puro else 1.0
+            score_album = difflib.SequenceMatcher(None, q_album_puro, a_album_puro).ratio() if q_album_puro else 1.0
+
+            if score_artista < 0.85 or score_album < 0.80: continue
+
+            # Filtro 3: Avalia o Nome da Música (essência)
+            score_track = 1.0
+            se_tem_faixa = 1 if track_title else 0
+
+            if track_title and a_track:
+                a_track_puro = extrair_essencia(a_track)
+                score_track = difflib.SequenceMatcher(None, q_track_puro, a_track_puro).ratio()
+                if score_track < 0.80: continue
+
+            divisor = 2.0 + se_tem_faixa
+            media = (score_artista + score_album + (score_track * se_tem_faixa)) / divisor
+
+            if media > maior_media:
+                maior_media = media
+                url_arte = result.get("artworkUrl100", "")
+                if url_arte:
+                    melhor_capa = url_arte.replace("100x100bb", "10000x10000bb")
+
+        if maior_media >= 0.80 and melhor_capa:
+            return melhor_capa
+        return None
+
+    async with aiohttp.ClientSession(headers=headers) as session:
+        for codigo, tipo in [(upc, "upc"), (isrc, "isrc")]:
+            if codigo and codigo.lower() != "n/a":
+                try:
+                    async with session.get(f"https://itunes.apple.com/lookup?{tipo}={codigo}", timeout=5) as r:
+                        if r.status == 200:
+                            data = await r.json(content_type=None)
+                            if data.get("resultCount", 0) > 0:
+                                capa = avaliar_resultados(data)
+                                if capa: return capa
+                except Exception: pass
+
+        if artist and album:
+            search_entity = "song" if track_title else "album"
+            query_str = f"{artist} {track_title}" if track_title else f"{artist} {album}"
+            clean_query = urllib.parse.quote(query_str)
+            url = f"https://itunes.apple.com/search?term={clean_query}&entity={search_entity}&limit=10"
+
+            try:
+                async with session.get(url, timeout=5) as r:
+                    if r.status == 200:
+                        data = await r.json(content_type=None)
+                        if data.get("resultCount", 0) > 0:
+                            capa = avaliar_resultados(data)
+                            if capa: return capa
+            except Exception: pass
+
+        return None
