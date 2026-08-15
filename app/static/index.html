@@ -1,0 +1,1147 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>QOBUZ · DL</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='38' fill='%23ff1e1e'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Doto:wght@400..900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#070707;
+    --bg-elevated:#121212;
+    --bg-raised:#181818;
+    --bg-card:#0f0f0f;
+    --bg-shimmer:#1d1d1d;
+    --border:#242424;
+    --border-soft:#1a1a1a;
+    --fg:#f2f1ec;
+    --fg-dim:#8c8c86;
+    --fg-faint:#4d4d49;
+    --accent:#ff1e1e;
+    --accent-dim:#5c0f0f;
+    --accent-soft:rgba(255,30,30,.10);
+    --radius:0px;
+    --mono:'JetBrains Mono', ui-monospace, monospace;
+    --dot:'Doto', var(--mono);
+    --ease:cubic-bezier(.16,1,.3,1);
+    --sidebar-w:232px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:
+      radial-gradient(circle, #151515 1px, transparent 1px) 0 0/22px 22px,
+      var(--bg);
+    color:var(--fg);
+    font-family:var(--mono);
+    min-height:100dvh;
+    -webkit-font-smoothing:antialiased;
+  }
+  ::selection{background:var(--accent);color:#0a0a0a;}
+  a{color:inherit;}
+  button, input, select, textarea{font-family:inherit;}
+  img{display:block;}
+  .icon svg{width:16px;height:16px;display:block;}
+  .icon-sm svg{width:14px;height:14px;}
+  .icon-xs svg{width:12px;height:12px;}
+  .icon-lg svg{width:22px;height:22px;}
+  .icon-xl svg{width:30px;height:30px;}
+  .spin{animation:spin 1s linear infinite;}
+
+  @keyframes fadeSlideUp{from{opacity:0;transform:translateY(9px);}to{opacity:1;transform:translateY(0);}}
+  @keyframes fadeScale{from{opacity:0;transform:scale(.97);}to{opacity:1;transform:scale(1);}}
+  @keyframes shimmer{0%{background-position:-300% 0;}100%{background-position:300% 0;}}
+  @keyframes glowPulse{0%,100%{box-shadow:0 0 0 rgba(255,30,30,0);}50%{box-shadow:0 0 9px rgba(255,30,30,.5);}}
+  @keyframes toastIn{from{opacity:0;transform:translateY(10px) scale(.97);}to{opacity:1;transform:translateY(0) scale(1);}}
+  @keyframes toastOut{to{opacity:0;transform:translateY(6px) scale(.97);}}
+  @keyframes imgFadeIn{from{opacity:0;}to{opacity:1;}}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  @keyframes popIn{from{opacity:0;transform:scale(.88);}to{opacity:1;transform:scale(1);}}
+  @keyframes dotPulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(255,30,30,.4);}50%{opacity:.4;box-shadow:0 0 0 5px rgba(255,30,30,0);}}
+  @keyframes dotBlink{50%{opacity:.15;}}
+
+  /* ---------------------------------------------------------- app shell */
+  .shell{display:flex;min-height:100dvh;align-items:stretch;}
+  .main{flex:1;min-width:0;display:flex;flex-direction:column;}
+  .content{max-width:800px;width:100%;margin:0 auto;padding:24px 20px 40px;flex:1;}
+  body.is-authed .auth-only{display:flex;}
+
+  /* sidebar (desktop) ------------------------------------------------- */
+  .sidebar{display:none;}
+  .brand{display:flex;align-items:center;gap:10px;}
+  .brand-mark{width:26px;height:26px;background:var(--accent-soft);color:var(--accent);border:1px solid var(--accent-dim);display:flex;align-items:center;justify-content:center;flex:none;}
+  .brand-name{font-family:var(--dot);font-weight:700;font-size:18px;letter-spacing:.5px;}
+  .brand-name .sep{color:var(--accent);}
+
+  .nav-tab{
+    background:none;border:none;color:var(--fg-dim);font-family:var(--mono);font-weight:600;
+    cursor:pointer;display:flex;align-items:center;gap:10px;
+    transition:color .18s ease,border-color .18s ease,background-color .18s ease;
+  }
+  .nav-tab .tab-count{
+    background:var(--accent);color:#0a0a0a;font-size:10px;font-weight:700;padding:1px 6px;border-radius:0;
+    animation:popIn .2s var(--ease) both;
+  }
+
+  .status-chip{
+    display:flex;align-items:center;gap:8px;font-size:11px;color:var(--fg-dim);font-weight:500;
+    text-transform:uppercase;letter-spacing:.05em;
+  }
+  .status-dot{width:8px;height:8px;border-radius:50%;background:var(--fg-faint);flex:none;transition:background-color .2s ease;}
+  .status-dot.online{background:var(--accent);animation:dotPulse 2.2s ease-in-out infinite;}
+  .status-dot.busy{background:var(--accent);animation:dotPulse .7s ease-in-out infinite;}
+  .status-dot.error{background:var(--accent);animation:dotBlink .5s steps(2,jump-none) infinite;}
+  .icon-btn{
+    background:none;border:1px solid var(--border);color:var(--fg-dim);width:32px;height:32px;
+    display:flex;align-items:center;justify-content:center;cursor:pointer;border-radius:0;
+    transition:border-color .15s ease,color .15s ease,transform .1s ease;flex:none;
+  }
+  .icon-btn:hover{border-color:var(--accent);color:var(--accent);}
+  .icon-btn:active{transform:scale(.92);}
+
+  .sidebar-mini{display:none;}
+  .sidebar-mini.has-job{display:block;}
+  .sidebar-mini-card{border:1px solid var(--border);padding:12px;background:var(--bg-card);}
+  .sidebar-mini-label{font-size:10px;color:var(--fg-faint);text-transform:uppercase;letter-spacing:.06em;margin-bottom:7px;display:flex;align-items:center;gap:6px;}
+  .sidebar-mini-name{font-size:11.5px;color:var(--fg);word-break:break-word;line-height:1.35;margin-bottom:7px;}
+  .sidebar-mini-bar{height:5px;background:var(--bg-elevated);border:1px solid var(--border-soft);overflow:hidden;}
+  .sidebar-mini-bar .fill{height:100%;width:0%;background-image:repeating-linear-gradient(90deg, var(--accent) 0 4px, transparent 4px 6px);transition:width .3s var(--ease);}
+
+  @media (min-width:900px){
+    .sidebar{
+      display:flex;flex-direction:column;width:var(--sidebar-w);flex:none;
+      border-right:1px solid var(--border-soft);padding:22px 18px;position:sticky;top:0;height:100dvh;gap:24px;
+    }
+    .sidebar-nav{display:flex;flex-direction:column;gap:2px;}
+    .sidebar .nav-tab{
+      padding:10px 10px;border-left:2px solid transparent;font-size:12.5px;text-transform:uppercase;letter-spacing:.04em;
+    }
+    .sidebar .nav-tab:hover{color:var(--fg);background:var(--bg-elevated);}
+    .sidebar .nav-tab.active{color:var(--accent);border-left-color:var(--accent);background:var(--accent-soft);}
+    .sidebar .nav-tab .tab-count{margin-left:auto;}
+    .sidebar-spacer{flex:1;}
+    .sidebar-footer{display:flex;align-items:center;justify-content:space-between;gap:10px;padding-top:16px;border-top:1px solid var(--border-soft);}
+    .topbar{display:none !important;}
+    .bottom-tabbar{display:none !important;}
+    .content{padding:32px 40px 48px;max-width:840px;}
+  }
+
+  /* topbar (mobile) --------------------------------------------------- */
+  .topbar{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:16px 20px;position:sticky;top:0;z-index:40;
+    background:rgba(7,7,7,.86);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+    border-bottom:1px solid var(--border-soft);
+  }
+  .topbar-actions{display:flex;align-items:center;gap:12px;}
+
+  /* bottom tab bar (mobile) -------------------------------------------*/
+  .bottom-tabbar{
+    display:flex;position:fixed;left:0;right:0;bottom:0;z-index:40;
+    background:rgba(7,7,7,.92);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+    border-top:1px solid var(--border-soft);
+    padding:8px 6px calc(8px + env(safe-area-inset-bottom));
+  }
+  .bottom-tabbar .nav-tab{
+    flex:1;flex-direction:column;gap:4px;padding:6px 4px;font-size:10px;text-transform:uppercase;letter-spacing:.04em;
+    position:relative;
+  }
+  .bottom-tabbar .nav-tab.active{color:var(--accent);}
+  .bottom-tabbar .nav-tab .tab-count{
+    position:absolute;top:0;right:22%;font-size:9px;padding:0 4px;
+  }
+  @media (max-width:899.98px){
+    .content{padding-bottom:88px;}
+  }
+
+  /* settings panel ---------------------------------------------------*/
+  #settings-panel{
+    max-height:0;overflow:hidden;background:var(--bg-card);border:1px solid transparent;
+    transition:max-height .3s var(--ease), border-color .3s ease, margin .3s ease;
+  }
+  #settings-panel.open{max-height:150px;border-color:var(--border-soft);margin-bottom:20px;}
+  #settings-panel .inner{padding:16px;}
+  .settings-row{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;}
+  .settings-row + .settings-row{margin-top:14px;}
+  .settings-label{font-size:11px;color:var(--fg-dim);text-transform:uppercase;letter-spacing:.06em;}
+
+  /* generic surfaces ---------------------------------------------------*/
+  .card{
+    background:var(--bg-card);border:1px solid var(--border);padding:22px;
+    animation:fadeSlideUp .4s var(--ease) both;
+  }
+  .card h2{font-family:var(--dot);font-size:14px;letter-spacing:.08em;text-transform:uppercase;margin:0 0 4px;color:var(--fg-dim);font-weight:600;}
+  .card p.hint{font-size:12px;color:var(--fg-dim);margin:0 0 18px;line-height:1.55;}
+  label{display:block;font-size:11px;color:var(--fg-dim);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;}
+  input[type=text], input[type=password], input[type=url]{
+    width:100%;background:var(--bg-elevated);border:1px solid var(--border);color:var(--fg);
+    padding:12px 13px;border-radius:0;font-size:14px;outline:none;transition:border-color .15s ease;
+  }
+  input:focus{border-color:var(--accent);}
+  input::placeholder{color:var(--fg-faint);}
+  .field{margin-bottom:14px;}
+  .row{display:flex;gap:10px;}
+  .row .field{flex:1;}
+  .link-btn{
+    background:none;border:none;color:var(--fg-dim);font-size:11px;text-decoration:underline;
+    cursor:pointer;padding:0;margin-top:2px;text-underline-offset:3px;transition:color .15s ease;
+  }
+  .link-btn:hover{color:var(--accent);}
+
+  .btn{
+    appearance:none;border:1px solid var(--accent);background:var(--accent);color:#0a0a0a;
+    font-family:var(--mono);font-weight:700;font-size:12.5px;letter-spacing:.06em;text-transform:uppercase;
+    padding:12px 18px;border-radius:0;cursor:pointer;white-space:nowrap;
+    display:inline-flex;align-items:center;gap:7px;justify-content:center;
+    transition:background-color .15s ease,transform .1s ease,opacity .15s ease;
+  }
+  .btn:hover{background:#ff3b3b;}
+  .btn:active{transform:scale(.96);}
+  .btn:disabled{background:var(--fg-faint);border-color:var(--fg-faint);color:#0a0a0a;cursor:not-allowed;opacity:.6;transform:none;}
+  .btn.ghost{background:transparent;color:var(--fg);border-color:var(--border);}
+  .btn.ghost:hover{border-color:var(--accent);color:var(--accent);}
+  .btn.small{padding:8px 12px;font-size:11px;}
+  .btn.full{width:100%;}
+
+  .error-msg{
+    display:flex;align-items:center;gap:8px;color:var(--accent);font-size:12px;margin-top:10px;
+    animation:fadeSlideUp .25s var(--ease) both;
+  }
+
+  #login-card-wrap.hidden{display:none;}
+  #app{display:none;}
+  #app.visible{display:block;}
+
+  /* section headers ----------------------------------------------------*/
+  .section-eyebrow{font-family:var(--dot);font-size:11px;font-weight:700;color:var(--fg-faint);text-transform:uppercase;letter-spacing:.06em;margin:0 0 12px;}
+
+  /* link panel --------------------------------------------------------- */
+  .link-input-row{display:flex;gap:8px;}
+  .link-input-row input{flex:1;}
+  #batch-box{margin-top:12px;background:var(--bg-card);border:1px solid var(--border);padding:14px;animation:fadeSlideUp .25s var(--ease) both;}
+  #batch-box textarea{
+    width:100%;min-height:70px;resize:vertical;background:transparent;border:none;color:var(--fg);
+    font-family:var(--mono);font-size:13px;outline:none;line-height:1.5;margin-bottom:10px;
+  }
+
+  .empty-state{
+    margin-top:20px;border:1px dashed var(--border);padding:48px 20px;
+    display:flex;flex-direction:column;align-items:center;text-align:center;gap:12px;
+    color:var(--fg-faint);animation:fadeSlideUp .3s var(--ease) both;
+  }
+  .empty-state .icon-wrap{width:50px;height:50px;background:var(--bg-elevated);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--fg-faint);}
+  .empty-state p{margin:0;font-size:12.5px;max-width:280px;line-height:1.5;}
+
+  .skeleton{margin-top:20px;border:1px solid var(--border);background:var(--bg-card);padding:20px;display:flex;gap:16px;animation:fadeSlideUp .25s var(--ease) both;}
+  .skel-box{background:linear-gradient(90deg, var(--bg-elevated) 25%, var(--bg-shimmer) 37%, var(--bg-elevated) 63%);background-size:400% 100%;animation:shimmer 1.4s ease infinite;}
+
+  .preview-card{margin-top:20px;border:1px solid var(--border);background:var(--bg-card);animation:fadeScale .35s var(--ease) both;}
+  .breadcrumb{display:flex;align-items:center;gap:8px;padding:10px 18px;border-bottom:1px solid var(--border-soft);font-size:11px;color:var(--fg-dim);background:var(--bg-elevated);}
+  .breadcrumb button{display:flex;align-items:center;gap:4px;background:none;border:none;color:var(--accent);cursor:pointer;font-family:var(--mono);font-size:11px;font-weight:700;padding:0;}
+  .breadcrumb .crumb-sep{color:var(--fg-faint);}
+
+  .preview-head{display:flex;gap:18px;padding:20px;flex-wrap:wrap;}
+  .cover-wrap{width:132px;height:132px;flex:none;background:var(--bg-elevated);border:1px solid var(--border-soft);position:relative;overflow:hidden;}
+  .cover-wrap img{width:100%;height:100%;object-fit:cover;animation:imgFadeIn .35s ease;}
+  .cover-fallback{width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--fg-faint);}
+  .preview-meta{flex:1;min-width:200px;}
+  .type-pill{display:inline-block;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);border:1px solid var(--accent-dim);padding:3px 8px;margin-bottom:8px;}
+  .preview-title{font-family:var(--dot);font-size:19px;font-weight:700;line-height:1.25;margin:0 0 2px;word-break:break-word;}
+  .preview-sub{font-size:13px;color:var(--fg-dim);margin:0 0 12px;}
+  .badges{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;}
+  .badge-pill{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;color:var(--fg-dim);border:1px solid var(--border);padding:4px 8px;letter-spacing:.03em;animation:popIn .25s var(--ease) both;}
+  .badge-pill.hires{color:var(--accent);border-color:var(--accent-dim);}
+  .preview-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+  .preview-actions a{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--fg-dim);text-decoration:underline;text-underline-offset:3px;}
+  .preview-actions a:hover{color:var(--accent);}
+
+  .tracklist{border-top:1px solid var(--border-soft);}
+  .tracklist-head{padding:11px 20px 8px;font-family:var(--dot);font-size:10px;font-weight:700;color:var(--fg-faint);text-transform:uppercase;letter-spacing:.06em;}
+  .track-row{display:flex;align-items:center;gap:12px;padding:10px 20px;border-bottom:1px solid var(--border-soft);font-size:12.5px;animation:fadeSlideUp .3s var(--ease) both;transition:background-color .12s ease;}
+  .track-row:hover{background:var(--bg-elevated);}
+  .track-row:last-child{border-bottom:none;}
+  .track-num{color:var(--fg-faint);width:24px;flex:none;text-align:right;font-size:11px;}
+  .track-title{flex:1;min-width:0;}
+  .track-title .t-main{color:var(--fg);word-break:break-word;}
+  .track-title .t-version{color:var(--fg-faint);font-size:11px;}
+  .track-artist{color:var(--fg-faint);font-size:11px;flex:none;max-width:140px;text-overflow:ellipsis;overflow:hidden;white-space:nowrap;}
+  .track-hires{color:var(--accent);font-size:9px;font-weight:700;border:1px solid var(--accent-dim);padding:1px 4px;flex:none;}
+  .track-dur{color:var(--fg-dim);font-size:11px;flex:none;width:40px;text-align:right;}
+
+  .album-grid{display:grid;grid-template-columns:repeat(auto-fill, minmax(130px,1fr));gap:14px;padding:20px;border-top:1px solid var(--border-soft);}
+  .album-card{cursor:pointer;animation:fadeSlideUp .3s var(--ease) both;transition:transform .18s var(--ease);}
+  .album-card:hover{transform:translateY(-3px);}
+  .album-card .cover-wrap{width:100%;height:auto;aspect-ratio:1/1;transition:border-color .18s ease;}
+  .album-card:hover .cover-wrap{border-color:var(--accent-dim);}
+  .album-card .ac-title{font-size:12px;margin-top:8px;color:var(--fg);word-break:break-word;line-height:1.3;}
+  .album-card .ac-sub{font-size:10.5px;color:var(--fg-faint);margin-top:2px;}
+
+  /* search panel ------------------------------------------------------- */
+  .search-row{display:flex;gap:8px;}
+  .search-row input{flex:1;}
+  .type-select{display:flex;gap:6px;margin-top:12px;flex-wrap:wrap;}
+  .qbtn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border);background:var(--bg-elevated);color:var(--fg-dim);padding:8px 11px;font-size:11px;letter-spacing:.03em;cursor:pointer;border-radius:0;transition:border-color .15s ease,color .15s ease,transform .1s ease;}
+  .qbtn.active{border-color:var(--accent);color:var(--accent);background:var(--accent-soft);}
+  .qbtn:active{transform:scale(.94);}
+
+  .search-grid{display:grid;grid-template-columns:repeat(auto-fill, minmax(140px,1fr));gap:14px;margin-top:20px;}
+  .search-card{background:var(--bg-card);border:1px solid var(--border);cursor:pointer;position:relative;animation:fadeSlideUp .3s var(--ease) both;transition:transform .18s ease,border-color .18s ease;}
+  .search-card:hover{transform:translateY(-3px);border-color:var(--border-soft);}
+  .search-card .cover-wrap{width:100%;height:auto;aspect-ratio:1/1;border:none;border-bottom:1px solid var(--border-soft);}
+  .search-card .sc-body{padding:10px;}
+  .sc-title{font-size:12px;color:var(--fg);line-height:1.3;word-break:break-word;}
+  .sc-sub{font-size:10.5px;color:var(--fg-faint);margin-top:3px;}
+  .sc-quick{position:absolute;top:6px;right:6px;width:26px;height:26px;background:rgba(7,7,7,.82);border:1px solid var(--border);color:var(--fg);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:border-color .15s ease,color .15s ease,transform .1s ease;}
+  .sc-quick:hover{border-color:var(--accent);color:var(--accent);}
+  .sc-quick:active{transform:scale(.88);}
+  .empty-note{font-size:12px;color:var(--fg-faint);margin-top:20px;text-align:center;padding:34px 0;animation:fadeSlideUp .3s var(--ease) both;}
+
+  /* queue/jobs ----------------------------------------------------------*/
+  .queue-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;}
+  .queue-head .jobs-title{font-family:var(--dot);font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;}
+  .jobs{margin-top:0;display:flex;flex-direction:column;gap:12px;}
+  .job{background:var(--bg-card);border:1px solid var(--border);border-left:3px solid var(--border-soft);padding:15px;display:flex;gap:14px;animation:fadeSlideUp .35s var(--ease) both;transition:border-color .25s ease;}
+  .job.st-running{border-left-color:var(--accent);}
+  .job.st-error{border-left-color:var(--accent);}
+  .job.st-done{border-left-color:var(--fg-dim);}
+  .job.st-cancelled{border-left-color:var(--fg-faint);opacity:.65;}
+  .job .cover-wrap{width:56px;height:56px;flex:none;}
+  .job-body{flex:1;min-width:0;}
+  .job-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;}
+  .job-name{font-size:13.5px;font-weight:600;word-break:break-word;}
+  .job-sub{font-size:11px;color:var(--fg-faint);margin-top:1px;}
+  .badge{display:inline-flex;align-items:center;gap:5px;font-size:10px;letter-spacing:.06em;text-transform:uppercase;padding:3px 8px;border-radius:0;border:1px solid var(--border);color:var(--fg-dim);white-space:nowrap;flex:none;}
+  .badge.st-running{color:var(--accent);border-color:var(--accent-dim);background:var(--accent-soft);}
+  .badge.st-error{color:var(--accent);border-color:var(--accent);background:var(--accent-soft);}
+  .badge.st-done{color:var(--fg);border-color:var(--fg-dim);}
+  .badge.st-queued{color:var(--fg-faint);}
+  .badge.st-cancelled{color:var(--fg-faint);text-decoration:line-through;}
+
+  .track-line{font-size:11.5px;color:var(--fg-dim);margin-top:10px;display:flex;justify-content:space-between;gap:8px;}
+  .bar-track{height:7px;margin-top:7px;background:var(--bg-elevated);border:1px solid var(--border-soft);position:relative;overflow:hidden;}
+  .bar-fill{height:100%;width:0%;background-image:repeating-linear-gradient(90deg, var(--accent) 0 5px, transparent 5px 8px);transition:width .3s var(--ease);}
+  .bar-fill.running{animation:glowPulse 1.7s ease-in-out infinite;}
+  .job-error-text{display:flex;align-items:flex-start;gap:6px;color:var(--accent);font-size:12px;margin-top:10px;line-height:1.45;}
+  .job-actions{display:flex;gap:8px;margin-top:13px;flex-wrap:wrap;}
+
+  footer.page-footer{margin-top:44px;padding:16px 0 0;font-size:11px;color:var(--fg-faint);text-align:center;border-top:1px solid var(--border-soft);}
+
+  /* toasts -------------------------------------------------------------*/
+  #toast-container{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column-reverse;gap:8px;z-index:90;width:min(380px, calc(100vw - 32px));pointer-events:none;}
+  @media (min-width:900px){ #toast-container{left:auto;right:24px;bottom:24px;transform:none;} }
+  .toast{background:var(--bg-raised);border:1px solid var(--border);border-left:3px solid var(--accent);padding:11px 14px;font-size:12px;color:var(--fg);display:flex;align-items:center;gap:9px;animation:toastIn .25s var(--ease) both;pointer-events:auto;}
+  .toast.leaving{animation:toastOut .2s ease forwards;}
+  .toast .icon{color:var(--accent);flex:none;}
+
+  @media (max-width:480px){
+    .card,.job{padding:15px;}
+    .preview-head{padding:16px;}
+    .cover-wrap{width:96px;height:96px;}
+    .track-artist{display:none;}
+  }
+</style>
+</head>
+<body>
+
+  <div class="shell">
+    <!-- SIDEBAR (desktop) ---------------------------------------------->
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-mark" id="brand-icon-1"></span>
+        <span class="brand-name">QOBUZ<span class="sep">○</span>DL</span>
+      </div>
+
+      <nav class="sidebar-nav auth-only" style="display:none;">
+        <button class="nav-tab active" data-tab="link" id="nav-link-1"></button>
+        <button class="nav-tab" data-tab="search" id="nav-search-1"></button>
+        <button class="nav-tab" data-tab="queue" id="nav-queue-1"></button>
+      </nav>
+
+      <div class="sidebar-mini" id="sidebar-mini"></div>
+      <div class="sidebar-spacer"></div>
+
+      <div class="sidebar-footer">
+        <div class="status-chip"><span class="status-dot"></span><span class="status-label">offline</span></div>
+        <button class="icon-btn settings-toggle auth-only" style="display:none;" title="Sessão" id="settings-btn-1"></button>
+      </div>
+    </aside>
+
+    <div class="main">
+      <!-- TOPBAR (mobile) ----------------------------------------------->
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark" id="brand-icon-2"></span>
+          <span class="brand-name">QOBUZ<span class="sep">○</span>DL</span>
+        </div>
+        <div class="topbar-actions">
+          <div class="status-chip"><span class="status-dot"></span><span class="status-label">offline</span></div>
+          <button class="icon-btn settings-toggle auth-only" style="display:none;" title="Sessão" id="settings-btn-2"></button>
+        </div>
+      </header>
+
+      <div class="content">
+        <div id="settings-panel">
+          <div class="inner">
+            <div class="settings-row">
+              <span class="settings-label">Qualidade</span>
+              <div class="quality-select" id="quality-select" style="display:flex;gap:6px;flex-wrap:wrap;">
+                <button class="qbtn" data-q="5">MP3 320</button>
+                <button class="qbtn" data-q="6">CD 16/44.1</button>
+                <button class="qbtn active" data-q="7">HI-RES 24/96</button>
+                <button class="qbtn" data-q="27">HI-RES 24/192</button>
+              </div>
+            </div>
+            <div class="settings-row">
+              <span class="settings-label" id="session-info">Sessão ativa</span>
+              <button class="btn ghost small" id="logout-btn">Sair da sessão</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- LOGIN GATE --------------------------------------------------->
+        <div id="login-card-wrap">
+          <div class="card">
+            <h2>Sessão</h2>
+            <p class="hint">Cole o <b>user_auth_token</b> extraído do DevTools (F12 → Application/Storage → localStorage → play.qobuz.com). Fica salvo só neste navegador.</p>
+
+            <div id="token-fields">
+              <div class="field">
+                <label for="token-input">Auth token</label>
+                <input type="password" id="token-input" placeholder="ey... / token do Qobuz" autocomplete="off" />
+              </div>
+            </div>
+
+            <div id="pwd-fields" style="display:none;">
+              <div class="row">
+                <div class="field">
+                  <label for="email-input">Email</label>
+                  <input type="text" id="email-input" autocomplete="off" />
+                </div>
+                <div class="field">
+                  <label for="pwd-input">Senha</label>
+                  <input type="password" id="pwd-input" autocomplete="off" />
+                </div>
+              </div>
+            </div>
+
+            <div class="row" style="align-items:flex-end;">
+              <button class="btn full" id="login-btn">Entrar</button>
+            </div>
+            <button class="link-btn" id="toggle-auth-mode">usar email e senha em vez de token</button>
+            <div class="error-msg" id="login-error" style="display:none;"></div>
+          </div>
+        </div>
+
+        <!-- APP ------------------------------------------------------->
+        <div id="app">
+
+          <!-- TAB: LINK -->
+          <section class="panel active" id="panel-link">
+            <div class="link-input-row">
+              <input type="text" id="link-url" placeholder="Cole o link do Qobuz — ou digite pra buscar" autocomplete="off" />
+              <button class="btn" id="link-go">Ver</button>
+            </div>
+            <button class="link-btn" id="toggle-batch">colar vários links de uma vez (modo lote, sem preview)</button>
+            <div id="batch-box" style="display:none;">
+              <textarea id="batch-input" placeholder="um link por linha"></textarea>
+              <button class="btn ghost small" id="batch-go">Enfileirar todos</button>
+            </div>
+            <div class="error-msg" id="link-error" style="display:none;"></div>
+
+            <div id="preview-area"></div>
+          </section>
+
+          <!-- TAB: BUSCAR -->
+          <section class="panel" id="panel-search">
+            <div class="search-row">
+              <input type="text" id="search-q" placeholder="Buscar álbuns, faixas, artistas, playlists..." autocomplete="off" />
+              <button class="btn" id="search-go">Buscar</button>
+            </div>
+            <div class="type-select" id="search-type">
+              <button class="qbtn active" data-t="album">Álbuns</button>
+              <button class="qbtn" data-t="track">Faixas</button>
+              <button class="qbtn" data-t="artist">Artistas</button>
+              <button class="qbtn" data-t="playlist">Playlists</button>
+            </div>
+            <div class="error-msg" id="search-error" style="display:none;"></div>
+            <div id="search-empty"></div>
+            <div class="search-grid" id="search-results"></div>
+          </section>
+
+          <!-- TAB: FILA -->
+          <section class="panel" id="panel-queue">
+            <div class="queue-head">
+              <span class="jobs-title">Fila de downloads</span>
+              <button class="link-btn" id="clear-done">limpar concluídos</button>
+            </div>
+            <div class="jobs" id="jobs-list"></div>
+            <div class="empty-state" id="queue-empty">
+              <div class="icon-wrap" id="queue-empty-icon"></div>
+              <p>Nada na fila ainda. Cole um link ou busque algo pra começar a baixar.</p>
+            </div>
+          </section>
+
+        </div>
+
+        <footer class="page-footer">qobuz-dl master edition · sessão local ao navegador · nada é salvo no servidor além da duração do download</footer>
+      </div>
+    </div>
+  </div>
+
+  <!-- BOTTOM TAB BAR (mobile) ---------------------------------------- -->
+  <nav class="bottom-tabbar auth-only" style="display:none;">
+    <button class="nav-tab active" data-tab="link" id="nav-link-2"></button>
+    <button class="nav-tab" data-tab="search" id="nav-search-2"></button>
+    <button class="nav-tab" data-tab="queue" id="nav-queue-2"></button>
+  </nav>
+
+  <div id="toast-container"></div>
+
+<script>
+(() => {
+  const API = ""; // mesma origem
+  const WS_PROTO = location.protocol === "https:" ? "wss:" : "ws:";
+  const $ = (sel, root = document) => root.querySelector(sel);
+  const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
+
+  // ------------------------------------------------------------- icons
+  const ICONS = {
+    music: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>`,
+    search: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>`,
+    link: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" y1="12" x2="16" y2="12"/></svg>`,
+    queue: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3.5" cy="6" r="1"/><circle cx="3.5" cy="12" r="1"/><circle cx="3.5" cy="18" r="1"/></svg>`,
+    settings: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`,
+    x: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`,
+    chevronLeft: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>`,
+    download: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`,
+    externalLink: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>`,
+    check: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`,
+    alert: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`,
+    loader: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/></svg>`,
+    clock: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`,
+    disc: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>`,
+  };
+  function icon(name, cls = "") { return `<span class="icon ${cls}">${ICONS[name] || ""}</span>`; }
+
+  const STATUS_META = {
+    queued:    { label: "Na fila",   cls: "st-queued",    icon: "clock" },
+    running:   { label: "Baixando",  cls: "st-running",   icon: "loader" },
+    done:      { label: "Concluído", cls: "st-done",      icon: "check" },
+    error:     { label: "Erro",      cls: "st-error",     icon: "alert" },
+    cancelled: { label: "Cancelado", cls: "st-cancelled", icon: "x" },
+  };
+
+  // fill static icon slots (2 cópias: sidebar desktop / topbar+bottombar mobile)
+  $("#brand-icon-1").innerHTML = icon("music", "icon");
+  $("#brand-icon-2").innerHTML = icon("music", "icon");
+  $("#settings-btn-1").innerHTML = icon("settings", "icon");
+  $("#settings-btn-2").innerHTML = icon("settings", "icon");
+  $("#nav-link-1").innerHTML = icon("link", "icon-sm") + "<span>Link</span>";
+  $("#nav-search-1").innerHTML = icon("search", "icon-sm") + "<span>Buscar</span>";
+  $("#nav-queue-1").innerHTML = icon("queue", "icon-sm") + `<span>Fila</span><span class="tab-count" style="display:none;">0</span>`;
+  $("#nav-link-2").innerHTML = icon("link", "icon-sm") + "<span>Link</span>";
+  $("#nav-search-2").innerHTML = icon("search", "icon-sm") + "<span>Buscar</span>";
+  $("#nav-queue-2").innerHTML = icon("queue", "icon-sm") + `<span>Fila</span><span class="tab-count" style="display:none;">0</span>`;
+  $("#queue-empty-icon").innerHTML = icon("queue", "icon-lg");
+
+  const settingsPanel = $("#settings-panel");
+  const logoutBtn = $("#logout-btn");
+  const sessionInfo = $("#session-info");
+
+  const loginCardWrap = $("#login-card-wrap");
+  const app = $("#app");
+  const loginBtn = $("#login-btn");
+  const loginError = $("#login-error");
+  const tokenInput = $("#token-input");
+  const emailInput = $("#email-input");
+  const pwdInput = $("#pwd-input");
+  const tokenFields = $("#token-fields");
+  const pwdFields = $("#pwd-fields");
+  const toggleAuthMode = $("#toggle-auth-mode");
+  const qualitySelect = $("#quality-select");
+
+  const navTabs = $$(".nav-tab"); // sidebar + bottom bar, ambos com data-tab
+  const panels = { link: $("#panel-link"), search: $("#panel-search"), queue: $("#panel-queue") };
+
+  const linkUrl = $("#link-url");
+  const linkGo = $("#link-go");
+  const linkError = $("#link-error");
+  const toggleBatch = $("#toggle-batch");
+  const batchBox = $("#batch-box");
+  const batchInput = $("#batch-input");
+  const batchGo = $("#batch-go");
+  const previewArea = $("#preview-area");
+
+  const searchQ = $("#search-q");
+  const searchGo = $("#search-go");
+  const searchType = $("#search-type");
+  const searchError = $("#search-error");
+  const searchResults = $("#search-results");
+  const searchEmpty = $("#search-empty");
+
+  const jobsList = $("#jobs-list");
+  const queueEmpty = $("#queue-empty");
+  const clearDoneBtn = $("#clear-done");
+  const toastContainer = $("#toast-container");
+  const sidebarMini = $("#sidebar-mini");
+
+  let quality = Number(localStorage.getItem("qbdl_quality") || 7);
+  let usingToken = true;
+  let currentSearchType = "album";
+  let previewStack = [];
+
+  searchEmpty.innerHTML = `
+    <div class="empty-state">
+      <div class="icon-wrap">${icon("search", "icon-lg")}</div>
+      <p>Busque álbuns, faixas, artistas ou playlists no catálogo do Qobuz.</p>
+    </div>`;
+
+  // ------------------------------------------------------------- helpers
+  function escapeHtml(s) {
+    return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+  function fmtBytes(n) {
+    if (!n) return "0 B";
+    const u = ["B", "KB", "MB", "GB"]; let i = 0;
+    while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+    return `${n.toFixed(i === 0 ? 0 : 1)} ${u[i]}`;
+  }
+  function fmtDuration(sec) {
+    sec = Math.round(sec || 0);
+    const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+    if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+    return `${m}:${String(s).padStart(2, "0")}`;
+  }
+  function coverHtml(url, extraCls = "") {
+    if (!url) return `<div class="cover-wrap ${extraCls}"><div class="cover-fallback">${icon("disc", "icon-lg")}</div></div>`;
+    return `<div class="cover-wrap ${extraCls}"><img src="${escapeHtml(url)}" loading="lazy" onerror="this.parentElement.innerHTML='<div class=&quot;cover-fallback&quot;>${icon("disc", "icon-lg").replace(/"/g, "&quot;")}</div>'" /></div>`;
+  }
+  function typeLabel(t) {
+    return { album: "Álbum", track: "Faixa", playlist: "Playlist", artist: "Artista", label: "Label" }[t] || t || "";
+  }
+  function qobuzUrlFor(type, id) { return `https://open.qobuz.com/${type}/${id}`; }
+
+  function setGlyph(state) {
+    $$(".status-dot").forEach((el) => { el.className = "status-dot " + state; });
+    const label = { online: "online", busy: "baixando", error: "erro", offline: "offline" }[state] || state;
+    $$(".status-label").forEach((el) => { el.textContent = label; });
+  }
+  function toast(msg, kind = "info") {
+    const el = document.createElement("div");
+    el.className = "toast";
+    const iconName = kind === "error" ? "alert" : kind === "success" ? "check" : "loader";
+    el.innerHTML = `${icon(iconName, "icon-sm")}<span>${escapeHtml(msg)}</span>`;
+    toastContainer.appendChild(el);
+    setTimeout(() => { el.classList.add("leaving"); setTimeout(() => el.remove(), 220); }, 3400);
+  }
+
+  // ------------------------------------------------------------- tabs
+  function setTab(name) {
+    navTabs.forEach((t) => t.classList.toggle("active", t.dataset.tab === name));
+    Object.entries(panels).forEach(([k, el]) => {
+      if (k === name) {
+        el.classList.add("active");
+        el.classList.remove("enter");
+        void el.offsetWidth;
+        el.classList.add("enter");
+      } else {
+        el.classList.remove("active");
+      }
+    });
+  }
+  navTabs.forEach((t) => t.addEventListener("click", () => setTab(t.dataset.tab)));
+
+  // ------------------------------------------------------------- settings
+  $$(".settings-toggle").forEach((btn) => btn.addEventListener("click", () => settingsPanel.classList.toggle("open")));
+  logoutBtn.addEventListener("click", () => {
+    localStorage.removeItem("qbdl_token");
+    settingsPanel.classList.remove("open");
+    document.body.classList.remove("is-authed");
+    app.classList.remove("visible");
+    loginCardWrap.classList.remove("hidden");
+    setGlyph("offline");
+  });
+
+  // ------------------------------------------------------------- login
+  toggleAuthMode.addEventListener("click", () => {
+    usingToken = !usingToken;
+    tokenFields.style.display = usingToken ? "" : "none";
+    pwdFields.style.display = usingToken ? "none" : "";
+    toggleAuthMode.textContent = usingToken ? "usar email e senha em vez de token" : "usar auth token em vez de email/senha";
+  });
+
+  qualitySelect.addEventListener("click", (e) => {
+    const b = e.target.closest(".qbtn");
+    if (!b) return;
+    quality = Number(b.dataset.q);
+    localStorage.setItem("qbdl_quality", quality);
+    [...qualitySelect.children].forEach((c) => c.classList.toggle("active", c === b));
+  });
+
+  async function doLogin(silent = false) {
+    loginError.style.display = "none";
+    const body = { quality };
+    if (usingToken) {
+      const t = tokenInput.value.trim() || localStorage.getItem("qbdl_token") || "";
+      if (!t) { if (!silent) { loginError.innerHTML = icon("alert", "icon-sm") + "<span>cole o token primeiro</span>"; loginError.style.display = "flex"; } return false; }
+      body.user_auth_token = t;
+    } else {
+      body.email = emailInput.value.trim();
+      body.password = pwdInput.value;
+      if (!body.email || !body.password) { if (!silent) { loginError.innerHTML = icon("alert", "icon-sm") + "<span>preencha email e senha</span>"; loginError.style.display = "flex"; } return false; }
+    }
+    loginBtn.disabled = true;
+    loginBtn.textContent = "Entrando...";
+    try {
+      const r = await fetch(`${API}/api/login`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.detail || `falha no login (${r.status})`);
+      if (usingToken) localStorage.setItem("qbdl_token", body.user_auth_token);
+      setGlyph("online");
+      loginCardWrap.classList.add("hidden");
+      app.classList.add("visible");
+      document.body.classList.add("is-authed");
+      sessionInfo.textContent = usingToken ? "Sessão ativa · token" : "Sessão ativa · email/senha";
+      hydrateJobs();
+      return true;
+    } catch (err) {
+      setGlyph("error");
+      if (!silent) { loginError.innerHTML = icon("alert", "icon-sm") + `<span>${escapeHtml(err.message)}</span>`; loginError.style.display = "flex"; }
+      return false;
+    } finally {
+      loginBtn.disabled = false;
+      loginBtn.textContent = "Entrar";
+    }
+  }
+  loginBtn.addEventListener("click", () => doLogin(false));
+  tokenInput.addEventListener("keydown", (e) => { if (e.key === "Enter") doLogin(false); });
+
+  // ------------------------------------------------------------- preview
+  function showPreviewLoading() {
+    previewArea.innerHTML = `
+      <div class="skeleton">
+        <div class="skel-box" style="width:132px;height:132px;"></div>
+        <div style="flex:1;display:flex;flex-direction:column;gap:10px;padding-top:4px;">
+          <div class="skel-box" style="width:60%;height:16px;"></div>
+          <div class="skel-box" style="width:40%;height:12px;"></div>
+          <div class="skel-box" style="width:90%;height:12px;"></div>
+        </div>
+      </div>`;
+  }
+  function showPreviewError(msg) {
+    previewArea.innerHTML = "";
+    linkError.innerHTML = icon("alert", "icon-sm") + `<span>${escapeHtml(msg)}</span>`;
+    linkError.style.display = "flex";
+  }
+
+  function renderPreview(data) {
+    linkError.style.display = "none";
+    const badges = [];
+    if (data.hires) badges.push(`<span class="badge-pill hires">HI-RES</span>`);
+    if (data.bit_depth && data.sampling_rate) badges.push(`<span class="badge-pill">${data.bit_depth}bit / ${data.sampling_rate}kHz</span>`);
+    if (data.year) badges.push(`<span class="badge-pill">${escapeHtml(data.year)}</span>`);
+    if (data.genre) badges.push(`<span class="badge-pill">${escapeHtml(data.genre)}</span>`);
+    if (data.tracks_count) badges.push(`<span class="badge-pill">${icon("disc", "icon-xs")}${data.tracks_count} faixa${data.tracks_count > 1 ? "s" : ""}</span>`);
+    if (data.albums_count) badges.push(`<span class="badge-pill">${icon("disc", "icon-xs")}${data.albums_count} álbuns</span>`);
+    if (data.duration_seconds) badges.push(`<span class="badge-pill">${icon("clock", "icon-xs")}${fmtDuration(data.duration_seconds)}</span>`);
+
+    const sub = data.type === "playlist" ? `por ${escapeHtml(data.owner || "desconhecido")}`
+      : (data.type === "track" || data.type === "album") ? escapeHtml(data.artist || "")
+      : "";
+
+    const breadcrumb = previewStack.length > 1 ? `
+      <div class="breadcrumb">
+        <button data-action="back">${icon("chevronLeft", "icon-xs")}voltar</button>
+        <span class="crumb-sep">·</span>
+        <span>${previewStack.map((p) => escapeHtml(p.title)).join(" / ")}</span>
+      </div>` : "";
+
+    let body = "";
+    if (Array.isArray(data.tracks) && data.tracks.length) {
+      body = `<div class="tracklist"><div class="tracklist-head">Faixas</div>${data.tracks.map((t, i) => `
+        <div class="track-row" style="animation-delay:${Math.min(i * 18, 300)}ms">
+          <span class="track-num">${t.number ?? ""}</span>
+          <span class="track-title"><span class="t-main">${escapeHtml(t.title)}</span>${t.version ? ` <span class="t-version">(${escapeHtml(t.version)})</span>` : ""}</span>
+          ${data.type === "playlist" ? `<span class="track-artist">${escapeHtml(t.artist || "")}</span>` : ""}
+          ${t.hires ? `<span class="track-hires">HI-RES</span>` : ""}
+          <span class="track-dur">${t.duration_seconds ? fmtDuration(t.duration_seconds) : ""}</span>
+        </div>`).join("")}</div>`;
+    } else if (Array.isArray(data.albums) && data.albums.length) {
+      body = `<div class="album-grid">${data.albums.map((al, i) => `
+        <div class="album-card" data-action="open-album" data-id="${escapeHtml(al.id)}" style="animation-delay:${Math.min(i * 25, 300)}ms">
+          ${coverHtml(al.cover_url)}
+          <div class="ac-title">${escapeHtml(al.title)}</div>
+          <div class="ac-sub">${escapeHtml(al.year || "")}${al.hires ? " · HI-RES" : ""}</div>
+        </div>`).join("")}</div>`;
+    }
+
+    previewArea.innerHTML = `
+      <div class="preview-card">
+        ${breadcrumb}
+        <div class="preview-head">
+          ${coverHtml(data.cover_url)}
+          <div class="preview-meta">
+            <span class="type-pill">${typeLabel(data.type)}</span>
+            <h3 class="preview-title">${escapeHtml(data.title)}</h3>
+            ${sub ? `<p class="preview-sub">${sub}</p>` : ""}
+            <div class="badges">${badges.join("")}</div>
+            <div class="preview-actions">
+              <button class="btn small" data-action="download">${icon("download", "icon-sm")}Baixar</button>
+              ${data.source_url ? `<a href="${escapeHtml(data.source_url)}" target="_blank" rel="noopener">${icon("externalLink", "icon-xs")}abrir no Qobuz</a>` : ""}
+            </div>
+          </div>
+        </div>
+        ${body}
+      </div>`;
+
+    previewArea.querySelector('[data-action="download"]')?.addEventListener("click", (e) => {
+      const url = data.source_url || qobuzUrlFor(data.type, data.id);
+      queueDownload(url, data);
+      const btn = e.currentTarget;
+      btn.innerHTML = icon("check", "icon-sm") + "Enfileirado";
+      btn.disabled = true;
+    });
+    previewArea.querySelector('[data-action="back"]')?.addEventListener("click", () => {
+      previewStack.pop();
+      renderPreview(previewStack[previewStack.length - 1]);
+    });
+    previewArea.querySelectorAll('[data-action="open-album"]').forEach((el) => {
+      el.addEventListener("click", () => loadPreviewById("album", el.dataset.id));
+    });
+  }
+
+  async function resolveUrl(url) {
+    showPreviewLoading();
+    try {
+      const r = await fetch(`${API}/api/resolve?url=${encodeURIComponent(url)}`);
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || `não reconheci esse link (${r.status})`);
+      previewStack = [data];
+      renderPreview(data);
+    } catch (err) {
+      showPreviewError(err.message);
+    }
+  }
+
+  async function loadPreviewById(type, id) {
+    showPreviewLoading();
+    setTab("link");
+    try {
+      const r = await fetch(`${API}/api/preview/${type}/${id}`);
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || `erro ao carregar (${r.status})`);
+      previewStack.push(data);
+      renderPreview(data);
+    } catch (err) {
+      showPreviewError(err.message);
+    }
+  }
+
+  function handleLinkSubmit() {
+    const v = linkUrl.value.trim();
+    if (!v) return;
+    clearTimeout(resolveTimer);
+    if (/^https?:\/\//i.test(v)) {
+      resolveUrl(v);
+    } else {
+      searchQ.value = v;
+      setTab("search");
+      runSearch();
+    }
+  }
+
+  let resolveTimer = null;
+  linkUrl.addEventListener("input", () => {
+    clearTimeout(resolveTimer);
+    const v = linkUrl.value.trim();
+    if (!/^https?:\/\//i.test(v)) return;
+    resolveTimer = setTimeout(() => resolveUrl(v), 550);
+  });
+  linkGo.addEventListener("click", handleLinkSubmit);
+  linkUrl.addEventListener("keydown", (e) => { if (e.key === "Enter") handleLinkSubmit(); });
+
+  toggleBatch.addEventListener("click", () => {
+    const open = batchBox.style.display !== "none";
+    batchBox.style.display = open ? "none" : "block";
+  });
+  batchGo.addEventListener("click", () => {
+    const urls = batchInput.value.split("\n").map((s) => s.trim()).filter(Boolean);
+    if (!urls.length) return;
+    urls.forEach((u) => queueDownload(u));
+    toast(`${urls.length} item${urls.length > 1 ? "s" : ""} enfileirado${urls.length > 1 ? "s" : ""}`, "success");
+    batchInput.value = "";
+    setTab("queue");
+  });
+
+  // ------------------------------------------------------------- search
+  searchType.addEventListener("click", (e) => {
+    const b = e.target.closest(".qbtn");
+    if (!b) return;
+    currentSearchType = b.dataset.t;
+    [...searchType.children].forEach((c) => c.classList.toggle("active", c === b));
+    if (searchQ.value.trim()) runSearch();
+  });
+  searchGo.addEventListener("click", runSearch);
+  searchQ.addEventListener("keydown", (e) => { if (e.key === "Enter") runSearch(); });
+
+  async function runSearch() {
+    const q = searchQ.value.trim();
+    searchError.style.display = "none";
+    if (!q) return;
+    searchEmpty.innerHTML = "";
+    searchResults.innerHTML = `<div class="empty-note">buscando…</div>`;
+    try {
+      const r = await fetch(`${API}/api/search?q=${encodeURIComponent(q)}&type=${currentSearchType}&limit=24`);
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || `falha na busca (${r.status})`);
+      renderSearchResults(data.items || []);
+    } catch (err) {
+      searchResults.innerHTML = "";
+      searchError.innerHTML = icon("alert", "icon-sm") + `<span>${escapeHtml(err.message)}</span>`;
+      searchError.style.display = "flex";
+    }
+  }
+
+  function renderSearchResults(items) {
+    if (!items.length) { searchResults.innerHTML = `<div class="empty-note">nada encontrado</div>`; return; }
+    searchResults.innerHTML = items.map((it, i) => `
+      <div class="search-card" data-action="preview" data-type="${escapeHtml(it.type)}" data-id="${escapeHtml(it.id)}" style="animation-delay:${Math.min(i * 25, 300)}ms">
+        ${coverHtml(it.cover_url)}
+        <button class="sc-quick" data-action="quick-dl" data-type="${escapeHtml(it.type)}" data-id="${escapeHtml(it.id)}" title="baixar direto">${icon("download", "icon-sm")}</button>
+        <div class="sc-body">
+          <div class="sc-title">${escapeHtml(it.title)}</div>
+          <div class="sc-sub">${escapeHtml(it.artist || it.owner || "")}${it.hires ? " · HI-RES" : ""}</div>
+        </div>
+      </div>`).join("");
+
+    searchResults.querySelectorAll('[data-action="preview"]').forEach((el) => {
+      el.addEventListener("click", (e) => {
+        if (e.target.closest('[data-action="quick-dl"]')) return;
+        loadPreviewById(el.dataset.type, el.dataset.id);
+      });
+    });
+    searchResults.querySelectorAll('[data-action="quick-dl"]').forEach((el) => {
+      el.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const url = qobuzUrlFor(el.dataset.type, el.dataset.id);
+        const card = el.closest(".search-card");
+        const preview = {
+          title: card.querySelector(".sc-title").textContent,
+          cover_url: card.querySelector("img")?.src || null,
+          type: el.dataset.type,
+        };
+        queueDownload(url, preview);
+        el.innerHTML = icon("check", "icon-sm");
+        setTab("queue");
+      });
+    });
+  }
+
+  // ------------------------------------------------------------- queue
+  const jobEls = new Map();
+  const lastSnapshot = new Map();
+
+  function updateQueueBadge() {
+    const vals = [...lastSnapshot.values()];
+    const active = vals.filter((j) => j.status === "queued" || j.status === "running").length;
+    $$(".tab-count").forEach((el) => { el.textContent = active; el.style.display = active > 0 ? "" : "none"; });
+    queueEmpty.style.display = jobEls.size > 0 ? "none" : "flex";
+    if (active === 0) {
+      const anyErr = vals.some((j) => j.status === "error");
+      setGlyph(anyErr ? "error" : "online");
+    }
+    renderSidebarMini(vals);
+  }
+
+  function renderSidebarMini(vals) {
+    const job = vals.find((j) => j.status === "running") || vals.find((j) => j.status === "queued");
+    if (!job) { sidebarMini.classList.remove("has-job"); sidebarMini.innerHTML = ""; return; }
+    sidebarMini.classList.add("has-job");
+    sidebarMini.innerHTML = `
+      <div class="sidebar-mini-card">
+        <div class="sidebar-mini-label">${icon(job.status === "running" ? "loader" : "clock", "icon-xs" + (job.status === "running" ? " spin" : ""))}${job.status === "running" ? "baixando agora" : "próximo na fila"}</div>
+        <div class="sidebar-mini-name">${escapeHtml(job.content_name || "resolvendo…")}</div>
+        ${job.status === "running" ? `<div class="sidebar-mini-bar"><div class="fill" style="width:${job.track_progress_pct || 0}%"></div></div>` : ""}
+      </div>`;
+  }
+
+  function renderJob(job) {
+    let rec = jobEls.get(job.job_id);
+    if (!rec) {
+      const el = document.createElement("div");
+      el.className = "job";
+      jobsList.prepend(el);
+      rec = { el };
+      jobEls.set(job.job_id, rec);
+    }
+    const el = rec.el;
+    const meta = STATUS_META[job.status] || STATUS_META.queued;
+    el.className = "job " + meta.cls;
+    const sub = [job.content_type ? typeLabel(job.content_type) : null, job.artist, job.content_tracks_count ? `${job.content_tracks_count} faixas` : null].filter(Boolean).join(" · ");
+
+    el.innerHTML = `
+      ${coverHtml(job.cover_url)}
+      <div class="job-body">
+        <div class="job-top">
+          <div>
+            <div class="job-name">${escapeHtml(job.content_name || "resolvendo…")}</div>
+            ${sub ? `<div class="job-sub">${escapeHtml(sub)}</div>` : ""}
+          </div>
+          <span class="badge ${meta.cls}">${icon(meta.icon, "icon-xs" + (job.status === "running" ? " spin" : ""))}${meta.label}</span>
+        </div>
+        ${job.status === "queued" && job.queue_position ? `<div class="job-sub" style="margin-top:10px;">aguardando · posição ${job.queue_position}</div>` : ""}
+        ${job.status === "running" ? `
+          <div class="track-line">
+            <span>${escapeHtml(job.track_name || "")}</span>
+            <span>${job.bytes_total ? fmtBytes(job.bytes_done) + " / " + fmtBytes(job.bytes_total) : ""}</span>
+          </div>
+          <div class="bar-track"><div class="bar-fill running" style="width:${job.track_progress_pct || 0}%"></div></div>
+        ` : ""}
+        ${job.status === "error" ? `<div class="job-error-text">${icon("alert", "icon-xs")}<span>${escapeHtml(job.error || "desconhecido")}</span></div>` : ""}
+        ${job.status === "done" && job.file_ready ? `
+          <div class="job-actions">
+            <button class="btn small" data-action="download" data-mode="auto">${icon("download", "icon-sm")}Baixar</button>
+            <button class="btn ghost small" data-action="download" data-mode="zip">Forçar .zip</button>
+          </div>` : ""}
+        ${job.status === "done" && !job.file_ready ? `<div class="job-sub" style="margin-top:10px;">já entregue e removido do servidor</div>` : ""}
+        ${job.cancellable ? `<div class="job-actions"><button class="btn ghost small" data-action="cancel">${icon("x", "icon-xs")}Cancelar</button></div>` : ""}
+      </div>`;
+
+    el.querySelectorAll('[data-action="download"]').forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const qs = btn.dataset.mode === "zip" ? "?as_zip=true" : "";
+        const a = document.createElement("a");
+        a.href = `${API}/api/download/${job.job_id}/file${qs}`;
+        a.rel = "noopener";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        el.querySelectorAll(".job-actions")[0].innerHTML = `<span class="job-sub">${icon("check", "icon-xs")} enviado pro navegador — removido do servidor em seguida</span>`;
+      });
+    });
+    el.querySelector('[data-action="cancel"]')?.addEventListener("click", async (e) => {
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      btn.innerHTML = "Cancelando...";
+      try {
+        const r = await fetch(`${API}/api/jobs/${job.job_id}`, { method: "DELETE" });
+        if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.detail || "não consegui cancelar"); }
+      } catch (err) {
+        toast(err.message, "error");
+        btn.disabled = false;
+        btn.innerHTML = icon("x", "icon-xs") + "Cancelar";
+      }
+    });
+
+    updateQueueBadge();
+  }
+
+  function applyJobUpdate(job_id, job) {
+    job.job_id = job_id;
+    const prev = lastSnapshot.get(job_id);
+    lastSnapshot.set(job_id, job);
+    renderJob(job);
+    updateQueueBadge();
+    if (prev && prev.status !== job.status) {
+      if (job.status === "done") toast(`pronto — ${job.content_name || "download"}`, "success");
+      else if (job.status === "error") toast(`erro em ${job.content_name || "download"}${job.error ? ": " + job.error : ""}`, "error");
+      else if (job.status === "cancelled") toast(`cancelado — ${job.content_name || "download"}`);
+    }
+    if (job.status === "running" || job.status === "queued") setGlyph("busy");
+    else if (job.status === "error") setGlyph("error");
+  }
+
+  function trackJob(job_id, seedPreview) {
+    const seed = { status: "queued", content_name: seedPreview?.title, cover_url: seedPreview?.cover_url, content_type: seedPreview?.type };
+    applyJobUpdate(job_id, seed);
+    connectWs(job_id);
+  }
+
+  function connectWs(job_id) {
+    let ws;
+    try { ws = new WebSocket(`${WS_PROTO}//${location.host}/ws/jobs/${job_id}`); }
+    catch { return pollJob(job_id); }
+    let gotAny = false;
+    ws.onmessage = (ev) => { gotAny = true; applyJobUpdate(job_id, JSON.parse(ev.data)); };
+    ws.onclose = () => {
+      const snap = lastSnapshot.get(job_id);
+      if (!snap || !["done", "error", "cancelled"].includes(snap.status)) pollJob(job_id);
+    };
+    ws.onerror = () => { if (!gotAny) pollJob(job_id); };
+  }
+
+  async function pollJob(job_id) {
+    const tick = async () => {
+      try {
+        const r = await fetch(`${API}/api/jobs/${job_id}`);
+        if (!r.ok) return;
+        const job = await r.json();
+        applyJobUpdate(job_id, job);
+        if (["done", "error", "cancelled"].includes(job.status)) return;
+      } catch {}
+      setTimeout(tick, 2000);
+    };
+    tick();
+  }
+
+  async function hydrateJobs() {
+    try {
+      const r = await fetch(`${API}/api/jobs`);
+      if (!r.ok) return;
+      const data = await r.json();
+      (data.jobs || []).forEach((job) => {
+        applyJobUpdate(job.job_id, job);
+        if (job.status === "queued" || job.status === "running") connectWs(job.job_id);
+      });
+    } catch {}
+  }
+
+  async function queueDownload(url, seedPreview) {
+    try {
+      const r = await fetch(`${API}/api/download`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.detail || `falha ao iniciar (${r.status})`);
+      trackJob(data.job_id, seedPreview);
+      toast(`enfileirado — ${seedPreview?.title || url}`, "success");
+    } catch (err) {
+      linkError.innerHTML = icon("alert", "icon-sm") + `<span>${escapeHtml(err.message)}</span>`;
+      linkError.style.display = "flex";
+      toast(err.message, "error");
+    }
+  }
+
+  clearDoneBtn.addEventListener("click", () => {
+    [...jobEls.entries()].forEach(([id, rec]) => {
+      const snap = lastSnapshot.get(id);
+      if (snap && ["done", "error", "cancelled"].includes(snap.status)) {
+        rec.el.remove();
+        jobEls.delete(id);
+        lastSnapshot.delete(id);
+      }
+    });
+    updateQueueBadge();
+  });
+
+  // ------------------------------------------------------------- boot
+  (async function boot() {
+    const savedToken = localStorage.getItem("qbdl_token");
+    [...qualitySelect.children].forEach((c) => c.classList.toggle("active", Number(c.dataset.q) === quality));
+    if (savedToken) {
+      tokenInput.value = savedToken;
+      const ok = await doLogin(true);
+      if (!ok) { loginCardWrap.classList.remove("hidden"); app.classList.remove("visible"); }
+    } else {
+      setGlyph("offline");
+    }
+  })();
+})();
+</script>
+</body>
+</html>

@@ -38,6 +38,10 @@ requirements = [
     "requests",
     "deepl",
     "Pillow"
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.30",
+    "websockets>=12.0",
+    "python-dotenv>=1.0"
 ]
 
 setup(
