@@ -1,35 +1,53 @@
-# Qobuz-DL Unified (Next.js Frontend + Python FastAPI Backend)
+# 🎵 Qobuz-DL Unified // Full-Stack Audio Engine & Web Client
 
-Aplicação integrada unindo o frontend moderno do **Qobuz-DL-main** (Next.js 15, React, Tailwind CSS, Shadcn UI) com o motor de downloads de alta performance em **Python FastAPI** do **qobuz-dl-master**.
+Aplicação unificada e integrada combinando o **frontend moderno do Qobuz-DL-main** com o **motor de downloads e marcação em Python FastAPI do qobuz-dl-master**.
 
-## 🚀 Funcionalidades
+---
 
-- **Frontend Moderno**: Interface em Next.js com Shadcn UI, suporte a Dark/Light mode, visualização em tempo real de capas, álbuns e lançamentos.
-- **Busca Rápida com Autocomplete**: Busque por artistas, álbuns e faixas no catálogo global da Qobuz ou cole links diretos.
-- **Fila & Status em Tempo Real**: WebSocket (`/ws/live`) integrado com barra de status flutuante e modal de gerenciamento de fila.
-- **Motor Hi-Res Lossless**: Downloads em FLAC 24-Bit / 192 kHz com marcação completa de tags (Mutagen) e capas em alta resolução.
-- **Letras Sincronizadas (.LRC)**: Extração automática de letras sincronizadas via LRCLib.
-- **Tokens Dinâmicos**: Scraper dinâmico integrado do Web Player Qobuz para manter credenciais sempre atualizadas.
+## ⚡ Como Executar Tudo Junto (1 Único Comando)
 
-## 🛠️ Como Executar
+### Opção 1: Servidor Integrado (Recomendado)
+Executa a API FastAPI, WebSockets e a interface web completa em um único processo:
 
-### 1. Iniciar o Backend (FastAPI)
 ```bash
-cd backend
-pip install -r requirements.txt
+# 1. Instalar dependências do Python
+pip install -r backend/requirements.txt
+
+# 2. Iniciar o programa
 python run.py
 ```
-*API e WebSockets disponíveis em `http://localhost:8000`.*
+> Acesse diretamente no seu navegador: **`http://localhost:8000`**
 
-### 2. Iniciar o Frontend (Next.js)
+---
+
+### Opção 2: Modo de Desenvolvimento Concorrente (Next.js + FastAPI)
+Para desenvolvedores que desejam alterar o código React com Hot-Reload (FastAPI na porta 8000 e Next.js na porta 3000):
+
 ```bash
-cd frontend
-npm install
-npm run dev
-```
-*Interface acessível em `http://localhost:3000`.*
+# 1. Instalar dependências
+pip install -r backend/requirements.txt
+cd frontend && npm install && cd ..
 
-### 3. Execução via Docker Compose
+# 2. Iniciar ambos concorrentemente
+python run.py --dev
+```
+
+---
+
+### Opção 3: Executar via Docker Compose
 ```bash
 docker-compose up --build
 ```
+> Acesse a interface web em **`http://localhost:3000`** com backend em **`http://localhost:8000`**.
+
+---
+
+## 🌟 Funcionalidades Integradas
+
+- **Execução Unificada**: Um único comando (`python run.py`) inicia toda a aplicação.
+- **Busca Global com Autocomplete**: Pesquisa em tempo real de álbuns, faixas e artistas no catálogo oficial da Qobuz.
+- **Download Direto de Links**: Cole links de faixas ou álbuns (`open.qobuz.com/...`) para download imediato.
+- **Barra de Status Flutuante**: Acompanhe o progresso percentual, velocidade de download (MB/s) e tempo estimado (ETA) via WebSocket.
+- **Qualidade Studio Hi-Res**: Suporte a FLAC 24-Bit / 192 kHz, 24-Bit / 96 kHz, 16-Bit / 44.1 kHz (CD) e MP3 320 kbps.
+- **Metadados & Tags Automáticas**: Incorporação de capas em alta resolução, tags Vorbis/ID3 e letras sincronizadas `.LRC` (LRCLib).
+- **Gerenciador de Fila Assíncrono**: Pausa, retomada, cancelamento e histórico com prevenção de duplicatas via SQLite local.
