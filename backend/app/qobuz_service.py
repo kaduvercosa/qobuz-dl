@@ -124,6 +124,18 @@ class QobuzService:
         except Exception as e:
             return {"error": str(e)}
 
+
+    async def logout(self) -> Dict[str, Any]:
+        """Logout and clear saved token."""
+        self.session_valid = False
+        self.user_data = {}
+        self.user_tier = "Não conectado"
+        config_manager.config.auth.user_auth_token = ""
+        config_manager.config.auth.password = ""
+        config_manager.save_config()
+        progress_manager.log("INFO", "Sessão Qobuz encerrada com sucesso.", "AUTH")
+        return {"success": True, "status": "unauthenticated"}
+
     async def process_download(self, item_id: str, url: str, quality_override: Optional[int] = None):
         cfg = config_manager.config
         format_id = quality_override or cfg.quality.format_id

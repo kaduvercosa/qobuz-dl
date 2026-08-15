@@ -67,3 +67,32 @@ DEFAULT_CONFIG = {
         "red_accent": "#D71921"
     }
 }
+
+COUNTRY_NAMES = {
+    'US': 'United States',
+    'GB': 'United Kingdom',
+    'FR': 'France',
+    'DE': 'Germany',
+    'IT': 'Italy',
+    'ES': 'Spain',
+    'NL': 'Netherlands',
+    'BE': 'Belgium',
+    'LU': 'Luxembourg',
+    'CH': 'Switzerland',
+    'AT': 'Austria',
+    'IE': 'Ireland',
+    'PT': 'Portugal',
+    'SE': 'Sweden',
+    'NO': 'Norway',
+    'DK': 'Denmark',
+    'FI': 'Finland',
+    'AU': 'Australia',
+    'NZ': 'New Zealand',
+    'CA': 'Canada',
+    'JP': 'Japan',
+    'BR': 'Brazil',
+    'MX': 'Mexico',
+    'AR': 'Argentina',
+    'CL': 'Chile',
+    'CO': 'Colombia',
+}
